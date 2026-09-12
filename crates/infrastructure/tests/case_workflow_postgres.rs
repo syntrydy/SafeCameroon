@@ -34,7 +34,7 @@ async fn test_pool() -> PgPool {
 
     MIGRATOR.run(&pool).await.expect("migrations must apply");
     sqlx::query(
-        "TRUNCATE delivery_events, delivery_attempts, deliveries, alert_events, alert_fields, \
+        "TRUNCATE webhook_replay_events, delivery_events, delivery_attempts, deliveries, alert_events, alert_fields, \
          alerts, case_events, case_reports, cases, outbox_events, audit_events, reports, reporters",
     )
     .execute(&pool)

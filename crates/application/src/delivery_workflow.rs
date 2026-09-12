@@ -16,6 +16,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::case_workflow::Actor;
+use crate::webhook::{ProviderDeliveryStatus, WebhookEvent};
 
 /// A single planned delivery plus the metadata needed to persist it: the
 /// `DELIVERY_REQUESTED` event, an idempotency-key digest (mirroring how
@@ -176,6 +177,36 @@ pub fn record_delivery_failure(
     ))
 }
 
+/// Either shape [`apply_webhook_event`] can produce, so a caller can route
+/// each to the matching `PostgresDeliveryRepository` method
+/// (`apply_transition` vs `apply_attempt_transition`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WebhookAppliedTransition {
+    Delivered(DeliveryTransition),
+    Failed(DeliveryAttemptTransition),
+}
+
+/// Turns an already-verified, already-deduplicated
+/// [`WebhookEvent`](crate::webhook::WebhookEvent) into the matching delivery
+/// transition (docs/API.md section 7: "record delivery status changes").
+/// Never called with an unverified payload — that is the whole point of
+/// `WebhookVerifier`/`WebhookReplayGuard` running first.
+pub fn apply_webhook_event(
+    delivery: &mut Delivery,
+    event: &WebhookEvent,
+    actor: Actor,
+    request_id: Uuid,
+) -> Result<WebhookAppliedTransition, DeliveryTransitionError> {
+    match &event.status {
+        ProviderDeliveryStatus::Delivered => record_delivery_delivered(delivery, actor, request_id)
+            .map(WebhookAppliedTransition::Delivered),
+        ProviderDeliveryStatus::Failed { retryable, reason } => {
+            record_delivery_failure(delivery, *retryable, reason.clone(), actor, request_id)
+                .map(WebhookAppliedTransition::Failed)
+        }
+    }
+}
+
 pub fn delivery_transition_event_payload(
     delivery: &Delivery,
     transition: &DeliveryTransition,
@@ -312,5 +343,71 @@ mod tests {
         assert_eq!(planned.delivery.status(), DeliveryStatus::FailedPermanently);
         let payload = delivery_attempt_event_payload(&planned.delivery, &failed);
         assert_eq!(payload["delivery_id"], json!(planned.delivery.id()));
+    }
+
+    fn webhook_event(status: ProviderDeliveryStatus) -> WebhookEvent {
+        WebhookEvent {
+            provider_event_id: "evt-1".into(),
+            provider_message_id: "provider-msg-1".into(),
+            status,
+        }
+    }
+
+    #[test]
+    fn a_delivered_webhook_event_transitions_sent_to_delivered() {
+        let mut planned = planned_delivery();
+        start_delivery_attempt(&mut planned.delivery, Actor::Automated, Uuid::new_v4()).unwrap();
+        record_delivery_success(
+            &mut planned.delivery,
+            Some("provider-msg-1".into()),
+            Actor::Automated,
+            Uuid::new_v4(),
+        )
+        .unwrap();
+
+        let applied = apply_webhook_event(
+            &mut planned.delivery,
+            &webhook_event(ProviderDeliveryStatus::Delivered),
+            Actor::Automated,
+            Uuid::new_v4(),
+        )
+        .unwrap();
+
+        assert!(matches!(applied, WebhookAppliedTransition::Delivered(_)));
+        assert_eq!(planned.delivery.status(), DeliveryStatus::Delivered);
+    }
+
+    #[test]
+    fn a_failed_webhook_event_transitions_sending_to_retrying_or_failed_permanently() {
+        let mut planned = planned_delivery();
+        start_delivery_attempt(&mut planned.delivery, Actor::Automated, Uuid::new_v4()).unwrap();
+
+        let applied = apply_webhook_event(
+            &mut planned.delivery,
+            &webhook_event(ProviderDeliveryStatus::Failed {
+                retryable: false,
+                reason: "provider reported a permanent failure".into(),
+            }),
+            Actor::Automated,
+            Uuid::new_v4(),
+        )
+        .unwrap();
+
+        assert!(matches!(applied, WebhookAppliedTransition::Failed(_)));
+        assert_eq!(planned.delivery.status(), DeliveryStatus::FailedPermanently);
+    }
+
+    #[test]
+    fn a_webhook_event_is_rejected_when_the_delivery_is_not_in_a_matching_state() {
+        let mut planned = planned_delivery();
+        // Still Queued: a Delivered callback makes no sense yet.
+        let error = apply_webhook_event(
+            &mut planned.delivery,
+            &webhook_event(ProviderDeliveryStatus::Delivered),
+            Actor::Automated,
+            Uuid::new_v4(),
+        )
+        .unwrap_err();
+        assert_eq!(error.from, DeliveryStatus::Queued);
     }
 }

@@ -5,21 +5,22 @@
 //! shared secret; every mock/sandbox channel in this crate uses the same
 //! payload shape today, so one implementation covers all three until a real
 //! provider integration replaces it with that provider's own scheme.
-//! [`InMemoryReplayGuard`] is a process-local reference implementation; a
-//! real deployment needs a persisted (Postgres-backed) one so replay
-//! protection survives a restart, which is left to the follow-up that wires
-//! an actual webhook HTTP endpoint.
+//! [`InMemoryReplayGuard`] is a process-local reference implementation kept
+//! for tests; [`PostgresWebhookReplayGuard`] is the durable one a real
+//! deployment needs, so replay protection survives a restart.
 
 use std::collections::HashSet;
 use std::sync::Mutex;
 
+use async_trait::async_trait;
 use hmac::{Hmac, Mac};
 use safe_cameroon_application::webhook::{
-    ProviderDeliveryStatus, WebhookEvent, WebhookReplayGuard, WebhookVerificationError,
-    WebhookVerifier,
+    ProviderDeliveryStatus, WebhookEvent, WebhookReplayError, WebhookReplayGuard,
+    WebhookVerificationError, WebhookVerifier,
 };
 use safe_cameroon_domain::ChannelType;
 use sha2::Sha256;
+use sqlx::PgPool;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -125,6 +126,10 @@ impl WebhookVerifier for HmacSignedWebhookVerifier {
     }
 }
 
+fn replay_key(channel: ChannelType, provider_event_id: &str) -> String {
+    format!("{}:{}", channel.as_database_value(), provider_event_id)
+}
+
 /// Process-local reference [`WebhookReplayGuard`]. Not durable across
 /// restarts — fine for tests and local development, not for production.
 #[derive(Default)]
@@ -138,13 +143,57 @@ impl InMemoryReplayGuard {
     }
 }
 
+#[async_trait]
 impl WebhookReplayGuard for InMemoryReplayGuard {
-    fn record_if_new(&self, provider_event_id: &str) -> bool {
+    async fn record_if_new(
+        &self,
+        channel: ChannelType,
+        provider_event_id: &str,
+    ) -> Result<bool, WebhookReplayError> {
         let mut seen = self
             .seen
             .lock()
             .expect("in-memory replay guard mutex must not be poisoned");
-        seen.insert(provider_event_id.to_owned())
+        Ok(seen.insert(replay_key(channel, provider_event_id)))
+    }
+}
+
+/// Durable, Postgres-backed [`WebhookReplayGuard`]: an insert that conflicts
+/// on the `(channel, provider_event_id)` primary key means this event has
+/// already been recorded.
+#[derive(Clone)]
+pub struct PostgresWebhookReplayGuard {
+    pool: PgPool,
+}
+
+impl PostgresWebhookReplayGuard {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl WebhookReplayGuard for PostgresWebhookReplayGuard {
+    async fn record_if_new(
+        &self,
+        channel: ChannelType,
+        provider_event_id: &str,
+    ) -> Result<bool, WebhookReplayError> {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO webhook_replay_events (channel, provider_event_id)
+            VALUES ($1::channel_type, $2)
+            ON CONFLICT (channel, provider_event_id) DO NOTHING
+            "#,
+        )
+        .bind(channel.as_database_value())
+        .bind(provider_event_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| WebhookReplayError {
+            reason: error.to_string(),
+        })?;
+        Ok(result.rows_affected() == 1)
     }
 }
 
@@ -223,11 +272,44 @@ mod tests {
         assert!(error.reason.contains("does not match"));
     }
 
-    #[test]
-    fn in_memory_replay_guard_accepts_an_id_once_and_rejects_repeats() {
+    #[tokio::test]
+    async fn in_memory_replay_guard_accepts_an_id_once_and_rejects_repeats() {
         let guard = InMemoryReplayGuard::new();
-        assert!(guard.record_if_new("evt-1"));
-        assert!(!guard.record_if_new("evt-1"));
-        assert!(guard.record_if_new("evt-2"));
+        assert!(
+            guard
+                .record_if_new(ChannelType::WhatsApp, "evt-1")
+                .await
+                .unwrap()
+        );
+        assert!(
+            !guard
+                .record_if_new(ChannelType::WhatsApp, "evt-1")
+                .await
+                .unwrap()
+        );
+        assert!(
+            guard
+                .record_if_new(ChannelType::WhatsApp, "evt-2")
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn in_memory_replay_guard_scopes_by_channel() {
+        let guard = InMemoryReplayGuard::new();
+        assert!(
+            guard
+                .record_if_new(ChannelType::WhatsApp, "evt-1")
+                .await
+                .unwrap()
+        );
+        assert!(
+            guard
+                .record_if_new(ChannelType::Sms, "evt-1")
+                .await
+                .unwrap(),
+            "the same event id on a different channel must be treated as distinct"
+        );
     }
 }
