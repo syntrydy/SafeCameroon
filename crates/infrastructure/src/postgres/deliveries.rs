@@ -1,7 +1,7 @@
 use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_application::delivery_workflow::{
     DeliveryAttemptTransition, DeliveryTransition, PlannedDelivery, delivery_attempt_event_payload,
-    delivery_requested_event_payload, delivery_transition_event_payload,
+    delivery_requested_event_payload, delivery_transition_event_payload, start_delivery_attempt,
 };
 use safe_cameroon_domain::{
     ChannelType, ConsumerId, Delivery, DeliveryAttempt, DeliveryAttemptOutcome, DeliveryId,
@@ -9,6 +9,56 @@ use safe_cameroon_domain::{
 };
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
+
+/// Column shape shared by every query that reads a full delivery row.
+#[allow(clippy::type_complexity)]
+type DeliveryRow = (
+    Uuid,      // alert_id
+    Uuid,      // consumer_id
+    String,    // channel
+    String,    // endpoint_address
+    i16,       // tier
+    Vec<Uuid>, // matching_subscription_ids
+    String,    // status
+    i32,       // attempt_count
+    i32,       // max_attempts
+    i64,       // aggregate_version
+);
+
+fn delivery_from_row(delivery_id: DeliveryId, row: DeliveryRow) -> Delivery {
+    let (
+        alert_id,
+        consumer_id,
+        channel,
+        endpoint_address,
+        tier,
+        matching_subscription_ids,
+        status,
+        attempt_count,
+        max_attempts,
+        aggregate_version,
+    ) = row;
+
+    Delivery::reconstitute(
+        delivery_id,
+        safe_cameroon_domain::AlertId::from_uuid(alert_id),
+        ConsumerId::from_uuid(consumer_id),
+        ChannelType::from_database_value(&channel)
+            .expect("deliveries.channel is constrained by the channel_type enum"),
+        endpoint_address,
+        tier as u8,
+        matching_subscription_ids
+            .into_iter()
+            .map(SubscriptionId::from_uuid)
+            .collect(),
+        RetryPolicy::new(max_attempts as u32)
+            .expect("deliveries.max_attempts is constrained to be positive"),
+        DeliveryStatus::from_database_value(&status)
+            .expect("deliveries.status is constrained by the delivery_status enum"),
+        attempt_count as u32,
+        aggregate_version as u64,
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeliveryTransitionOutcome {
@@ -33,8 +83,35 @@ impl PostgresDeliveryRepository {
         &self,
         delivery_id: DeliveryId,
     ) -> Result<Option<Delivery>, sqlx::Error> {
+        let row: Option<DeliveryRow> = sqlx::query_as(
+            r#"
+            SELECT alert_id, consumer_id, channel::text, endpoint_address, tier,
+                   matching_subscription_ids, status::text, attempt_count, max_attempts,
+                   aggregate_version
+            FROM deliveries
+            WHERE id = $1
+            "#,
+        )
+        .bind(delivery_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|row| delivery_from_row(delivery_id, row)))
+    }
+
+    /// Dequeues up to `limit` deliveries ready to be sent (`QUEUED` or
+    /// `RETRYING`) and starts each one's attempt, all in one transaction.
+    /// `FOR UPDATE SKIP LOCKED` is what makes this safe under concurrent
+    /// workers: a row already locked by another in-flight `claim_next` call
+    /// is simply skipped rather than waited on or double-claimed
+    /// (docs/EVENTS.md section 9, prompt 07: "test duplicate jobs and
+    /// concurrent workers"). Every returned delivery is already `SENDING`
+    /// with its `DELIVERY_STARTED` event/audit/outbox row persisted; the
+    /// caller only needs to dispatch it to a channel and report the outcome.
+    pub async fn claim_next(&self, limit: i64) -> Result<Vec<Delivery>, sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
         #[allow(clippy::type_complexity)]
-        let Some(row): Option<(
+        let rows: Vec<(
+            Uuid,
             Uuid,
             Uuid,
             String,
@@ -47,20 +124,23 @@ impl PostgresDeliveryRepository {
             i64,
         )> = sqlx::query_as(
             r#"
-            SELECT alert_id, consumer_id, channel::text, endpoint_address, tier,
+            SELECT id, alert_id, consumer_id, channel::text, endpoint_address, tier,
                    matching_subscription_ids, status::text, attempt_count, max_attempts,
                    aggregate_version
             FROM deliveries
-            WHERE id = $1
+            WHERE status IN ('QUEUED', 'RETRYING')
+            ORDER BY created_at
+            LIMIT $1
+            FOR UPDATE SKIP LOCKED
             "#,
         )
-        .bind(delivery_id.as_uuid())
-        .fetch_optional(&self.pool)
-        .await?
-        else {
-            return Ok(None);
-        };
-        let (
+        .bind(limit)
+        .fetch_all(&mut *tx)
+        .await?;
+
+        let mut claimed = Vec::with_capacity(rows.len());
+        for (
+            id,
             alert_id,
             consumer_id,
             channel,
@@ -71,27 +151,55 @@ impl PostgresDeliveryRepository {
             attempt_count,
             max_attempts,
             aggregate_version,
-        ) = row;
-
-        Ok(Some(Delivery::reconstitute(
-            delivery_id,
-            safe_cameroon_domain::AlertId::from_uuid(alert_id),
-            ConsumerId::from_uuid(consumer_id),
-            ChannelType::from_database_value(&channel)
-                .expect("deliveries.channel is constrained by the channel_type enum"),
-            endpoint_address,
-            tier as u8,
-            matching_subscription_ids
-                .into_iter()
-                .map(SubscriptionId::from_uuid)
-                .collect(),
-            RetryPolicy::new(max_attempts as u32)
-                .expect("deliveries.max_attempts is constrained to be positive"),
-            DeliveryStatus::from_database_value(&status)
-                .expect("deliveries.status is constrained by the delivery_status enum"),
-            attempt_count as u32,
-            aggregate_version as u64,
-        )))
+        ) in rows
+        {
+            let mut delivery = delivery_from_row(
+                DeliveryId::from_uuid(id),
+                (
+                    alert_id,
+                    consumer_id,
+                    channel,
+                    endpoint_address,
+                    tier,
+                    matching_subscription_ids,
+                    status,
+                    attempt_count,
+                    max_attempts,
+                    aggregate_version,
+                ),
+            );
+            // The WHERE clause above guarantees Queued/Retrying, and this
+            // transaction holds the row's lock, so this can never fail.
+            let transition =
+                start_delivery_attempt(&mut delivery, Actor::Automated, Uuid::new_v4())
+                    .expect("a claimed row is always Queued or Retrying");
+            advance_delivery(&mut tx, &delivery)
+                .await?
+                .then_some(())
+                .expect("a locked row is never modified concurrently");
+            insert_delivery_event(&mut tx, delivery.id(), &transition.event, transition.actor)
+                .await?;
+            insert_audit_event(
+                &mut tx,
+                transition.audit_event_id.as_uuid(),
+                transition.actor,
+                transition.event.event_type.as_database_value(),
+                delivery.id().as_uuid(),
+                transition.request_id,
+            )
+            .await?;
+            insert_outbox_event(
+                &mut tx,
+                transition.outbox_event_id.as_uuid(),
+                delivery.id().as_uuid(),
+                transition.event.event_type.as_database_value(),
+                delivery_transition_event_payload(&delivery, &transition),
+            )
+            .await?;
+            claimed.push(delivery);
+        }
+        tx.commit().await?;
+        Ok(claimed)
     }
 
     /// Persists newly planned deliveries plus their `DELIVERY_REQUESTED`
