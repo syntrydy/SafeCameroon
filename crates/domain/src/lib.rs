@@ -4,6 +4,8 @@
 
 pub mod case;
 pub mod ids;
+pub mod report;
 
 pub use case::{Case, CaseEvent, CaseEventType, CaseStatus, IncidentType, TransitionError};
-pub use ids::{CaseId, ReportId};
+pub use ids::{AuditEventId, CaseId, OutboxEventId, ReportId};
+pub use report::{AnonymousReport, ReportSourceChannel};

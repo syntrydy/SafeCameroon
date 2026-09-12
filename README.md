@@ -16,7 +16,7 @@ use case is missing children.
 
 ```bash
 cargo test --workspace
-cargo run -p safe-cameroon-api
+DATABASE_URL=postgres://... cargo run -p safe-cameroon-api
 curl http://localhost:3000/health
 ```
 

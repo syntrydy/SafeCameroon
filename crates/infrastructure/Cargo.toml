@@ -1,12 +1,11 @@
 [package]
-name = "safe-cameroon-application"
+name = "safe-cameroon-infrastructure"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-safe-cameroon-domain = { path = "../domain" }
+safe-cameroon-application = { path = "../application" }
 serde_json.workspace = true
-sha2.workspace = true
-uuid.workspace = true
+sqlx.workspace = true

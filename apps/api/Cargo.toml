@@ -7,5 +7,10 @@ license.workspace = true
 
 [dependencies]
 axum.workspace = true
+safe-cameroon-application = { path = "../../crates/application" }
+safe-cameroon-domain = { path = "../../crates/domain" }
+safe-cameroon-infrastructure = { path = "../../crates/infrastructure" }
 serde.workspace = true
+sqlx.workspace = true
 tokio.workspace = true
+uuid.workspace = true
