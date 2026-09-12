@@ -5,11 +5,12 @@
 //! applies a status change without going through a [`WebhookVerifier`] and a
 //! [`WebhookReplayGuard`] first. `crate::delivery_workflow::apply_webhook_event`
 //! is what turns a verified, deduplicated [`WebhookEvent`] into a delivery
-//! status transition; wiring the actual HTTP endpoint that receives the raw
-//! request and looks up the delivery by `provider_message_id` is a separate
-//! follow-up.
+//! status transition; `apps/api`'s `POST /v1/webhooks/{channel}/{provider}`
+//! handler is what receives the raw request and drives all of this.
 
 use core::fmt;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use safe_cameroon_domain::ChannelType;
@@ -61,6 +62,30 @@ pub trait WebhookVerifier: Send + Sync {
     ) -> Result<WebhookEvent, WebhookVerificationError>;
 }
 
+/// Looks up the [`WebhookVerifier`] responsible for one `(channel,
+/// provider)` pair (docs/API.md section 7: `POST /v1/webhooks/{channel}/
+/// {provider}` names both, since one channel can have more than one
+/// provider). Pure wiring — mirrors [`crate::channel::ChannelRegistry`].
+#[derive(Default)]
+pub struct WebhookVerifierRegistry {
+    verifiers: HashMap<(ChannelType, String), Arc<dyn WebhookVerifier>>,
+}
+
+impl WebhookVerifierRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register(&mut self, provider: impl Into<String>, verifier: Arc<dyn WebhookVerifier>) {
+        self.verifiers
+            .insert((verifier.channel_type(), provider.into()), verifier);
+    }
+
+    pub fn get(&self, channel: ChannelType, provider: &str) -> Option<&Arc<dyn WebhookVerifier>> {
+        self.verifiers.get(&(channel, provider.to_owned()))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WebhookReplayError {
     pub reason: String,
@@ -90,4 +115,39 @@ pub trait WebhookReplayGuard: Send + Sync {
         channel: ChannelType,
         provider_event_id: &str,
     ) -> Result<bool, WebhookReplayError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct StubVerifier(ChannelType);
+
+    impl WebhookVerifier for StubVerifier {
+        fn channel_type(&self) -> ChannelType {
+            self.0
+        }
+
+        fn verify_and_parse(
+            &self,
+            _headers: &[(String, String)],
+            _raw_body: &[u8],
+        ) -> Result<WebhookEvent, WebhookVerificationError> {
+            unimplemented!("not exercised by the registry lookup test")
+        }
+    }
+
+    #[test]
+    fn registry_looks_up_by_both_channel_and_provider() {
+        let mut registry = WebhookVerifierRegistry::new();
+        registry.register("sandbox", Arc::new(StubVerifier(ChannelType::WhatsApp)));
+
+        assert!(registry.get(ChannelType::WhatsApp, "sandbox").is_some());
+        assert!(
+            registry
+                .get(ChannelType::WhatsApp, "other-provider")
+                .is_none()
+        );
+        assert!(registry.get(ChannelType::Sms, "sandbox").is_none());
+    }
 }

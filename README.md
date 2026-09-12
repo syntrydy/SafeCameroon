@@ -16,7 +16,7 @@ use case is missing children.
 
 ```bash
 cargo test --workspace
-DATABASE_URL=postgres://... cargo run -p safe-cameroon-api
+DATABASE_URL=postgres://... WEBHOOK_SHARED_SECRET=... cargo run -p safe-cameroon-api
 curl http://localhost:3000/health
 DATABASE_URL=postgres://... cargo run -p safe-cameroon-worker
 ```
@@ -24,7 +24,11 @@ DATABASE_URL=postgres://... cargo run -p safe-cameroon-worker
 The worker polls for `QUEUED`/`RETRYING` deliveries and dispatches them
 through mock/sandbox `WhatsAppChannel`/`SmsChannel`/`EmailChannel` adapters
 (prompt 08; stdout only, no vendor SDK) until real provider credentials
-exist.
+exist. The API exposes `POST /v1/webhooks/{channel}/{provider}`
+(docs/API.md section 7) for provider delivery-status callbacks; today the
+only registered provider is `sandbox`, verified with an HMAC-SHA256
+signature over `WEBHOOK_SHARED_SECRET` (matches every mock channel adapter's
+payload shape).
 
 `docs/` contains local planning material and is intentionally excluded from Git.
 
@@ -38,6 +42,7 @@ TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --te
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test delivery_engine_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test webhook_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-worker --bins -- --ignored
+TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-api --bins -- --ignored
 ```
 
 Run all integration test binaries with `--test-threads=1` if you see spurious
