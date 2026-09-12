@@ -165,13 +165,16 @@ mod tests {
     use hmac::{Hmac, Mac};
     use safe_cameroon_application::alert_workflow::create_alert_from_case;
     use safe_cameroon_application::case_workflow::{Actor, create_case_from_report, review_case};
+    use safe_cameroon_application::channel::{Channel, build_outbound_message};
     use safe_cameroon_application::delivery_workflow::{plan_deliveries, start_delivery_attempt};
     use safe_cameroon_application::prepare_anonymous_report;
     use safe_cameroon_domain::{
-        AlertField, AlertFieldValue, AlertPolicy, CaseStatus, ChannelEndpoint, ConsumerId,
-        ConsumerMatch, DeliveryPreference, DeliveryStatus, DeliveryStrategy, IncidentType,
-        ReportId, RetryPolicy, Severity, SubscriptionId, TargetGeography,
+        AlertField, AlertFieldValue, AlertPolicy, CaseStatus, ChannelEndpoint, Comparison,
+        ConsumerId, ConsumerMatch, DeliveryPreference, DeliveryStatus, DeliveryStrategy, GeoArea,
+        IncidentType, ReportId, RetryPolicy, Severity, Subscription, SubscriptionId,
+        SubscriptionRule, TargetGeography, deduplicate_by_consumer, evaluate_subscriptions,
     };
+    use safe_cameroon_infrastructure::channels::WhatsAppChannel;
     use serde_json::json;
     use sha2::Sha256;
     use tower::ServiceExt;
@@ -652,5 +655,277 @@ mod tests {
             .get("x-request-id")
             .and_then(|value| value.to_str().ok());
         assert!(generated.is_some_and(|value| Uuid::parse_str(value).is_ok()));
+    }
+
+    async fn json_body(response: axum::response::Response) -> serde_json::Value {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    /// docs/TESTING.md section 8, Scenario A ("missing child"), driven end to
+    /// end through the real HTTP surface wherever one exists: anonymous
+    /// report -> case review -> verified case -> community alert ->
+    /// subscription match -> a real channel adapter's delivery -> the
+    /// provider's delivered callback -> case resolution. There is no HTTP
+    /// endpoint for planning/dispatching deliveries yet (that is
+    /// `apps/worker`'s job, exercised directly here against the same
+    /// production repositories/adapters `apps/worker` uses) and AI analysis
+    /// is not implemented anywhere in this codebase, so both are skipped
+    /// rather than faked.
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn full_missing_child_scenario_from_anonymous_report_to_resolution() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool.clone()));
+        let reviewer = Uuid::new_v4().to_string();
+
+        // 1. Anonymous report - no actor required.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content": "My child has not returned from school."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let report_id = json_body(response).await["report_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        // 2. A reviewer opens a case from the report.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/cases")
+                    .header("content-type", "application/json")
+                    .header("X-Reviewer-Id", &reviewer)
+                    .body(Body::from(
+                        json!({"report_id": report_id, "incident_type": "MISSING_CHILD"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let case_body = json_body(response).await;
+        assert_eq!(case_body["status"], json!("REPORTED"));
+        let case_id = case_body["case_id"].as_str().unwrap().to_owned();
+
+        // 3. Review begins, then the case is verified.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/events"))
+                    .header("content-type", "application/json")
+                    .header("X-Reviewer-Id", &reviewer)
+                    .body(Body::from(json!({"to": "UNDER_REVIEW"}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/verify"))
+                    .header("X-Reviewer-Id", &reviewer)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await["status"], json!("VERIFIED"));
+
+        // 4. A community alert is raised from the verified case.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/alerts"))
+                    .header("content-type", "application/json")
+                    .header("X-Reviewer-Id", &reviewer)
+                    .body(Body::from(
+                        json!({
+                            "policy_id": "MISSING_CHILD_COMMUNITY",
+                            "severity": "HIGH",
+                            "target_geography": "Douala - Bonamoussadi",
+                            "fields": [
+                                {"field": "INCIDENT_CATEGORY", "value": "MISSING_CHILD"},
+                                {"field": "APPROXIMATE_AGE", "value": "8 years old"}
+                            ]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let alert_body = json_body(response).await;
+        assert_eq!(alert_body["visibility"], json!("COMMUNITY"));
+        let alert_id = alert_body["alert_id"].as_str().unwrap().to_owned();
+
+        // 5. Case becomes actively worked while the alert is delivered.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/events"))
+                    .header("content-type", "application/json")
+                    .header("X-Reviewer-Id", &reviewer)
+                    .body(Body::from(json!({"to": "ACTIVE"}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // 6. Subscription matching and delivery planning: no HTTP endpoint
+        // exists for either yet, so this exercises the same domain/
+        // application functions apps/worker's future subscription-driven
+        // planning step will call, against the real alert just created.
+        let alerts = PostgresAlertRepository::new(pool.clone());
+        let alert = alerts
+            .find_by_id(safe_cameroon_domain::AlertId::from_uuid(
+                Uuid::parse_str(&alert_id).unwrap(),
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+
+        let consumer_id = ConsumerId::new();
+        let subscription = Subscription::new(
+            SubscriptionId::new(),
+            consumer_id,
+            1,
+            vec![
+                SubscriptionRule::IncidentType(vec![IncidentType::MissingChild]),
+                SubscriptionRule::Severity {
+                    operator: Comparison::GreaterThanOrEqual,
+                    value: Severity::Medium,
+                },
+                SubscriptionRule::Geography(GeoArea::new("Douala").unwrap()),
+            ],
+        )
+        .unwrap();
+        let decisions = evaluate_subscriptions(&[subscription], &alert);
+        let consumer_matches = deduplicate_by_consumer(&decisions);
+        assert_eq!(
+            consumer_matches.len(),
+            1,
+            "the subscription must match this alert"
+        );
+
+        let preference = DeliveryPreference::new(
+            DeliveryStrategy::All,
+            vec![ChannelEndpoint::new(ChannelType::WhatsApp, "+237600000000").unwrap()],
+        )
+        .unwrap();
+        let mut preferences = std::collections::HashMap::new();
+        preferences.insert(consumer_id, preference);
+
+        let planned = plan_deliveries(
+            &alert,
+            &consumer_matches,
+            &preferences,
+            RetryPolicy::standard(),
+            Actor::Automated,
+            Uuid::new_v4(),
+        );
+        assert_eq!(planned.len(), 1);
+
+        let deliveries = PostgresDeliveryRepository::new(pool.clone());
+        deliveries.create_planned(&planned).await.unwrap();
+
+        // 7. Dispatch, against the real WhatsApp mock/sandbox adapter
+        // apps/worker registers.
+        let claimed = deliveries.claim_next(1).await.unwrap();
+        assert_eq!(claimed.len(), 1);
+        let mut delivery = claimed.into_iter().next().unwrap();
+        let message = build_outbound_message(&alert, &delivery);
+        let send_outcome = WhatsAppChannel.send(message).await.unwrap();
+        let succeeded = safe_cameroon_application::delivery_workflow::record_delivery_success(
+            &mut delivery,
+            send_outcome.provider_message_id.clone(),
+            Actor::Automated,
+            Uuid::new_v4(),
+        )
+        .unwrap();
+        deliveries
+            .apply_attempt_transition(&delivery, &succeeded)
+            .await
+            .unwrap();
+        assert_eq!(delivery.status(), DeliveryStatus::Sent);
+        let provider_message_id = send_outcome.provider_message_id.unwrap();
+
+        // 8. The provider's delivered callback arrives.
+        let webhook_body = json!({
+            "event_id": Uuid::new_v4().to_string(),
+            "message_id": provider_message_id,
+            "status": "DELIVERED",
+        })
+        .to_string();
+        let mut mac = HmacSha256::new_from_slice(TEST_SECRET).unwrap();
+        mac.update(webhook_body.as_bytes());
+        let signature: String = mac
+            .finalize()
+            .into_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/webhooks/whatsapp/sandbox")
+                    .header("content-type", "application/json")
+                    .header("x-signature", signature)
+                    .body(Body::from(webhook_body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let reloaded_delivery = deliveries.find_by_id(delivery.id()).await.unwrap().unwrap();
+        assert_eq!(reloaded_delivery.status(), DeliveryStatus::Delivered);
+
+        // 9. The child is found; the case is resolved.
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/resolve"))
+                    .header("X-Reviewer-Id", &reviewer)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await["status"], json!("RESOLVED"));
     }
 }
