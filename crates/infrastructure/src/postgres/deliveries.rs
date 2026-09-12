@@ -98,6 +98,33 @@ impl PostgresDeliveryRepository {
         Ok(row.map(|row| delivery_from_row(delivery_id, row)))
     }
 
+    /// Looks up the delivery a provider webhook callback refers to
+    /// (docs/API.md section 7). A delivery attempt only ever sets
+    /// `provider_message_id` on a `SENT` outcome, so the most recent such
+    /// attempt identifies the delivery unambiguously.
+    pub async fn find_by_provider_message_id(
+        &self,
+        provider_message_id: &str,
+    ) -> Result<Option<Delivery>, sqlx::Error> {
+        let delivery_id: Option<Uuid> = sqlx::query_scalar(
+            r#"
+            SELECT delivery_id
+            FROM delivery_attempts
+            WHERE provider_message_id = $1 AND outcome = 'SENT'
+            ORDER BY attempt_number DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(provider_message_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match delivery_id {
+            Some(id) => self.find_by_id(DeliveryId::from_uuid(id)).await,
+            None => Ok(None),
+        }
+    }
+
     /// Dequeues up to `limit` deliveries ready to be sent (`QUEUED` or
     /// `RETRYING`) and starts each one's attempt, all in one transaction.
     /// `FOR UPDATE SKIP LOCKED` is what makes this safe under concurrent
