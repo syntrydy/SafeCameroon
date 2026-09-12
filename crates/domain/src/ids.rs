@@ -16,11 +16,19 @@ macro_rules! strong_id {
             pub fn as_uuid(self) -> Uuid {
                 self.0
             }
+
+            /// Rebuilds an id from a stored value. Infrastructure adapters use this
+            /// when reconstituting an aggregate; application code should otherwise
+            /// only ever see ids produced by `new()`.
+            pub fn from_uuid(id: Uuid) -> Self {
+                Self(id)
+            }
         }
     };
 }
 
 strong_id!(ReportId);
 strong_id!(CaseId);
+strong_id!(CaseEventId);
 strong_id!(AuditEventId);
 strong_id!(OutboxEventId);

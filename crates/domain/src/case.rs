@@ -2,13 +2,30 @@ use core::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{CaseId, ReportId};
+use crate::{CaseEventId, CaseId, ReportId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum IncidentType {
     MissingChild,
     OtherProtectionIncident,
+}
+
+impl IncidentType {
+    pub fn as_database_value(self) -> &'static str {
+        match self {
+            Self::MissingChild => "MISSING_CHILD",
+            Self::OtherProtectionIncident => "OTHER_PROTECTION_INCIDENT",
+        }
+    }
+
+    pub fn from_database_value(value: &str) -> Option<Self> {
+        match value {
+            "MISSING_CHILD" => Some(Self::MissingChild),
+            "OTHER_PROTECTION_INCIDENT" => Some(Self::OtherProtectionIncident),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,6 +38,33 @@ pub enum CaseStatus {
     Resolved,
     Cancelled,
     Rejected,
+}
+
+impl CaseStatus {
+    pub fn as_database_value(self) -> &'static str {
+        match self {
+            Self::Reported => "REPORTED",
+            Self::UnderReview => "UNDER_REVIEW",
+            Self::Verified => "VERIFIED",
+            Self::Active => "ACTIVE",
+            Self::Resolved => "RESOLVED",
+            Self::Cancelled => "CANCELLED",
+            Self::Rejected => "REJECTED",
+        }
+    }
+
+    pub fn from_database_value(value: &str) -> Option<Self> {
+        match value {
+            "REPORTED" => Some(Self::Reported),
+            "UNDER_REVIEW" => Some(Self::UnderReview),
+            "VERIFIED" => Some(Self::Verified),
+            "ACTIVE" => Some(Self::Active),
+            "RESOLVED" => Some(Self::Resolved),
+            "CANCELLED" => Some(Self::Cancelled),
+            "REJECTED" => Some(Self::Rejected),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,6 +80,21 @@ pub enum CaseEventType {
     CaseRejected,
 }
 
+impl CaseEventType {
+    pub fn as_database_value(self) -> &'static str {
+        match self {
+            Self::CaseCreated => "CASE_CREATED",
+            Self::CaseReportLinked => "CASE_REPORT_LINKED",
+            Self::CaseUnderReview => "CASE_UNDER_REVIEW",
+            Self::CaseVerified => "CASE_VERIFIED",
+            Self::CaseActivated => "CASE_ACTIVATED",
+            Self::CaseResolved => "CASE_RESOLVED",
+            Self::CaseCancelled => "CASE_CANCELLED",
+            Self::CaseRejected => "CASE_REJECTED",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Case {
     id: CaseId,
@@ -47,6 +106,7 @@ pub struct Case {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaseEvent {
+    pub id: CaseEventId,
     pub case_id: CaseId,
     pub event_type: CaseEventType,
     pub aggregate_version: u64,
@@ -166,6 +226,7 @@ impl Case {
 
     fn event(&self, event_type: CaseEventType) -> CaseEvent {
         CaseEvent {
+            id: CaseEventId::new(),
             case_id: self.id,
             event_type,
             aggregate_version: self.version,
@@ -349,6 +410,30 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn incident_type_database_value_round_trips() {
+        for incident_type in [
+            IncidentType::MissingChild,
+            IncidentType::OtherProtectionIncident,
+        ] {
+            let value = incident_type.as_database_value();
+            assert_eq!(
+                IncidentType::from_database_value(value),
+                Some(incident_type)
+            );
+        }
+        assert_eq!(IncidentType::from_database_value("NOT_A_TYPE"), None);
+    }
+
+    #[test]
+    fn case_status_database_value_round_trips() {
+        for status in ALL_STATUSES {
+            let value = status.as_database_value();
+            assert_eq!(CaseStatus::from_database_value(value), Some(status));
+        }
+        assert_eq!(CaseStatus::from_database_value("NOT_A_STATUS"), None);
     }
 
     #[test]
