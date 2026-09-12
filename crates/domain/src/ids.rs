@@ -36,3 +36,6 @@ strong_id!(ConsumerId);
 strong_id!(SubscriptionId);
 strong_id!(AuditEventId);
 strong_id!(OutboxEventId);
+strong_id!(DeliveryId);
+strong_id!(DeliveryEventId);
+strong_id!(DeliveryAttemptId);
