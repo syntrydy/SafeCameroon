@@ -6,7 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 safe-cameroon-domain = { path = "../domain" }
 serde_json.workspace = true
 sha2.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
