@@ -1,5 +1,6 @@
 //! Application use cases. Infrastructure implements ports introduced here.
 
+pub mod alert_workflow;
 pub mod case_workflow;
 
 use core::fmt;
