@@ -1141,6 +1141,7 @@ name = "safe-cameroon-infrastructure"
 version = "0.1.0"
 dependencies = [
  "safe-cameroon-application",
+ "safe-cameroon-domain",
  "serde_json",
  "sqlx",
  "tokio",

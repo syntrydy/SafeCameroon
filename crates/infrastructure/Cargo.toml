@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 safe-cameroon-application = { path = "../application" }
+safe-cameroon-domain = { path = "../domain" }
 serde_json.workspace = true
 sqlx.workspace = true
 uuid.workspace = true
