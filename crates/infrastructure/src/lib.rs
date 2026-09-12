@@ -1,3 +1,5 @@
-//! Infrastructure adapters. This crate owns database-specific persistence.
+//! Infrastructure adapters. This crate owns database-specific persistence
+//! and provider adapters.
 
+pub mod channels;
 pub mod postgres;

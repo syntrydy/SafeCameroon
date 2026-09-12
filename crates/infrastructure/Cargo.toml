@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 safe-cameroon-application = { path = "../application" }
 safe-cameroon-domain = { path = "../domain" }
 serde_json.workspace = true
