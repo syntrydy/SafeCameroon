@@ -13,6 +13,13 @@ const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be configured");
     let pool = PgPoolOptions::new()
         .max_connections(10)
@@ -31,19 +38,19 @@ async fn main() {
     registry.register(Arc::new(SmsChannel));
     registry.register(Arc::new(EmailChannel));
 
-    println!("safe-cameroon-worker: polling for deliveries every {POLL_INTERVAL:?}");
+    tracing::info!(poll_interval = ?POLL_INTERVAL, "safe-cameroon-worker: polling for deliveries");
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
-                println!("safe-cameroon-worker: shutting down");
+                tracing::info!("safe-cameroon-worker: shutting down");
                 break;
             }
             result = dispatch::process_batch(&deliveries, &alerts, &registry, BATCH_SIZE) => {
                 match result {
                     Ok(0) => tokio::time::sleep(POLL_INTERVAL).await,
-                    Ok(count) => println!("safe-cameroon-worker: processed {count} delivery job(s)"),
+                    Ok(count) => tracing::info!(count, "safe-cameroon-worker: processed delivery job(s)"),
                     Err(error) => {
-                        eprintln!("safe-cameroon-worker: error processing deliveries: {error}");
+                        tracing::error!(%error, "safe-cameroon-worker: error processing deliveries");
                         tokio::time::sleep(POLL_INTERVAL).await;
                     }
                 }

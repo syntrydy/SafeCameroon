@@ -14,6 +14,7 @@ use safe_cameroon_infrastructure::postgres::DeliveryTransitionOutcome;
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::request_id::request_id_from_headers;
 use crate::state::AppState;
 
 fn persistence_failed(request_id: Uuid) -> ApiError {
@@ -36,7 +37,7 @@ pub async fn receive_webhook(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<StatusCode, ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
 
     let channel = ChannelType::from_database_value(&channel_segment.to_ascii_uppercase()).ok_or(
         ApiError {
@@ -66,14 +67,15 @@ pub async fn receive_webhook(
         })
         .collect();
 
-    let event = verifier
-        .verify_and_parse(&header_pairs, &body)
-        .map_err(|_| ApiError {
+    let event = verifier.verify_and_parse(&header_pairs, &body).map_err(|_| {
+        tracing::warn!(%request_id, channel = ?channel, %provider, "webhook verification failed");
+        ApiError {
             status: StatusCode::UNAUTHORIZED,
             code: "WEBHOOK_VERIFICATION_FAILED",
             message: "The webhook signature or payload could not be verified.",
             request_id,
-        })?;
+        }
+    })?;
 
     let is_new = state
         .webhook_replay_guard
@@ -81,6 +83,7 @@ pub async fn receive_webhook(
         .await
         .map_err(|_| persistence_failed(request_id))?;
     if !is_new {
+        tracing::info!(%request_id, channel = ?channel, provider_event_id = %event.provider_event_id, "duplicate webhook event ignored");
         return Ok(StatusCode::OK);
     }
 
@@ -90,14 +93,19 @@ pub async fn receive_webhook(
         .await
         .map_err(|_| persistence_failed(request_id))?
     else {
+        tracing::warn!(%request_id, channel = ?channel, "webhook event refers to an unknown delivery");
         return Ok(StatusCode::OK);
     };
+    let delivery_id = delivery.id();
 
     let applied = match apply_webhook_event(&mut delivery, &event, Actor::Automated, request_id) {
         Ok(applied) => applied,
         // The delivery is not in a state this event makes sense for (e.g.
         // already terminal); nothing more to do.
-        Err(_) => return Ok(StatusCode::OK),
+        Err(_) => {
+            tracing::warn!(%request_id, delivery_id = %delivery_id.as_uuid(), "webhook event does not match the delivery's current state");
+            return Ok(StatusCode::OK);
+        }
     };
 
     let outcome = match applied {
@@ -116,6 +124,7 @@ pub async fn receive_webhook(
     }
     .map_err(|_| persistence_failed(request_id))?;
 
+    tracing::info!(%request_id, delivery_id = %delivery_id.as_uuid(), channel = ?channel, ?outcome, "webhook event applied");
     match outcome {
         DeliveryTransitionOutcome::Applied | DeliveryTransitionOutcome::Conflict => {
             Ok(StatusCode::OK)

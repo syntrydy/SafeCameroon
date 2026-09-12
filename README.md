@@ -38,6 +38,13 @@ HMAC-SHA256-signed mock URLs over `ATTACHMENT_STORAGE_SECRET`
 URL). Uploading requires no actor (part of anonymous report submission);
 requesting a download URL requires an identified reviewer and is audited.
 
+Both binaries log structured, JSON-free `tracing` output (`RUST_LOG`
+overrides the `info` default, e.g. `RUST_LOG=debug`). Every API request
+carries a `x-request-id` header — the client's own value if it sent one,
+otherwise a generated one, always echoed back on the response — and that
+same id is the `request_id` recorded on the corresponding audit event,
+domain event, and any error response (docs/OBSERVABILITY.md section 2).
+
 `docs/` contains local planning material and is intentionally excluded from Git.
 
 Database integration tests are intentionally ignored by default. Run them only

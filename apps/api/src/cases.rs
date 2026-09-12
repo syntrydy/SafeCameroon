@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::request_id::request_id_from_headers;
 use crate::reviewer::actor_from_headers;
 use crate::state::AppState;
 
@@ -63,7 +64,7 @@ pub async fn create_case(
     headers: HeaderMap,
     Json(request): Json<CreateCaseRequest>,
 ) -> Result<(StatusCode, Json<CaseResponse>), ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
     let actor = actor_from_headers(&headers, request_id)?;
 
     let creation = create_case_from_report(
@@ -102,8 +103,9 @@ pub async fn create_case(
 pub async fn get_case(
     State(state): State<AppState>,
     Path(case_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> Result<Json<CaseResponse>, ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
     let case = state
         .cases
         .find_by_id(CaseId::from_uuid(case_id))
@@ -131,7 +133,7 @@ pub async fn link_report(
     headers: HeaderMap,
     Json(request): Json<LinkReportRequest>,
 ) -> Result<Json<CaseResponse>, ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
     let actor = actor_from_headers(&headers, request_id)?;
     let case_id = CaseId::from_uuid(case_id);
 
@@ -240,7 +242,7 @@ pub async fn create_case_event(
     headers: HeaderMap,
     Json(request): Json<CaseEventRequest>,
 ) -> Result<Json<CaseResponse>, ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
     let actor = actor_from_headers(&headers, request_id)?;
     transition_case(state, case_id, actor, request.to, request_id).await
 }
@@ -250,7 +252,7 @@ pub async fn verify_case(
     Path(case_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<Json<CaseResponse>, ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
     let actor = actor_from_headers(&headers, request_id)?;
     transition_case(state, case_id, actor, CaseStatus::Verified, request_id).await
 }
@@ -260,7 +262,7 @@ pub async fn resolve_case(
     Path(case_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<Json<CaseResponse>, ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
     let actor = actor_from_headers(&headers, request_id)?;
     transition_case(state, case_id, actor, CaseStatus::Resolved, request_id).await
 }
