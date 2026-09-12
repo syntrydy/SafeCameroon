@@ -4,6 +4,7 @@ pub mod alert_workflow;
 pub mod case_workflow;
 pub mod channel;
 pub mod delivery_workflow;
+pub mod webhook;
 
 use core::fmt;
 
