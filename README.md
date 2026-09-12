@@ -45,6 +45,12 @@ otherwise a generated one, always echoed back on the response — and that
 same id is the `request_id` recorded on the corresponding audit event,
 domain event, and any error response (docs/OBSERVABILITY.md section 2).
 
+`apps/api/src/main.rs`'s `full_missing_child_scenario_from_anonymous_report_to_resolution`
+test (docs/TESTING.md section 8, Scenario A) drives the whole missing-child
+flow end to end through the real HTTP surface: anonymous report -> case
+review -> verified case -> community alert -> subscription match ->
+delivery -> the provider's delivered callback -> case resolution.
+
 `docs/` contains local planning material and is intentionally excluded from Git.
 
 Database integration tests are intentionally ignored by default. Run them only
