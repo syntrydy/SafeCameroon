@@ -348,3 +348,131 @@ async fn a_non_retryable_failure_is_persisted_as_permanently_failed() {
     .unwrap();
     assert_eq!(retryable, Some(false));
 }
+
+/// Plans and persists one delivery for a fresh consumer on `alert`, returning
+/// its id.
+async fn plan_and_persist_one(
+    delivery_repository: &PostgresDeliveryRepository,
+    alert: &safe_cameroon_domain::Alert,
+    channel: ChannelType,
+) -> safe_cameroon_domain::DeliveryId {
+    let consumer_id = ConsumerId::new();
+    let preference = safe_cameroon_domain::DeliveryPreference::new(
+        DeliveryStrategy::All,
+        vec![ChannelEndpoint::new(channel, "+237600000000").unwrap()],
+    )
+    .unwrap();
+    let mut preferences = HashMap::new();
+    preferences.insert(consumer_id, preference);
+    let consumer_matches = vec![ConsumerMatch {
+        consumer_id,
+        matching_subscriptions: vec![SubscriptionId::new()],
+    }];
+    let planned = plan_deliveries(
+        alert,
+        &consumer_matches,
+        &preferences,
+        RetryPolicy::standard(),
+        Actor::Automated,
+        Uuid::new_v4(),
+    );
+    delivery_repository.create_planned(&planned).await.unwrap();
+    planned[0].delivery.id()
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn claim_next_only_dequeues_queued_or_retrying_deliveries_and_starts_their_attempt() {
+    let pool = test_pool().await;
+    let alert = verified_alert(&pool).await;
+    let delivery_repository = PostgresDeliveryRepository::new(pool.clone());
+
+    let queued_id = plan_and_persist_one(&delivery_repository, &alert, ChannelType::WhatsApp).await;
+    let sent_id = plan_and_persist_one(&delivery_repository, &alert, ChannelType::Sms).await;
+
+    // Drive the second delivery all the way to Sent, so it must not be
+    // re-claimed alongside the still-Queued one.
+    let mut sent_delivery = delivery_repository
+        .find_by_id(sent_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let start =
+        start_delivery_attempt(&mut sent_delivery, Actor::Automated, Uuid::new_v4()).unwrap();
+    delivery_repository
+        .apply_transition(&sent_delivery, &start)
+        .await
+        .unwrap();
+    let succeeded =
+        record_delivery_success(&mut sent_delivery, None, Actor::Automated, Uuid::new_v4())
+            .unwrap();
+    delivery_repository
+        .apply_attempt_transition(&sent_delivery, &succeeded)
+        .await
+        .unwrap();
+
+    let claimed = delivery_repository.claim_next(10).await.unwrap();
+
+    assert_eq!(claimed.len(), 1);
+    assert_eq!(claimed[0].id(), queued_id);
+    assert_eq!(claimed[0].status(), DeliveryStatus::Sending);
+    assert_eq!(claimed[0].attempt_count(), 1);
+
+    let (event_count,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM delivery_events WHERE delivery_id = $1 AND event_type = 'DELIVERY_STARTED'",
+    )
+    .bind(queued_id.as_uuid())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(event_count, 1);
+
+    // A second claim finds nothing left to dequeue.
+    let claimed_again = delivery_repository.claim_next(10).await.unwrap();
+    assert!(claimed_again.is_empty());
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn claim_next_never_lets_two_concurrent_workers_claim_the_same_delivery() {
+    let pool = test_pool().await;
+    let alert = verified_alert(&pool).await;
+    let setup_repository = PostgresDeliveryRepository::new(pool.clone());
+
+    let mut delivery_ids = Vec::new();
+    for _ in 0..3 {
+        delivery_ids
+            .push(plan_and_persist_one(&setup_repository, &alert, ChannelType::WhatsApp).await);
+    }
+
+    // A separate, multi-connection pool to the same database: genuine
+    // concurrent workers each need their own connection to take out
+    // independent row locks.
+    let database_url = env::var("TEST_DATABASE_URL").unwrap();
+    let concurrent_pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("test database must be reachable");
+
+    let mut workers = Vec::new();
+    for _ in 0..5 {
+        let repository = PostgresDeliveryRepository::new(concurrent_pool.clone());
+        workers.push(tokio::spawn(async move {
+            repository.claim_next(1).await.unwrap()
+        }));
+    }
+
+    let mut claimed_ids = Vec::new();
+    for worker in workers {
+        claimed_ids.extend(worker.await.unwrap().into_iter().map(|d| d.id()));
+    }
+
+    claimed_ids.sort_by_key(|id| id.as_uuid());
+    let mut expected = delivery_ids;
+    expected.sort_by_key(|id| id.as_uuid());
+    assert_eq!(
+        claimed_ids, expected,
+        "every delivery must be claimed exactly once across all concurrent workers"
+    );
+}
