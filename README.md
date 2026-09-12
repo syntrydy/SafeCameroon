@@ -28,8 +28,9 @@ against a dedicated PostgreSQL database whose name contains `test`:
 ```bash
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test report_submission_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test case_workflow_postgres -- --ignored
+TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test alert_policy_postgres -- --ignored
 ```
 
-Run both integration test binaries with `--test-threads=1` if you see spurious
+Run all integration test binaries with `--test-threads=1` if you see spurious
 `TRUNCATE` deadlocks; each test truncates the shared schema, so they are not
 safe to run concurrently against the same database.
