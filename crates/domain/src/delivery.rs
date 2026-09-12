@@ -397,10 +397,6 @@ pub struct Delivery {
     retry_policy: RetryPolicy,
     status: DeliveryStatus,
     attempt_count: u32,
-    /// Set by [`Delivery::record_failure`] so a later call can tell whether
-    /// the failure that led here was retryable; not itself part of
-    /// [`DeliveryStatus`] (see that type's doc comment).
-    last_failure_retryable: Option<bool>,
     version: u64,
 }
 
@@ -431,11 +427,46 @@ impl Delivery {
             retry_policy,
             status: DeliveryStatus::Queued,
             attempt_count: 0,
-            last_failure_retryable: None,
             version: 1,
         };
         let event = delivery.event(DeliveryEventType::DeliveryRequested);
         (delivery, event)
+    }
+
+    /// Rebuilds a delivery aggregate from persisted state; performs no
+    /// validation, mirroring [`crate::Alert::reconstitute`]. Only the
+    /// idempotency key's hash is persisted (not the key itself), so it is
+    /// recomputed here the same deterministic way it was first derived.
+    #[allow(clippy::too_many_arguments)]
+    pub fn reconstitute(
+        id: crate::DeliveryId,
+        alert_id: AlertId,
+        consumer_id: ConsumerId,
+        channel: ChannelType,
+        endpoint_address: String,
+        tier: u8,
+        matching_subscription_ids: Vec<SubscriptionId>,
+        retry_policy: RetryPolicy,
+        status: DeliveryStatus,
+        attempt_count: u32,
+        version: u64,
+    ) -> Self {
+        let idempotency_key =
+            DeliveryIdempotencyKey::new(consumer_id, alert_id, channel, &endpoint_address);
+        Self {
+            id,
+            alert_id,
+            consumer_id,
+            channel,
+            endpoint_address,
+            tier,
+            idempotency_key,
+            matching_subscription_ids,
+            retry_policy,
+            status,
+            attempt_count,
+            version,
+        }
     }
 
     pub fn id(&self) -> crate::DeliveryId {
@@ -467,6 +498,9 @@ impl Delivery {
     }
     pub fn attempt_count(&self) -> u32 {
         self.attempt_count
+    }
+    pub fn max_attempts(&self) -> u32 {
+        self.retry_policy.max_attempts()
     }
     pub fn version(&self) -> u64 {
         self.version
@@ -552,7 +586,6 @@ impl Delivery {
         } else {
             DeliveryStatus::FailedPermanently
         };
-        self.last_failure_retryable = Some(retryable);
         self.version += 1;
         let attempt = DeliveryAttempt {
             id: crate::DeliveryAttemptId::new(),
