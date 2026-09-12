@@ -30,5 +30,7 @@ macro_rules! strong_id {
 strong_id!(ReportId);
 strong_id!(CaseId);
 strong_id!(CaseEventId);
+strong_id!(AlertId);
+strong_id!(AlertEventId);
 strong_id!(AuditEventId);
 strong_id!(OutboxEventId);
