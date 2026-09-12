@@ -1,9 +1,8 @@
 //! The provider-neutral channel port (docs/CHANNELS.md section 2): "a
 //! channel is not a provider." This module defines the boundary a worker
-//! dispatches deliveries across and providers implement against; it must
-//! never depend on a vendor SDK (prompt 08 owns concrete adapters —
-//! mock/sandbox WhatsApp/SMS/Email implementations and webhook
-//! verification — behind this same trait).
+//! dispatches deliveries across; concrete mock/sandbox WhatsApp/SMS/Email
+//! adapters implementing it live in `crates/infrastructure` (prompt 08) and
+//! must never leak a vendor SDK type back into this trait.
 
 use core::fmt;
 use std::collections::HashMap;
@@ -47,10 +46,32 @@ impl fmt::Display for ChannelError {
 
 impl std::error::Error for ChannelError {}
 
-/// docs/CHANNELS.md section 2, verbatim shape.
+/// An endpoint address that is not shaped like something this channel could
+/// ever deliver to (docs/CHANNELS.md section 8: "validate endpoint").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EndpointValidationError {
+    pub channel: ChannelType,
+    pub reason: String,
+}
+
+impl fmt::Display for EndpointValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}: {}", self.channel, self.reason)
+    }
+}
+
+impl std::error::Error for EndpointValidationError {}
+
+/// docs/CHANNELS.md section 2 and section 8. A provider adapter implements
+/// this against its own vendor SDK/HTTP client (kept out of this trait
+/// entirely); `send` should call `validate_endpoint` itself as a last line
+/// of defense, since a stored endpoint could predate a stricter validation
+/// rule.
 #[async_trait]
 pub trait Channel: Send + Sync {
     fn channel_type(&self) -> ChannelType;
+
+    fn validate_endpoint(&self, endpoint_address: &str) -> Result<(), EndpointValidationError>;
 
     async fn send(&self, message: OutboundMessage) -> Result<ChannelSendOutcome, ChannelError>;
 }
@@ -109,6 +130,13 @@ mod tests {
     impl Channel for RecordingChannel {
         fn channel_type(&self) -> ChannelType {
             self.channel_type
+        }
+
+        fn validate_endpoint(
+            &self,
+            _endpoint_address: &str,
+        ) -> Result<(), EndpointValidationError> {
+            Ok(())
         }
 
         async fn send(&self, message: OutboundMessage) -> Result<ChannelSendOutcome, ChannelError> {

@@ -4,8 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use safe_cameroon_application::channel::ChannelRegistry;
-use safe_cameroon_domain::ChannelType;
-use safe_cameroon_infrastructure::channels::LoggingChannel;
+use safe_cameroon_infrastructure::channels::{EmailChannel, SmsChannel, WhatsAppChannel};
 use safe_cameroon_infrastructure::postgres::{PostgresAlertRepository, PostgresDeliveryRepository};
 use sqlx::postgres::PgPoolOptions;
 
@@ -24,12 +23,13 @@ async fn main() {
     let deliveries = PostgresDeliveryRepository::new(pool.clone());
     let alerts = PostgresAlertRepository::new(pool);
 
-    // LoggingChannel is a stand-in for every channel until prompt 08 adds
-    // real mock/sandbox WhatsApp/SMS/Email adapters behind this same port.
+    // Mock/sandbox adapters: real vendor credentials are not available yet
+    // (prompt 08). Endpoint validation and provider-error mapping are real;
+    // only the actual network call is simulated.
     let mut registry = ChannelRegistry::new();
-    registry.register(Arc::new(LoggingChannel::new(ChannelType::WhatsApp)));
-    registry.register(Arc::new(LoggingChannel::new(ChannelType::Sms)));
-    registry.register(Arc::new(LoggingChannel::new(ChannelType::Email)));
+    registry.register(Arc::new(WhatsAppChannel));
+    registry.register(Arc::new(SmsChannel));
+    registry.register(Arc::new(EmailChannel));
 
     println!("safe-cameroon-worker: polling for deliveries every {POLL_INTERVAL:?}");
     loop {

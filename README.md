@@ -22,9 +22,9 @@ DATABASE_URL=postgres://... cargo run -p safe-cameroon-worker
 ```
 
 The worker polls for `QUEUED`/`RETRYING` deliveries and dispatches them
-through a `LoggingChannel` (stdout only) for every channel type; prompt 08
-replaces this with real mock/sandbox WhatsApp/SMS/Email adapters behind the
-same `Channel` port.
+through mock/sandbox `WhatsAppChannel`/`SmsChannel`/`EmailChannel` adapters
+(prompt 08; stdout only, no vendor SDK) until real provider credentials
+exist.
 
 `docs/` contains local planning material and is intentionally excluded from Git.
 

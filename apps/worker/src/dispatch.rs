@@ -107,7 +107,7 @@ mod tests {
     use safe_cameroon_application::alert_workflow::create_alert_from_case;
     use safe_cameroon_application::case_workflow::{create_case_from_report, review_case};
     use safe_cameroon_application::channel::{
-        Channel, ChannelError, ChannelSendOutcome, OutboundMessage,
+        Channel, ChannelError, ChannelSendOutcome, EndpointValidationError, OutboundMessage,
     };
     use safe_cameroon_application::delivery_workflow::plan_deliveries;
     use safe_cameroon_application::prepare_anonymous_report;
@@ -247,6 +247,13 @@ mod tests {
             ChannelType::WhatsApp
         }
 
+        fn validate_endpoint(
+            &self,
+            _endpoint_address: &str,
+        ) -> Result<(), EndpointValidationError> {
+            Ok(())
+        }
+
         async fn send(
             &self,
             _message: OutboundMessage,
@@ -263,6 +270,13 @@ mod tests {
     impl Channel for AlwaysFailsPermanently {
         fn channel_type(&self) -> ChannelType {
             ChannelType::WhatsApp
+        }
+
+        fn validate_endpoint(
+            &self,
+            _endpoint_address: &str,
+        ) -> Result<(), EndpointValidationError> {
+            Ok(())
         }
 
         async fn send(
