@@ -16,7 +16,7 @@ use case is missing children.
 
 ```bash
 cargo test --workspace
-DATABASE_URL=postgres://... WEBHOOK_SHARED_SECRET=... cargo run -p safe-cameroon-api
+DATABASE_URL=postgres://... WEBHOOK_SHARED_SECRET=... ATTACHMENT_STORAGE_SECRET=... cargo run -p safe-cameroon-api
 curl http://localhost:3000/health
 DATABASE_URL=postgres://... cargo run -p safe-cameroon-worker
 ```
@@ -30,6 +30,14 @@ only registered provider is `sandbox`, verified with an HMAC-SHA256
 signature over `WEBHOOK_SHARED_SECRET` (matches every mock channel adapter's
 payload shape).
 
+Attachments (`POST /v1/reports/{report_id}/attachments`,
+`GET /v1/attachments/{id}/download-url`) work the same way: no real R2
+credentials exist yet, so `HmacSignedAttachmentStorage` issues short-lived,
+HMAC-SHA256-signed mock URLs over `ATTACHMENT_STORAGE_SECRET`
+(`ATTACHMENT_STORAGE_BASE_URL` optionally overrides the placeholder base
+URL). Uploading requires no actor (part of anonymous report submission);
+requesting a download URL requires an identified reviewer and is audited.
+
 `docs/` contains local planning material and is intentionally excluded from Git.
 
 Database integration tests are intentionally ignored by default. Run them only
@@ -41,6 +49,7 @@ TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --te
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test alert_policy_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test delivery_engine_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test webhook_postgres -- --ignored
+TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test attachments_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-worker --bins -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-api --bins -- --ignored
 ```

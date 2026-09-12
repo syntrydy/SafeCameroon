@@ -1,4 +1,5 @@
 use safe_cameroon_application::{AnonymousReportSubmission, report_submitted_event_payload};
+use safe_cameroon_domain::ReportId;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -33,6 +34,14 @@ impl PostgresReportRepository {
         insert_outbox_event(&mut transaction, submission).await?;
         transaction.commit().await?;
         Ok(SubmissionResult::Created)
+    }
+
+    pub async fn exists(&self, report_id: ReportId) -> Result<bool, sqlx::Error> {
+        let found: Option<Uuid> = sqlx::query_scalar("SELECT id FROM reports WHERE id = $1")
+            .bind(report_id.as_uuid())
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(found.is_some())
     }
 }
 
