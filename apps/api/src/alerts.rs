@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::request_id::request_id_from_headers;
 use crate::reviewer::actor_from_headers;
 use crate::state::AppState;
 
@@ -107,7 +108,7 @@ pub async fn create_alert(
     headers: HeaderMap,
     Json(request): Json<CreateAlertRequest>,
 ) -> Result<(StatusCode, Json<AlertResponse>), ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
     let actor = actor_from_headers(&headers, request_id)?;
 
     let policy = resolve_policy(&request.policy_id).ok_or(ApiError {
@@ -206,8 +207,9 @@ pub async fn create_alert(
 pub async fn get_alert(
     State(state): State<AppState>,
     Path(alert_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> Result<Json<AlertResponse>, ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
     let alert = state
         .alerts
         .find_by_id(AlertId::from_uuid(alert_id))
@@ -223,7 +225,7 @@ pub async fn cancel(
     Path(alert_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<Json<AlertResponse>, ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
     let actor = actor_from_headers(&headers, request_id)?;
 
     let mut alert = state

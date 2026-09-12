@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::request_id::request_id_from_headers;
 use crate::reviewer::actor_from_headers;
 use crate::state::AppState;
 
@@ -57,9 +58,10 @@ pub struct CreateAttachmentResponse {
 pub async fn create_attachment(
     State(state): State<AppState>,
     Path(report_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(request): Json<CreateAttachmentRequest>,
 ) -> Result<(StatusCode, Json<CreateAttachmentResponse>), ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
     let report_id = ReportId::from_uuid(report_id);
 
     if !state
@@ -142,13 +144,16 @@ pub async fn create_download_url(
     Path(attachment_id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<Json<DownloadUrlResponse>, ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
     let actor = actor_from_headers(&headers, request_id)?;
-    authorize(actor, Capability::ViewCase).map_err(|_| ApiError {
-        status: StatusCode::FORBIDDEN,
-        code: "NOT_AUTHORIZED",
-        message: "Only an identified reviewer may access an attachment.",
-        request_id,
+    authorize(actor, Capability::ViewCase).map_err(|_| {
+        tracing::warn!(%request_id, attachment_id = %attachment_id, "unauthorized attachment access attempt");
+        ApiError {
+            status: StatusCode::FORBIDDEN,
+            code: "NOT_AUTHORIZED",
+            message: "Only an identified reviewer may access an attachment.",
+            request_id,
+        }
     })?;
 
     let attachment = state
@@ -175,6 +180,7 @@ pub async fn create_download_url(
         .await
         .map_err(|_| persistence_failed(request_id))?;
 
+    tracing::info!(%request_id, attachment_id = %attachment.id().as_uuid(), "attachment download url issued");
     Ok(Json(DownloadUrlResponse {
         download_url: download.url,
         expires_in_seconds: download.expires_in.as_secs(),

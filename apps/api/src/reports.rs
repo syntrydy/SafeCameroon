@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::request_id::request_id_from_headers;
 use crate::state::AppState;
 
 #[derive(Deserialize)]
@@ -24,7 +25,7 @@ pub async fn create_anonymous_report(
     headers: axum::http::HeaderMap,
     Json(request): Json<CreateReportRequest>,
 ) -> Result<(StatusCode, Json<CreateReportResponse>), ApiError> {
-    let request_id = Uuid::new_v4();
+    let request_id = request_id_from_headers(&headers);
     let idempotency_key = headers
         .get("Idempotency-Key")
         .and_then(|value| value.to_str().ok())

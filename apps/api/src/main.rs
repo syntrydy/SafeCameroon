@@ -4,12 +4,14 @@ mod cases;
 mod error;
 mod health;
 mod reports;
+mod request_id;
 mod reviewer;
 mod state;
 mod webhooks;
 
 use std::sync::Arc;
 
+use axum::http::HeaderName;
 use axum::{
     Router,
     routing::{get, post},
@@ -26,6 +28,9 @@ use safe_cameroon_infrastructure::webhook::{
 };
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
+use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
+use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
+use tracing::Level;
 
 use crate::state::AppState;
 
@@ -33,6 +38,12 @@ use crate::state::AppState;
 /// sandbox channel emits the same payload shape); a real provider
 /// integration adds its own name here rather than replacing this one.
 const SANDBOX_WEBHOOK_PROVIDER: &str = "sandbox";
+
+/// docs/OBSERVABILITY.md section 2: "every request/job/event should carry a
+/// correlation/request ID." `SetRequestIdLayer` generates one when the
+/// caller didn't send it; [`request_id::request_id_from_headers`] is what
+/// every handler reads it back through.
+pub(crate) const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 
 fn build_state(
     pool: PgPool,
@@ -92,10 +103,28 @@ fn build_router(state: AppState) -> Router {
             post(webhooks::receive_webhook),
         )
         .with_state(state)
+        // Runs outermost-to-innermost on the request, innermost-to-outermost
+        // on the response, so listing SetRequestId last means it sees the
+        // request first: the id is already on the request's headers by the
+        // time TraceLayer builds its span or any handler runs.
+        .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
+        .layer(SetRequestIdLayer::new(REQUEST_ID_HEADER, MakeRequestUuid))
 }
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be configured");
     let webhook_secret = std::env::var("WEBHOOK_SHARED_SECRET")
         .expect("WEBHOOK_SHARED_SECRET must be configured")
@@ -554,5 +583,74 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_client_supplied_request_id_is_echoed_back_and_used_as_the_audit_request_id() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool.clone()));
+        let client_request_id = Uuid::new_v4();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .header("x-request-id", client_request_id.to_string())
+                    .body(Body::from(
+                        json!({"content": "A child is missing."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CREATED);
+        assert_eq!(
+            response
+                .headers()
+                .get("x-request-id")
+                .and_then(|value| value.to_str().ok()),
+            Some(client_request_id.to_string().as_str())
+        );
+
+        let (count,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM audit_events WHERE request_id = $1 AND action = 'REPORT_SUBMITTED'",
+        )
+        .bind(client_request_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            count, 1,
+            "the client-supplied x-request-id must be the same id recorded on the audit event"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_missing_request_id_is_generated_and_echoed_back() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let generated = response
+            .headers()
+            .get("x-request-id")
+            .and_then(|value| value.to_str().ok());
+        assert!(generated.is_some_and(|value| Uuid::parse_str(value).is_ok()));
     }
 }

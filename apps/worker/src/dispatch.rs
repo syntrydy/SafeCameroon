@@ -34,17 +34,24 @@ pub async fn process_batch(
 
 /// `delivery` must already be `Sending` (i.e. just returned by `claim_next`);
 /// every `record_delivery_*` call below is expected to succeed against that
-/// guarantee.
+/// guarantee. One `operation_id` correlates whichever outcome this dispatch
+/// produces (docs/OBSERVABILITY.md section 2) — previously `record_success`/
+/// `record_failure` each minted their own disconnected id.
 async fn dispatch_one(
     deliveries: &PostgresDeliveryRepository,
     alerts: &PostgresAlertRepository,
     registry: &ChannelRegistry,
     delivery: &mut Delivery,
 ) -> Result<(), sqlx::Error> {
-    let Some(channel) = registry.get(delivery.channel()) else {
+    let operation_id = Uuid::new_v4();
+    let delivery_id = delivery.id().as_uuid();
+    let channel = delivery.channel();
+
+    let Some(channel_adapter) = registry.get(channel) else {
         return fail(
             deliveries,
             delivery,
+            operation_id,
             false,
             "no channel registered for this delivery's channel type",
         )
@@ -52,25 +59,43 @@ async fn dispatch_one(
     };
 
     let Some(alert) = alerts.find_by_id(delivery.alert_id()).await? else {
-        return fail(deliveries, delivery, false, "alert no longer exists").await;
+        return fail(
+            deliveries,
+            delivery,
+            operation_id,
+            false,
+            "alert no longer exists",
+        )
+        .await;
     };
 
     let message = build_outbound_message(&alert, delivery);
-    match channel.send(message).await {
+    match channel_adapter.send(message).await {
         Ok(outcome) => {
             let transition = record_delivery_success(
                 delivery,
                 outcome.provider_message_id,
                 Actor::Automated,
-                Uuid::new_v4(),
+                operation_id,
             )
             .expect("a claimed delivery is always Sending");
             deliveries
                 .apply_attempt_transition(delivery, &transition)
                 .await?;
+            tracing::info!(
+                request_id = %operation_id, %delivery_id, channel = ?channel,
+                "delivery sent"
+            );
         }
         Err(error) => {
-            fail(deliveries, delivery, error.retryable, &error.message).await?;
+            fail(
+                deliveries,
+                delivery,
+                operation_id,
+                error.retryable,
+                &error.message,
+            )
+            .await?;
         }
     }
     Ok(())
@@ -79,20 +104,22 @@ async fn dispatch_one(
 async fn fail(
     deliveries: &PostgresDeliveryRepository,
     delivery: &mut Delivery,
+    operation_id: Uuid,
     retryable: bool,
     reason: &str,
 ) -> Result<(), sqlx::Error> {
-    let transition = record_delivery_failure(
-        delivery,
-        retryable,
-        reason,
-        Actor::Automated,
-        Uuid::new_v4(),
-    )
-    .expect("a claimed delivery is always Sending");
+    let delivery_id = delivery.id().as_uuid();
+    let channel = delivery.channel();
+    let transition =
+        record_delivery_failure(delivery, retryable, reason, Actor::Automated, operation_id)
+            .expect("a claimed delivery is always Sending");
     deliveries
         .apply_attempt_transition(delivery, &transition)
         .await?;
+    tracing::warn!(
+        request_id = %operation_id, %delivery_id, channel = ?channel, retryable, reason,
+        "delivery failed"
+    );
     Ok(())
 }
 

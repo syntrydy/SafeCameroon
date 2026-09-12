@@ -11,6 +11,8 @@ safe-cameroon-domain = { path = "../../crates/domain" }
 safe-cameroon-infrastructure = { path = "../../crates/infrastructure" }
 sqlx.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
