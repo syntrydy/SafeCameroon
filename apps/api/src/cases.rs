@@ -22,26 +22,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::reviewer::actor_from_headers;
 use crate::state::AppState;
-
-const REVIEWER_HEADER: &str = "X-Reviewer-Id";
-
-fn actor_from_headers(headers: &HeaderMap, request_id: Uuid) -> Result<Actor, ApiError> {
-    let Some(value) = headers.get(REVIEWER_HEADER) else {
-        return Ok(Actor::Automated);
-    };
-    let reviewer_id = value
-        .to_str()
-        .ok()
-        .and_then(|value| Uuid::parse_str(value.trim()).ok())
-        .ok_or(ApiError {
-            status: StatusCode::BAD_REQUEST,
-            code: "INVALID_REVIEWER_ID",
-            message: "X-Reviewer-Id must be a UUID.",
-            request_id,
-        })?;
-    Ok(Actor::Reviewer(reviewer_id))
-}
 
 fn case_not_found(request_id: Uuid) -> ApiError {
     ApiError {

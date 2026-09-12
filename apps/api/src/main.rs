@@ -1,14 +1,18 @@
+mod alerts;
 mod cases;
 mod error;
 mod health;
 mod reports;
+mod reviewer;
 mod state;
 
 use axum::{
     Router,
     routing::{get, post},
 };
-use safe_cameroon_infrastructure::postgres::{PostgresCaseRepository, PostgresReportRepository};
+use safe_cameroon_infrastructure::postgres::{
+    PostgresAlertRepository, PostgresCaseRepository, PostgresReportRepository,
+};
 use sqlx::postgres::PgPoolOptions;
 
 use crate::state::AppState;
@@ -31,9 +35,13 @@ async fn main() {
         .route("/v1/cases/{id}/events", post(cases::create_case_event))
         .route("/v1/cases/{id}/verify", post(cases::verify_case))
         .route("/v1/cases/{id}/resolve", post(cases::resolve_case))
+        .route("/v1/cases/{id}/alerts", post(alerts::create_alert))
+        .route("/v1/alerts/{id}", get(alerts::get_alert))
+        .route("/v1/alerts/{id}/cancel", post(alerts::cancel))
         .with_state(AppState {
             reports: PostgresReportRepository::new(pool.clone()),
-            cases: PostgresCaseRepository::new(pool),
+            cases: PostgresCaseRepository::new(pool.clone()),
+            alerts: PostgresAlertRepository::new(pool),
         });
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
