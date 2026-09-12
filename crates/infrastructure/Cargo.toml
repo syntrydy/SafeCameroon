@@ -9,7 +9,7 @@ license.workspace = true
 safe-cameroon-application = { path = "../application" }
 serde_json.workspace = true
 sqlx.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
-uuid.workspace = true

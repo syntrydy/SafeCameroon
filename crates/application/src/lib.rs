@@ -22,6 +22,7 @@ pub struct AnonymousReportSubmission {
     pub report: AnonymousReport,
     pub reference_code: String,
     pub reference_code_hash: Vec<u8>,
+    pub idempotency_key_hash: Option<Vec<u8>>,
     pub audit_event_id: AuditEventId,
     pub outbox_event_id: OutboxEventId,
     pub request_id: Uuid,
@@ -49,6 +50,7 @@ impl std::error::Error for ReportValidationError {}
 pub fn prepare_anonymous_report(
     raw_content: String,
     request_id: Uuid,
+    idempotency_key: Option<&str>,
 ) -> Result<AnonymousReportSubmission, ReportValidationError> {
     let normalized_content = raw_content.trim().to_owned();
     if normalized_content.is_empty() {
@@ -61,6 +63,7 @@ pub fn prepare_anonymous_report(
     let token = Uuid::new_v4().to_string();
     let reference_code = format!("SC-{token}");
     let reference_code_hash = Sha256::digest(reference_code.as_bytes()).to_vec();
+    let idempotency_key_hash = idempotency_key.map(|key| Sha256::digest(key.as_bytes()).to_vec());
 
     Ok(AnonymousReportSubmission {
         report: AnonymousReport {
@@ -70,6 +73,7 @@ pub fn prepare_anonymous_report(
         },
         reference_code,
         reference_code_hash,
+        idempotency_key_hash,
         audit_event_id: AuditEventId::new(),
         outbox_event_id: OutboxEventId::new(),
         request_id,
@@ -89,8 +93,12 @@ mod tests {
 
     #[test]
     fn prepares_an_anonymous_report_without_exposing_the_follow_up_secret() {
-        let submission =
-            prepare_anonymous_report("  A child is missing.  ".into(), Uuid::new_v4()).unwrap();
+        let submission = prepare_anonymous_report(
+            "  A child is missing.  ".into(),
+            Uuid::new_v4(),
+            Some("request-1"),
+        )
+        .unwrap();
 
         assert_eq!(submission.report.raw_content, "A child is missing.");
         assert!(submission.reference_code.starts_with("SC-"));
@@ -104,12 +112,16 @@ mod tests {
     #[test]
     fn rejects_blank_or_excessively_large_reports() {
         assert_eq!(
-            prepare_anonymous_report(" \n ".into(), Uuid::new_v4()).unwrap_err(),
+            prepare_anonymous_report(" \n ".into(), Uuid::new_v4(), None).unwrap_err(),
             ReportValidationError::EmptyContent
         );
         assert_eq!(
-            prepare_anonymous_report("a".repeat(MAX_REPORT_CONTENT_CHARS + 1), Uuid::new_v4())
-                .unwrap_err(),
+            prepare_anonymous_report(
+                "a".repeat(MAX_REPORT_CONTENT_CHARS + 1),
+                Uuid::new_v4(),
+                None,
+            )
+            .unwrap_err(),
             ReportValidationError::ContentTooLong
         );
     }

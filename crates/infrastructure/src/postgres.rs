@@ -1,5 +1,12 @@
 use safe_cameroon_application::{AnonymousReportSubmission, report_submitted_event_payload};
 use sqlx::{PgPool, Postgres, Transaction};
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubmissionResult {
+    Created,
+    Duplicate { report_id: Uuid },
+}
 
 #[derive(Clone)]
 pub struct PostgresReportRepository {
@@ -16,32 +23,48 @@ impl PostgresReportRepository {
     pub async fn submit_anonymous(
         &self,
         submission: &AnonymousReportSubmission,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<SubmissionResult, sqlx::Error> {
         let mut transaction = self.pool.begin().await?;
-        insert_report(&mut transaction, submission).await?;
+        if let Some(report_id) = insert_report(&mut transaction, submission).await? {
+            transaction.rollback().await?;
+            return Ok(SubmissionResult::Duplicate { report_id });
+        }
         insert_audit_event(&mut transaction, submission).await?;
         insert_outbox_event(&mut transaction, submission).await?;
-        transaction.commit().await
+        transaction.commit().await?;
+        Ok(SubmissionResult::Created)
     }
 }
 
 async fn insert_report(
     transaction: &mut Transaction<'_, Postgres>,
     submission: &AnonymousReportSubmission,
-) -> Result<(), sqlx::Error> {
+) -> Result<Option<Uuid>, sqlx::Error> {
     sqlx::query(
         r#"
-        INSERT INTO reports (id, source_channel, raw_content, follow_up_token_hash)
-        VALUES ($1, $2::report_source_channel, $3, $4)
+        INSERT INTO reports (id, source_channel, raw_content, follow_up_token_hash, idempotency_key_hash)
+        VALUES ($1, $2::report_source_channel, $3, $4, $5)
+        ON CONFLICT (idempotency_key_hash) WHERE idempotency_key_hash IS NOT NULL DO NOTHING
         "#,
     )
     .bind(submission.report.id.as_uuid())
     .bind(submission.report.source_channel.as_database_value())
     .bind(&submission.report.raw_content)
     .bind(&submission.reference_code_hash)
+    .bind(&submission.idempotency_key_hash)
     .execute(&mut **transaction)
     .await?;
-    Ok(())
+    if submission.idempotency_key_hash.is_some() {
+        let existing =
+            sqlx::query_scalar::<_, Uuid>("SELECT id FROM reports WHERE idempotency_key_hash = $1")
+                .bind(&submission.idempotency_key_hash)
+                .fetch_optional(&mut **transaction)
+                .await?;
+        if existing != Some(submission.report.id.as_uuid()) {
+            return Ok(existing);
+        }
+    }
+    Ok(None)
 }
 
 async fn insert_audit_event(

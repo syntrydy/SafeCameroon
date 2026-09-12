@@ -1,7 +1,7 @@
 use std::env;
 
 use safe_cameroon_application::prepare_anonymous_report;
-use safe_cameroon_infrastructure::postgres::PostgresReportRepository;
+use safe_cameroon_infrastructure::postgres::{PostgresReportRepository, SubmissionResult};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use uuid::Uuid;
 
@@ -38,10 +38,17 @@ async fn test_pool() -> PgPool {
 async fn submission_persists_report_audit_event_and_outbox_event_together() {
     let pool = test_pool().await;
     let repository = PostgresReportRepository::new(pool.clone());
-    let submission =
-        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4()).unwrap();
+    let submission = prepare_anonymous_report(
+        "A child is missing.".into(),
+        Uuid::new_v4(),
+        Some("report-retry-1"),
+    )
+    .unwrap();
 
-    repository.submit_anonymous(&submission).await.unwrap();
+    assert_eq!(
+        repository.submit_anonymous(&submission).await.unwrap(),
+        SubmissionResult::Created
+    );
 
     let (content, token_hash): (String, Vec<u8>) =
         sqlx::query_as("SELECT raw_content, follow_up_token_hash FROM reports WHERE id = $1")
@@ -82,11 +89,11 @@ async fn submission_persists_report_audit_event_and_outbox_event_together() {
 async fn audit_failure_rolls_back_the_report_insert() {
     let pool = test_pool().await;
     let repository = PostgresReportRepository::new(pool.clone());
-    let first = prepare_anonymous_report("Initial report.".into(), Uuid::new_v4()).unwrap();
+    let first = prepare_anonymous_report("Initial report.".into(), Uuid::new_v4(), None).unwrap();
     repository.submit_anonymous(&first).await.unwrap();
 
     let mut conflicting =
-        prepare_anonymous_report("Must be rolled back.".into(), Uuid::new_v4()).unwrap();
+        prepare_anonymous_report("Must be rolled back.".into(), Uuid::new_v4(), None).unwrap();
     conflicting.audit_event_id = first.audit_event_id;
     let report_id = conflicting.report.id.as_uuid();
 
@@ -100,5 +107,35 @@ async fn audit_failure_rolls_back_the_report_insert() {
     assert_eq!(
         report_count, 0,
         "a failed audit insert must roll back the report"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn idempotency_key_prevents_a_duplicate_report() {
+    let pool = test_pool().await;
+    let repository = PostgresReportRepository::new(pool);
+    let first = prepare_anonymous_report(
+        "First attempt.".into(),
+        Uuid::new_v4(),
+        Some("same-retry-key"),
+    )
+    .unwrap();
+    let second = prepare_anonymous_report(
+        "Retry attempt.".into(),
+        Uuid::new_v4(),
+        Some("same-retry-key"),
+    )
+    .unwrap();
+
+    assert_eq!(
+        repository.submit_anonymous(&first).await.unwrap(),
+        SubmissionResult::Created
+    );
+    assert_eq!(
+        repository.submit_anonymous(&second).await.unwrap(),
+        SubmissionResult::Duplicate {
+            report_id: first.report.id.as_uuid()
+        }
     );
 }
