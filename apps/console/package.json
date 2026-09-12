@@ -1,0 +1,9 @@
+{
+  "name": "safe-cameroon-console",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Organization console for SafeCameroon",
+  "scripts": {
+    "check": "node --check src/main.js"
+  }
+}

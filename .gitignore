@@ -1,0 +1,15 @@
+# Product and internal planning material is intentionally local-only.
+docs/
+
+# Build and local tooling output.
+target/
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+
+# Editor and operating-system files.
+.DS_Store
+.idea/
+.vscode/

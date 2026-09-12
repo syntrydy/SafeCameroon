@@ -1,0 +1,9 @@
+[package]
+name = "safe-cameroon-application"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+safe-cameroon-domain = { path = "../domain" }
