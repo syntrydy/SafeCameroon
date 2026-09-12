@@ -1,4 +1,5 @@
 mod alerts;
+mod attachments;
 mod cases;
 mod error;
 mod health;
@@ -16,9 +17,10 @@ use axum::{
 use safe_cameroon_application::webhook::WebhookVerifierRegistry;
 use safe_cameroon_domain::ChannelType;
 use safe_cameroon_infrastructure::postgres::{
-    PostgresAlertRepository, PostgresCaseRepository, PostgresDeliveryRepository,
-    PostgresReportRepository,
+    PostgresAlertRepository, PostgresAttachmentRepository, PostgresCaseRepository,
+    PostgresDeliveryRepository, PostgresReportRepository,
 };
+use safe_cameroon_infrastructure::storage::HmacSignedAttachmentStorage;
 use safe_cameroon_infrastructure::webhook::{
     HmacSignedWebhookVerifier, PostgresWebhookReplayGuard,
 };
@@ -32,7 +34,12 @@ use crate::state::AppState;
 /// integration adds its own name here rather than replacing this one.
 const SANDBOX_WEBHOOK_PROVIDER: &str = "sandbox";
 
-fn build_state(pool: PgPool, webhook_secret: Vec<u8>) -> AppState {
+fn build_state(
+    pool: PgPool,
+    webhook_secret: Vec<u8>,
+    attachment_storage_secret: Vec<u8>,
+    attachment_storage_base_url: String,
+) -> AppState {
     let mut webhook_verifiers = WebhookVerifierRegistry::new();
     for channel in [ChannelType::WhatsApp, ChannelType::Sms, ChannelType::Email] {
         webhook_verifiers.register(
@@ -49,6 +56,11 @@ fn build_state(pool: PgPool, webhook_secret: Vec<u8>) -> AppState {
         cases: PostgresCaseRepository::new(pool.clone()),
         alerts: PostgresAlertRepository::new(pool.clone()),
         deliveries: PostgresDeliveryRepository::new(pool.clone()),
+        attachments: PostgresAttachmentRepository::new(pool.clone()),
+        attachment_storage: Arc::new(HmacSignedAttachmentStorage::new(
+            attachment_storage_base_url,
+            attachment_storage_secret,
+        )),
         webhook_verifiers: Arc::new(webhook_verifiers),
         webhook_replay_guard: Arc::new(PostgresWebhookReplayGuard::new(pool)),
     }
@@ -58,6 +70,14 @@ fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health::health))
         .route("/v1/reports", post(reports::create_anonymous_report))
+        .route(
+            "/v1/reports/{report_id}/attachments",
+            post(attachments::create_attachment),
+        )
+        .route(
+            "/v1/attachments/{id}/download-url",
+            get(attachments::create_download_url),
+        )
         .route("/v1/cases", post(cases::create_case))
         .route("/v1/cases/{id}", get(cases::get_case))
         .route("/v1/cases/{id}/reports", post(cases::link_report))
@@ -80,13 +100,23 @@ async fn main() {
     let webhook_secret = std::env::var("WEBHOOK_SHARED_SECRET")
         .expect("WEBHOOK_SHARED_SECRET must be configured")
         .into_bytes();
+    let attachment_storage_secret = std::env::var("ATTACHMENT_STORAGE_SECRET")
+        .expect("ATTACHMENT_STORAGE_SECRET must be configured")
+        .into_bytes();
+    let attachment_storage_base_url = std::env::var("ATTACHMENT_STORAGE_BASE_URL")
+        .unwrap_or_else(|_| "https://storage.sandbox.local".to_owned());
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&database_url)
         .await
         .expect("database connection must succeed");
 
-    let app = build_router(build_state(pool, webhook_secret));
+    let app = build_router(build_state(
+        pool,
+        webhook_secret,
+        attachment_storage_secret,
+        attachment_storage_base_url,
+    ));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
         .await
@@ -121,6 +151,15 @@ mod tests {
     type HmacSha256 = Hmac<Sha256>;
     const TEST_SECRET: &[u8] = b"test-webhook-secret";
 
+    fn test_state(pool: PgPool) -> AppState {
+        build_state(
+            pool,
+            TEST_SECRET.to_vec(),
+            b"test-attachment-storage-secret".to_vec(),
+            "https://storage.example".to_owned(),
+        )
+    }
+
     async fn test_pool() -> PgPool {
         let database_url = env::var("TEST_DATABASE_URL")
             .expect("TEST_DATABASE_URL must point to a dedicated PostgreSQL test database");
@@ -142,8 +181,8 @@ mod tests {
         static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
         MIGRATOR.run(&pool).await.expect("migrations must apply");
         sqlx::query(
-            "TRUNCATE webhook_replay_events, delivery_events, delivery_attempts, deliveries, \
-             alert_events, alert_fields, alerts, case_events, case_reports, cases, \
+            "TRUNCATE attachments, webhook_replay_events, delivery_events, delivery_attempts, \
+             deliveries, alert_events, alert_fields, alerts, case_events, case_reports, cases, \
              outbox_events, audit_events, reports, reporters",
         )
         .execute(&pool)
@@ -256,7 +295,7 @@ mod tests {
     async fn a_correctly_signed_webhook_marks_the_delivery_delivered() {
         let pool = test_pool().await;
         let delivery_id = seeded_delivery(&pool).await;
-        let app = build_router(build_state(pool.clone(), TEST_SECRET.to_vec()));
+        let app = build_router(test_state(pool.clone()));
 
         let body = json!({
             "event_id": "evt-1",
@@ -289,7 +328,7 @@ mod tests {
     async fn a_replayed_webhook_event_is_accepted_but_applied_only_once() {
         let pool = test_pool().await;
         let delivery_id = seeded_delivery(&pool).await;
-        let app = build_router(build_state(pool.clone(), TEST_SECRET.to_vec()));
+        let app = build_router(test_state(pool.clone()));
 
         let body = json!({
             "event_id": "evt-2",
@@ -335,7 +374,7 @@ mod tests {
     async fn an_incorrectly_signed_webhook_is_rejected_and_does_not_change_the_delivery() {
         let pool = test_pool().await;
         let delivery_id = seeded_delivery(&pool).await;
-        let app = build_router(build_state(pool.clone(), TEST_SECRET.to_vec()));
+        let app = build_router(test_state(pool.clone()));
 
         let body = json!({
             "event_id": "evt-3",
@@ -367,7 +406,7 @@ mod tests {
     #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
     async fn an_unknown_provider_is_rejected_with_not_found() {
         let pool = test_pool().await;
-        let app = build_router(build_state(pool, TEST_SECRET.to_vec()));
+        let app = build_router(test_state(pool));
 
         let response = app
             .oneshot(
@@ -381,5 +420,139 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    async fn seeded_report(pool: &PgPool) -> ReportId {
+        let reports = PostgresReportRepository::new(pool.clone());
+        let submission =
+            prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+        reports.submit_anonymous(&submission).await.unwrap();
+        submission.report.id
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn creates_an_attachment_upload_url_without_any_actor() {
+        let pool = test_pool().await;
+        let report_id = seeded_report(&pool).await;
+        let app = build_router(test_state(pool));
+
+        let body = json!({
+            "content_type": "image/jpeg",
+            "size_bytes": 2048,
+            "checksum": "deadbeef",
+        })
+        .to_string();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/reports/{}/attachments", report_id.as_uuid()))
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(
+            json["upload_url"]
+                .as_str()
+                .unwrap()
+                .contains(json["object_key"].as_str().unwrap())
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn rejects_an_attachment_for_an_unknown_report() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let body = json!({
+            "content_type": "image/jpeg",
+            "size_bytes": 2048,
+            "checksum": "deadbeef",
+        })
+        .to_string();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/reports/{}/attachments", Uuid::new_v4()))
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_download_url_requires_an_identified_reviewer_and_is_audited() {
+        let pool = test_pool().await;
+        let report_id = seeded_report(&pool).await;
+        let attachments = PostgresAttachmentRepository::new(pool.clone());
+        let attachment = safe_cameroon_domain::Attachment::new(
+            report_id,
+            safe_cameroon_domain::StorageProvider::R2,
+            "attachments/report-1/key-1",
+            safe_cameroon_domain::AttachmentContentType::ImageJpeg,
+            2048,
+            "deadbeef",
+        )
+        .unwrap();
+        attachments.create(&attachment).await.unwrap();
+        let app = build_router(test_state(pool.clone()));
+
+        let unauthorized = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!(
+                        "/v1/attachments/{}/download-url",
+                        attachment.id().as_uuid()
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unauthorized.status(), StatusCode::FORBIDDEN);
+
+        let authorized = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!(
+                        "/v1/attachments/{}/download-url",
+                        attachment.id().as_uuid()
+                    ))
+                    .header("X-Reviewer-Id", Uuid::new_v4().to_string())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(authorized.status(), StatusCode::OK);
+
+        let (count,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM audit_events WHERE resource_id = $1 \
+             AND action = 'ATTACHMENT_DOWNLOAD_URL_ISSUED'",
+        )
+        .bind(attachment.id().as_uuid())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 1);
     }
 }

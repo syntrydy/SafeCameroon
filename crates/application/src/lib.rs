@@ -1,6 +1,8 @@
 //! Application use cases. Infrastructure implements ports introduced here.
 
 pub mod alert_workflow;
+pub mod attachment_workflow;
+pub mod authorization;
 pub mod case_workflow;
 pub mod channel;
 pub mod delivery_workflow;

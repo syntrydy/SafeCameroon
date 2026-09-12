@@ -3,4 +3,5 @@
 
 pub mod channels;
 pub mod postgres;
+pub mod storage;
 pub mod webhook;
