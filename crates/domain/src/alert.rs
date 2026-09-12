@@ -115,6 +115,41 @@ impl AlertField {
     }
 }
 
+/// A routing-only triage level assigned when an alert is raised. This is
+/// deliberately an `Alert` concern, not a `Case` field: the case workflow
+/// (prompt 04) has no severity-assignment step of its own yet, so a reviewer
+/// assigns severity as part of the explicit alert-creation decision rather
+/// than it being an implicit, unmanaged mutation of the case record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Severity {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+impl Severity {
+    pub fn as_database_value(self) -> &'static str {
+        match self {
+            Self::Low => "LOW",
+            Self::Medium => "MEDIUM",
+            Self::High => "HIGH",
+            Self::Critical => "CRITICAL",
+        }
+    }
+
+    pub fn from_database_value(value: &str) -> Option<Self> {
+        match value {
+            "LOW" => Some(Self::Low),
+            "MEDIUM" => Some(Self::Medium),
+            "HIGH" => Some(Self::High),
+            "CRITICAL" => Some(Self::Critical),
+            _ => None,
+        }
+    }
+}
+
 /// A stable, human-readable policy code, e.g. `"MISSING_CHILD_COMMUNITY"`.
 /// Paired with [`AlertPolicy::version`] this is the "explicit policy
 /// ID/version" prompt 05 requires.
@@ -440,7 +475,9 @@ pub struct Alert {
     policy_id: AlertPolicyId,
     policy_version: u32,
     incident_type: IncidentType,
+    severity: Severity,
     visibility: AlertVisibility,
+    trigger: CaseEventType,
     target_geography: TargetGeography,
     status: AlertStatus,
     fields: Vec<AlertFieldValue>,
@@ -454,6 +491,7 @@ impl Alert {
     pub fn create_from_case(
         case: &Case,
         policy: &AlertPolicy,
+        severity: Severity,
         target_geography: TargetGeography,
         fields: Vec<AlertFieldValue>,
     ) -> Result<(Self, AlertEvent), AlertCreationError> {
@@ -490,7 +528,9 @@ impl Alert {
             policy_id: policy.id().clone(),
             policy_version: policy.version(),
             incident_type: policy.incident_type(),
+            severity,
             visibility: policy.visibility(),
+            trigger: policy.trigger(),
             target_geography,
             status: AlertStatus::Active,
             fields,
@@ -509,7 +549,9 @@ impl Alert {
         policy_id: AlertPolicyId,
         policy_version: u32,
         incident_type: IncidentType,
+        severity: Severity,
         visibility: AlertVisibility,
+        trigger: CaseEventType,
         target_geography: TargetGeography,
         status: AlertStatus,
         fields: Vec<AlertFieldValue>,
@@ -521,7 +563,9 @@ impl Alert {
             policy_id,
             policy_version,
             incident_type,
+            severity,
             visibility,
+            trigger,
             target_geography,
             status,
             fields,
@@ -556,8 +600,14 @@ impl Alert {
     pub fn incident_type(&self) -> IncidentType {
         self.incident_type
     }
+    pub fn severity(&self) -> Severity {
+        self.severity
+    }
     pub fn visibility(&self) -> AlertVisibility {
         self.visibility
+    }
+    pub fn trigger(&self) -> CaseEventType {
+        self.trigger
     }
     pub fn target_geography(&self) -> &TargetGeography {
         &self.target_geography
@@ -744,7 +794,13 @@ mod tests {
                 vec![ReportId::new()],
                 1,
             );
-            let outcome = Alert::create_from_case(&case, &policy, geography.clone(), safe_fields());
+            let outcome = Alert::create_from_case(
+                &case,
+                &policy,
+                Severity::High,
+                geography.clone(),
+                safe_fields(),
+            );
             let expected_allowed = is_verified_or_later(status);
             assert_eq!(
                 outcome.is_ok(),
@@ -772,6 +828,7 @@ mod tests {
         let error = Alert::create_from_case(
             &case,
             &policy,
+            Severity::High,
             geography,
             vec![field(AlertField::ExactLocation, "12 Rue de la Paix")],
         )
@@ -803,6 +860,7 @@ mod tests {
             let error = Alert::create_from_case(
                 &case,
                 &policy,
+                Severity::High,
                 geography.clone(),
                 vec![field(restricted, "should never appear")],
             )
@@ -813,7 +871,9 @@ mod tests {
             );
         }
 
-        let (alert, _) = Alert::create_from_case(&case, &policy, geography, safe_fields()).unwrap();
+        let (alert, _) =
+            Alert::create_from_case(&case, &policy, Severity::High, geography, safe_fields())
+                .unwrap();
         for restricted in [
             AlertField::ReporterIdentity,
             AlertField::InternalNotes,
@@ -830,7 +890,9 @@ mod tests {
         let policy = AlertPolicy::missing_child_community_v1();
         let geography = TargetGeography::new("Douala").unwrap();
 
-        let error = Alert::create_from_case(&case, &policy, geography, safe_fields()).unwrap_err();
+        let error =
+            Alert::create_from_case(&case, &policy, Severity::High, geography, safe_fields())
+                .unwrap_err();
         assert_eq!(
             error,
             AlertCreationError::IncidentTypeMismatch {
@@ -849,6 +911,7 @@ mod tests {
         let error = Alert::create_from_case(
             &case,
             &policy,
+            Severity::High,
             geography,
             vec![
                 field(AlertField::ApproximateAge, "8 years old"),
@@ -870,7 +933,8 @@ mod tests {
         let policy = AlertPolicy::missing_child_community_v1();
         let geography = TargetGeography::new("Douala").unwrap();
         let (mut alert, _) =
-            Alert::create_from_case(&case, &policy, geography, safe_fields()).unwrap();
+            Alert::create_from_case(&case, &policy, Severity::High, geography, safe_fields())
+                .unwrap();
 
         let event = alert.cancel().unwrap();
         assert_eq!(event.event_type, AlertEventType::AlertCancelled);

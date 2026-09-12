@@ -32,5 +32,7 @@ strong_id!(CaseId);
 strong_id!(CaseEventId);
 strong_id!(AlertId);
 strong_id!(AlertEventId);
+strong_id!(ConsumerId);
+strong_id!(SubscriptionId);
 strong_id!(AuditEventId);
 strong_id!(OutboxEventId);

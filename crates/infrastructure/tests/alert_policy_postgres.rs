@@ -110,6 +110,7 @@ async fn creates_a_community_alert_from_a_verified_case() {
     let creation = create_alert_from_case(
         &case,
         &policy,
+        safe_cameroon_domain::Severity::High,
         TargetGeography::new("Douala - Bonamoussadi").unwrap(),
         safe_fields(),
         Actor::Reviewer(Uuid::new_v4()),
@@ -168,6 +169,7 @@ async fn cancels_an_alert_and_rejects_a_stale_retry() {
     let creation = create_alert_from_case(
         &case,
         &policy,
+        safe_cameroon_domain::Severity::High,
         TargetGeography::new("Douala").unwrap(),
         safe_fields(),
         Actor::Reviewer(Uuid::new_v4()),

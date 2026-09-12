@@ -93,6 +93,20 @@ impl CaseEventType {
             Self::CaseRejected => "CASE_REJECTED",
         }
     }
+
+    pub fn from_database_value(value: &str) -> Option<Self> {
+        match value {
+            "CASE_CREATED" => Some(Self::CaseCreated),
+            "CASE_REPORT_LINKED" => Some(Self::CaseReportLinked),
+            "CASE_UNDER_REVIEW" => Some(Self::CaseUnderReview),
+            "CASE_VERIFIED" => Some(Self::CaseVerified),
+            "CASE_ACTIVATED" => Some(Self::CaseActivated),
+            "CASE_RESOLVED" => Some(Self::CaseResolved),
+            "CASE_CANCELLED" => Some(Self::CaseCancelled),
+            "CASE_REJECTED" => Some(Self::CaseRejected),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -434,6 +448,24 @@ mod tests {
             assert_eq!(CaseStatus::from_database_value(value), Some(status));
         }
         assert_eq!(CaseStatus::from_database_value("NOT_A_STATUS"), None);
+    }
+
+    #[test]
+    fn case_event_type_database_value_round_trips() {
+        for event_type in [
+            CaseEventType::CaseCreated,
+            CaseEventType::CaseReportLinked,
+            CaseEventType::CaseUnderReview,
+            CaseEventType::CaseVerified,
+            CaseEventType::CaseActivated,
+            CaseEventType::CaseResolved,
+            CaseEventType::CaseCancelled,
+            CaseEventType::CaseRejected,
+        ] {
+            let value = event_type.as_database_value();
+            assert_eq!(CaseEventType::from_database_value(value), Some(event_type));
+        }
+        assert_eq!(CaseEventType::from_database_value("NOT_AN_EVENT"), None);
     }
 
     #[test]

@@ -13,7 +13,7 @@ use safe_cameroon_application::alert_workflow::{
 };
 use safe_cameroon_domain::{
     AlertCreationError, AlertField, AlertFieldValue, AlertId, AlertStatus, AlertTransitionError,
-    AlertVisibility, CaseId, IncidentType, TargetGeography,
+    AlertVisibility, CaseEventType, CaseId, IncidentType, Severity, TargetGeography,
 };
 use safe_cameroon_infrastructure::postgres::AlertCancelOutcome;
 use serde::{Deserialize, Serialize};
@@ -50,6 +50,7 @@ pub struct AlertFieldInput {
 #[derive(Deserialize)]
 pub struct CreateAlertRequest {
     policy_id: String,
+    severity: Severity,
     target_geography: String,
     fields: Vec<AlertFieldInput>,
 }
@@ -67,7 +68,9 @@ pub struct AlertResponse {
     policy_id: String,
     policy_version: u32,
     incident_type: IncidentType,
+    severity: Severity,
     visibility: AlertVisibility,
+    trigger: CaseEventType,
     target_geography: String,
     status: AlertStatus,
     fields: Vec<AlertFieldOutput>,
@@ -81,7 +84,9 @@ fn alert_response(alert: &safe_cameroon_domain::Alert) -> AlertResponse {
         policy_id: alert.policy_id().as_str().to_owned(),
         policy_version: alert.policy_version(),
         incident_type: alert.incident_type(),
+        severity: alert.severity(),
         visibility: alert.visibility(),
+        trigger: alert.trigger(),
         target_geography: alert.target_geography().as_str().to_owned(),
         status: alert.status(),
         fields: alert
@@ -142,6 +147,7 @@ pub async fn create_alert(
     let creation = create_alert_from_case(
         &case,
         &policy,
+        request.severity,
         target_geography,
         fields,
         actor,

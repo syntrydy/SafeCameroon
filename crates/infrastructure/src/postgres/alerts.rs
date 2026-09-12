@@ -4,7 +4,7 @@ use safe_cameroon_application::alert_workflow::{
 use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_domain::{
     Alert, AlertEvent, AlertField, AlertFieldValue, AlertId, AlertPolicyId, AlertStatus,
-    AlertVisibility, IncidentType,
+    AlertVisibility, CaseEventType, IncidentType, Severity,
 };
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -29,18 +29,30 @@ impl PostgresAlertRepository {
     }
 
     pub async fn find_by_id(&self, alert_id: AlertId) -> Result<Option<Alert>, sqlx::Error> {
-        let Some(row) =
-            sqlx::query_as::<_, (Uuid, String, i16, String, String, String, String, i64)>(
-                r#"
-            SELECT case_id, policy_id, policy_version, incident_type::text, visibility::text,
-                   target_geography, status::text, aggregate_version
+        #[allow(clippy::type_complexity)]
+        let Some(row): Option<(
+            Uuid,
+            String,
+            i16,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            i64,
+        )> = sqlx::query_as(
+            r#"
+            SELECT case_id, policy_id, policy_version, incident_type::text, severity::text,
+                   visibility::text, trigger::text, target_geography, status::text,
+                   aggregate_version
             FROM alerts
             WHERE id = $1
             "#,
-            )
-            .bind(alert_id.as_uuid())
-            .fetch_optional(&self.pool)
-            .await?
+        )
+        .bind(alert_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await?
         else {
             return Ok(None);
         };
@@ -49,7 +61,9 @@ impl PostgresAlertRepository {
             policy_id,
             policy_version,
             incident_type,
+            severity,
             visibility,
+            trigger,
             target_geography,
             status,
             aggregate_version,
@@ -76,8 +90,12 @@ impl PostgresAlertRepository {
             policy_version as u32,
             IncidentType::from_database_value(&incident_type)
                 .expect("alerts.incident_type is constrained by the incident_type enum"),
+            Severity::from_database_value(&severity)
+                .expect("alerts.severity is constrained by the severity_level enum"),
             AlertVisibility::from_database_value(&visibility)
                 .expect("alerts.visibility is constrained by the alert_visibility enum"),
+            CaseEventType::from_database_value(&trigger)
+                .expect("alerts.trigger is constrained by the case_event_type enum"),
             safe_cameroon_domain::TargetGeography::new(target_geography)
                 .expect("a persisted target_geography was validated as non-blank on write"),
             AlertStatus::from_database_value(&status)
@@ -177,10 +195,13 @@ async fn insert_alert(
     sqlx::query(
         r#"
         INSERT INTO alerts (
-            id, case_id, policy_id, policy_version, incident_type, visibility,
-            target_geography, status, aggregate_version
+            id, case_id, policy_id, policy_version, incident_type, severity, visibility,
+            trigger, target_geography, status, aggregate_version
         )
-        VALUES ($1, $2, $3, $4, $5::incident_type, $6::alert_visibility, $7, $8::alert_status, $9)
+        VALUES (
+            $1, $2, $3, $4, $5::incident_type, $6::severity_level, $7::alert_visibility,
+            $8::case_event_type, $9, $10::alert_status, $11
+        )
         "#,
     )
     .bind(alert.id().as_uuid())
@@ -188,7 +209,9 @@ async fn insert_alert(
     .bind(alert.policy_id().as_str())
     .bind(alert.policy_version() as i16)
     .bind(alert.incident_type().as_database_value())
+    .bind(alert.severity().as_database_value())
     .bind(alert.visibility().as_database_value())
+    .bind(alert.trigger().as_database_value())
     .bind(alert.target_geography().as_str())
     .bind(alert.status().as_database_value())
     .bind(alert.version() as i64)

@@ -6,14 +6,23 @@ pub mod alert;
 pub mod case;
 pub mod ids;
 pub mod report;
+pub mod subscription;
 
 pub use alert::{
     Alert, AlertCreationError, AlertEvent, AlertEventType, AlertField, AlertFieldValue,
     AlertPolicy, AlertPolicyError, AlertPolicyId, AlertStatus, AlertTransitionError,
-    AlertVisibility, EmptyTargetGeography, TargetGeography,
+    AlertVisibility, EmptyTargetGeography, Severity, TargetGeography,
 };
 pub use case::{
     Case, CaseEvent, CaseEventType, CaseStatus, DuplicateReportLink, IncidentType, TransitionError,
 };
-pub use ids::{AlertEventId, AlertId, AuditEventId, CaseEventId, CaseId, OutboxEventId, ReportId};
+pub use ids::{
+    AlertEventId, AlertId, AuditEventId, CaseEventId, CaseId, ConsumerId, OutboxEventId, ReportId,
+    SubscriptionId,
+};
 pub use report::{AnonymousReport, ReportSourceChannel};
+pub use subscription::{
+    Comparison, ConsumerMatch, EmptyGeoArea, EmptySubscriptionRules, GeoArea, MatchDecision,
+    MatchReason, Subscription, SubscriptionRule, deduplicate_by_consumer, evaluate_subscription,
+    evaluate_subscriptions,
+};

@@ -6,7 +6,7 @@ use core::fmt;
 
 use safe_cameroon_domain::{
     Alert, AlertCreationError, AlertEvent, AlertFieldValue, AlertPolicy, AlertTransitionError,
-    AlertVisibility, AuditEventId, Case, OutboxEventId, TargetGeography,
+    AlertVisibility, AuditEventId, Case, OutboxEventId, Severity, TargetGeography,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -101,6 +101,7 @@ pub struct AlertCreation {
 pub fn create_alert_from_case(
     case: &Case,
     policy: &AlertPolicy,
+    severity: Severity,
     target_geography: TargetGeography,
     fields: Vec<AlertFieldValue>,
     actor: Actor,
@@ -108,7 +109,7 @@ pub fn create_alert_from_case(
 ) -> Result<AlertCreation, AlertCreationUseCaseError> {
     authorize_alert_action(actor, policy.visibility())
         .map_err(AlertCreationUseCaseError::NotAuthorized)?;
-    let (alert, event) = Alert::create_from_case(case, policy, target_geography, fields)
+    let (alert, event) = Alert::create_from_case(case, policy, severity, target_geography, fields)
         .map_err(AlertCreationUseCaseError::InvalidAlert)?;
     Ok(AlertCreation {
         alert,
@@ -223,6 +224,7 @@ mod tests {
         let error = create_alert_from_case(
             &case,
             &policy,
+            Severity::High,
             geography,
             safe_fields(),
             Actor::Automated,
@@ -247,6 +249,7 @@ mod tests {
         let creation = create_alert_from_case(
             &case,
             &policy,
+            Severity::High,
             geography,
             safe_fields(),
             Actor::Reviewer(Uuid::new_v4()),
@@ -276,6 +279,7 @@ mod tests {
         let creation = create_alert_from_case(
             &case,
             &policy,
+            Severity::High,
             geography,
             safe_fields(),
             Actor::Automated,
@@ -301,6 +305,7 @@ mod tests {
         let creation = create_alert_from_case(
             &case,
             &policy,
+            Severity::High,
             geography,
             safe_fields(),
             Actor::Automated,
@@ -326,6 +331,7 @@ mod tests {
         let creation = create_alert_from_case(
             &case,
             &policy,
+            Severity::High,
             geography,
             safe_fields(),
             Actor::Reviewer(Uuid::new_v4()),
