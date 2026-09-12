@@ -4,6 +4,7 @@
 
 pub mod alert;
 pub mod case;
+pub mod delivery;
 pub mod ids;
 pub mod report;
 pub mod subscription;
@@ -16,9 +17,15 @@ pub use alert::{
 pub use case::{
     Case, CaseEvent, CaseEventType, CaseStatus, DuplicateReportLink, IncidentType, TransitionError,
 };
+pub use delivery::{
+    ChannelEndpoint, ChannelType, Delivery, DeliveryAttempt, DeliveryAttemptOutcome, DeliveryEvent,
+    DeliveryEventType, DeliveryIdempotencyKey, DeliveryPreference, DeliveryPreferenceError,
+    DeliveryStatus, DeliveryStrategy, DeliveryTransitionError, EmptyChannelEndpointAddress,
+    InvalidRetryPolicy, RetryPolicy, plan_deliveries,
+};
 pub use ids::{
-    AlertEventId, AlertId, AuditEventId, CaseEventId, CaseId, ConsumerId, OutboxEventId, ReportId,
-    SubscriptionId,
+    AlertEventId, AlertId, AuditEventId, CaseEventId, CaseId, ConsumerId, DeliveryAttemptId,
+    DeliveryEventId, DeliveryId, OutboxEventId, ReportId, SubscriptionId,
 };
 pub use report::{AnonymousReport, ReportSourceChannel};
 pub use subscription::{
