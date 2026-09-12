@@ -1,19 +1,15 @@
 //! Application use cases. Infrastructure implements ports introduced here.
 
+pub mod case_workflow;
+
 use core::fmt;
 
 use safe_cameroon_domain::{
-    AnonymousReport, AuditEventId, Case, CaseEvent, CaseStatus, OutboxEventId, ReportId,
-    ReportSourceChannel, TransitionError,
+    AnonymousReport, AuditEventId, OutboxEventId, ReportId, ReportSourceChannel,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-
-/// A state transition is intentionally a use case, not an incidental data update.
-pub fn transition_case(case_: &mut Case, next: CaseStatus) -> Result<CaseEvent, TransitionError> {
-    case_.transition_to(next)
-}
 
 const MAX_REPORT_CONTENT_CHARS: usize = 10_000;
 
