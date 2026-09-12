@@ -21,3 +21,10 @@ curl http://localhost:3000/health
 ```
 
 `docs/` contains local planning material and is intentionally excluded from Git.
+
+Database integration tests are intentionally ignored by default. Run them only
+against a dedicated PostgreSQL database whose name contains `test`:
+
+```bash
+TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test report_submission_postgres -- --ignored
+```

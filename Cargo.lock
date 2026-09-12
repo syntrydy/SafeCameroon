@@ -1143,6 +1143,8 @@ dependencies = [
  "safe-cameroon-application",
  "serde_json",
  "sqlx",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
