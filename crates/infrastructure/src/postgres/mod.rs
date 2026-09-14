@@ -2,6 +2,7 @@
 
 pub mod alerts;
 pub mod attachments;
+pub mod audit_events;
 pub mod cases;
 pub mod deliveries;
 pub mod delivery_preferences;
@@ -13,6 +14,7 @@ pub mod subscriptions;
 
 pub use alerts::{AlertCancelOutcome, PostgresAlertRepository};
 pub use attachments::PostgresAttachmentRepository;
+pub use audit_events::{AuditEventFilter, AuditEventRecord, PostgresAuditEventRepository};
 pub use cases::{CaseCreationOutcome, CaseLinkOutcome, CaseReviewOutcome, PostgresCaseRepository};
 pub use deliveries::{DeliveryTransitionOutcome, PostgresDeliveryRepository};
 pub use delivery_preferences::PostgresDeliveryPreferenceRepository;

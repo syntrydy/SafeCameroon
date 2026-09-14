@@ -69,6 +69,13 @@ attempt) answer docs/OBSERVABILITY.md's "which deliveries were attempted,
 and why did one fail?" through the API instead of a direct database query;
 gated by `Capability::ViewCase`, the same as attachment download.
 
+`GET /v1/audit-events` (docs/SECURITY_PRIVACY.md section 6) reads the
+generic `audit_events` table that every other endpoint only ever writes to,
+filterable by `resource_type`, `resource_id`, `action`, and `actor_id`, most
+recent first, `limit` (default 50, capped at 100 regardless of what is
+asked for) and `offset` for paging; gated by `Capability::ViewAudit`, which
+existed since prompt 09 but had no reader wired to it until now.
+
 Both binaries log structured, JSON-free `tracing` output (`RUST_LOG`
 overrides the `info` default, e.g. `RUST_LOG=debug`). Every API request
 carries a `x-request-id` header — the client's own value if it sent one,
@@ -94,6 +101,7 @@ TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --te
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test delivery_engine_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test webhook_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test attachments_postgres -- --ignored
+TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test audit_events_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test subscription_persistence_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test outbox_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test reviewer_postgres -- --ignored

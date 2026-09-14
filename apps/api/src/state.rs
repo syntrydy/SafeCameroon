@@ -5,9 +5,9 @@ use safe_cameroon_application::rate_limit::RateLimiter;
 use safe_cameroon_application::webhook::{WebhookReplayGuard, WebhookVerifierRegistry};
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::postgres::{
-    PostgresAlertRepository, PostgresAttachmentRepository, PostgresCaseRepository,
-    PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository, PostgresReportRepository,
-    PostgresReviewerRepository, PostgresSubscriptionRepository,
+    PostgresAlertRepository, PostgresAttachmentRepository, PostgresAuditEventRepository,
+    PostgresCaseRepository, PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository,
+    PostgresReportRepository, PostgresReviewerRepository, PostgresSubscriptionRepository,
 };
 
 #[derive(Clone)]
@@ -17,6 +17,7 @@ pub struct AppState {
     pub alerts: PostgresAlertRepository,
     pub deliveries: PostgresDeliveryRepository,
     pub attachments: PostgresAttachmentRepository,
+    pub audit_events: PostgresAuditEventRepository,
     pub subscriptions: PostgresSubscriptionRepository,
     pub delivery_preferences: PostgresDeliveryPreferenceRepository,
     pub reviewers: PostgresReviewerRepository,
