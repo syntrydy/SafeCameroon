@@ -118,8 +118,8 @@ mod tests {
     use super::*;
     use safe_cameroon_domain::{
         AlertField, AlertFieldValue, AlertPolicy, Case, CaseStatus, ChannelEndpoint, ConsumerId,
-        ConsumerMatch, DeliveryPreference, DeliveryStrategy, IncidentType, ReportId, RetryPolicy,
-        Severity, SubscriptionId, TargetGeography,
+        ConsumerMatch, DeliveryPreference, DeliveryStrategy, IncidentType, MatchedSubscription,
+        ReportId, RetryPolicy, Severity, SubscriptionId, TargetGeography,
     };
 
     struct RecordingChannel {
@@ -179,7 +179,10 @@ mod tests {
         preferences.insert(consumer_id, preference);
         let consumer_matches = vec![ConsumerMatch {
             consumer_id,
-            matching_subscriptions: vec![SubscriptionId::new()],
+            matching_subscriptions: vec![MatchedSubscription {
+                subscription_id: SubscriptionId::new(),
+                subscription_version: 1,
+            }],
         }];
         let mut planned = safe_cameroon_domain::plan_deliveries(
             &alert,

@@ -290,13 +290,25 @@ pub fn evaluate_subscriptions(subscriptions: &[Subscription], alert: &Alert) -> 
         .collect()
 }
 
+/// A matched subscription's id *and* the rule version it matched under
+/// (docs/SUBSCRIPTION_ENGINE.md section 11: "historical matching decisions
+/// must remain explainable under the rule version that was active at the
+/// time") — carrying only the id would let a later edit (`Subscription::update_rules`)
+/// silently change what an already-planned delivery's match explanation
+/// would say if recomputed from the current row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MatchedSubscription {
+    pub subscription_id: SubscriptionId,
+    pub subscription_version: u32,
+}
+
 /// One consumer's matched subscriptions for an alert. The full list is kept
 /// for traceability (docs/SUBSCRIPTION_ENGINE.md section 8) even though a
 /// consumer should receive one effective delivery per channel/endpoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConsumerMatch {
     pub consumer_id: ConsumerId,
-    pub matching_subscriptions: Vec<SubscriptionId>,
+    pub matching_subscriptions: Vec<MatchedSubscription>,
 }
 
 /// Groups matched decisions by consumer, preserving the order consumers were
@@ -304,16 +316,18 @@ pub struct ConsumerMatch {
 pub fn deduplicate_by_consumer(decisions: &[MatchDecision]) -> Vec<ConsumerMatch> {
     let mut result: Vec<ConsumerMatch> = Vec::new();
     for decision in decisions.iter().filter(|decision| decision.matched) {
+        let matched = MatchedSubscription {
+            subscription_id: decision.subscription_id,
+            subscription_version: decision.subscription_version,
+        };
         match result
             .iter_mut()
             .find(|consumer_match| consumer_match.consumer_id == decision.consumer_id)
         {
-            Some(consumer_match) => consumer_match
-                .matching_subscriptions
-                .push(decision.subscription_id),
+            Some(consumer_match) => consumer_match.matching_subscriptions.push(matched),
             None => result.push(ConsumerMatch {
                 consumer_id: decision.consumer_id,
-                matching_subscriptions: vec![decision.subscription_id],
+                matching_subscriptions: vec![matched],
             }),
         }
     }
@@ -577,7 +591,16 @@ mod tests {
         assert_eq!(consumer_matches[0].consumer_id, consumer);
         assert_eq!(
             consumer_matches[0].matching_subscriptions,
-            vec![matching_a.id(), matching_b.id()]
+            vec![
+                MatchedSubscription {
+                    subscription_id: matching_a.id(),
+                    subscription_version: matching_a.version(),
+                },
+                MatchedSubscription {
+                    subscription_id: matching_b.id(),
+                    subscription_version: matching_b.version(),
+                },
+            ]
         );
     }
 

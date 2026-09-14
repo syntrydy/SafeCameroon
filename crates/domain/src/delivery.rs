@@ -17,7 +17,7 @@
 use core::fmt;
 use core::time::Duration;
 
-use crate::{Alert, AlertId, ConsumerId, ConsumerMatch, SubscriptionId};
+use crate::{Alert, AlertId, ConsumerId, ConsumerMatch, MatchedSubscription};
 
 /// The first supported outbound channels (docs/CHANNELS.md section 3). A
 /// closed enum here is what makes fallback/priority planning exhaustive and
@@ -410,7 +410,7 @@ pub struct Delivery {
     endpoint_address: String,
     tier: u8,
     idempotency_key: DeliveryIdempotencyKey,
-    matching_subscription_ids: Vec<SubscriptionId>,
+    matching_subscriptions: Vec<MatchedSubscription>,
     retry_policy: RetryPolicy,
     status: DeliveryStatus,
     attempt_count: u32,
@@ -424,7 +424,7 @@ impl Delivery {
         consumer_id: ConsumerId,
         endpoint: &ChannelEndpoint,
         tier: u8,
-        matching_subscription_ids: Vec<SubscriptionId>,
+        matching_subscriptions: Vec<MatchedSubscription>,
         retry_policy: RetryPolicy,
     ) -> (Self, DeliveryEvent) {
         let delivery = Self {
@@ -440,7 +440,7 @@ impl Delivery {
                 endpoint.channel(),
                 endpoint.address(),
             ),
-            matching_subscription_ids,
+            matching_subscriptions,
             retry_policy,
             status: DeliveryStatus::Queued,
             attempt_count: 0,
@@ -462,7 +462,7 @@ impl Delivery {
         channel: ChannelType,
         endpoint_address: String,
         tier: u8,
-        matching_subscription_ids: Vec<SubscriptionId>,
+        matching_subscriptions: Vec<MatchedSubscription>,
         retry_policy: RetryPolicy,
         status: DeliveryStatus,
         attempt_count: u32,
@@ -478,7 +478,7 @@ impl Delivery {
             endpoint_address,
             tier,
             idempotency_key,
-            matching_subscription_ids,
+            matching_subscriptions,
             retry_policy,
             status,
             attempt_count,
@@ -507,8 +507,8 @@ impl Delivery {
     pub fn idempotency_key(&self) -> &DeliveryIdempotencyKey {
         &self.idempotency_key
     }
-    pub fn matching_subscription_ids(&self) -> &[SubscriptionId] {
-        &self.matching_subscription_ids
+    pub fn matching_subscriptions(&self) -> &[MatchedSubscription] {
+        &self.matching_subscriptions
     }
     pub fn status(&self) -> DeliveryStatus {
         self.status
@@ -665,7 +665,7 @@ mod tests {
     use super::*;
     use crate::{
         AlertField, AlertFieldValue, AlertPolicy, Case, CaseStatus, IncidentType, ReportId,
-        Severity, TargetGeography,
+        Severity, SubscriptionId, TargetGeography,
     };
 
     fn alert() -> Alert {
@@ -703,7 +703,10 @@ mod tests {
         preferences.insert(consumer_id, preference);
         let consumer_matches = vec![ConsumerMatch {
             consumer_id,
-            matching_subscriptions: vec![SubscriptionId::new()],
+            matching_subscriptions: vec![MatchedSubscription {
+                subscription_id: SubscriptionId::new(),
+                subscription_version: 1,
+            }],
         }];
         let mut planned = plan_deliveries(
             &alert,
@@ -789,7 +792,10 @@ mod tests {
         preferences.insert(consumer_id, preference);
         let consumer_matches = vec![ConsumerMatch {
             consumer_id,
-            matching_subscriptions: vec![SubscriptionId::new()],
+            matching_subscriptions: vec![MatchedSubscription {
+                subscription_id: SubscriptionId::new(),
+                subscription_version: 1,
+            }],
         }];
 
         let planned = plan_deliveries(
@@ -826,7 +832,10 @@ mod tests {
             preferences.insert(consumer_id, preference);
             let consumer_matches = vec![ConsumerMatch {
                 consumer_id,
-                matching_subscriptions: vec![SubscriptionId::new()],
+                matching_subscriptions: vec![MatchedSubscription {
+                    subscription_id: SubscriptionId::new(),
+                    subscription_version: 1,
+                }],
             }];
 
             let planned = plan_deliveries(
@@ -850,7 +859,10 @@ mod tests {
         let preferences = std::collections::HashMap::new();
         let consumer_matches = vec![ConsumerMatch {
             consumer_id: ConsumerId::new(),
-            matching_subscriptions: vec![SubscriptionId::new()],
+            matching_subscriptions: vec![MatchedSubscription {
+                subscription_id: SubscriptionId::new(),
+                subscription_version: 1,
+            }],
         }];
 
         let planned = plan_deliveries(
@@ -877,8 +889,14 @@ mod tests {
         let consumer_id = ConsumerId::new();
         let mut preferences = std::collections::HashMap::new();
         preferences.insert(consumer_id, preference);
-        let subscription_a = SubscriptionId::new();
-        let subscription_b = SubscriptionId::new();
+        let subscription_a = MatchedSubscription {
+            subscription_id: SubscriptionId::new(),
+            subscription_version: 1,
+        };
+        let subscription_b = MatchedSubscription {
+            subscription_id: SubscriptionId::new(),
+            subscription_version: 1,
+        };
         let consumer_matches = vec![ConsumerMatch {
             consumer_id,
             matching_subscriptions: vec![subscription_a, subscription_b],
@@ -899,7 +917,7 @@ mod tests {
         assert_eq!(keys.len(), 2, "idempotency keys must not collide");
         for (delivery, event) in &planned {
             assert_eq!(
-                delivery.matching_subscription_ids(),
+                delivery.matching_subscriptions(),
                 &[subscription_a, subscription_b]
             );
             assert_eq!(event.event_type, DeliveryEventType::DeliveryRequested);
@@ -1028,7 +1046,10 @@ mod tests {
         preferences.insert(consumer_id, preference);
         let consumer_matches = vec![ConsumerMatch {
             consumer_id,
-            matching_subscriptions: vec![SubscriptionId::new()],
+            matching_subscriptions: vec![MatchedSubscription {
+                subscription_id: SubscriptionId::new(),
+                subscription_version: 1,
+            }],
         }];
         let mut planned = plan_deliveries(
             &alert,
@@ -1085,7 +1106,10 @@ mod tests {
         preferences.insert(consumer_id, preference);
         let consumer_matches = vec![ConsumerMatch {
             consumer_id,
-            matching_subscriptions: vec![SubscriptionId::new()],
+            matching_subscriptions: vec![MatchedSubscription {
+                subscription_id: SubscriptionId::new(),
+                subscription_version: 1,
+            }],
         }];
         let mut planned = plan_deliveries(
             &alert,

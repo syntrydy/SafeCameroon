@@ -13,8 +13,8 @@ use safe_cameroon_application::webhook::{
 };
 use safe_cameroon_domain::{
     AlertField, AlertFieldValue, AlertPolicy, CaseStatus, ChannelEndpoint, ChannelType, ConsumerId,
-    ConsumerMatch, DeliveryPreference, DeliveryStatus, DeliveryStrategy, IncidentType, ReportId,
-    RetryPolicy, Severity, SubscriptionId, TargetGeography,
+    ConsumerMatch, DeliveryPreference, DeliveryStatus, DeliveryStrategy, IncidentType,
+    MatchedSubscription, ReportId, RetryPolicy, Severity, SubscriptionId, TargetGeography,
 };
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresCaseRepository, PostgresDeliveryRepository,
@@ -129,7 +129,10 @@ async fn plan_and_persist_one(
     preferences.insert(consumer_id, preference);
     let consumer_matches = vec![ConsumerMatch {
         consumer_id,
-        matching_subscriptions: vec![SubscriptionId::new()],
+        matching_subscriptions: vec![MatchedSubscription {
+            subscription_id: SubscriptionId::new(),
+            subscription_version: 1,
+        }],
     }];
     let planned = plan_deliveries(
         alert,

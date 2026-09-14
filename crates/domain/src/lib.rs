@@ -34,6 +34,6 @@ pub use ids::{
 pub use report::{AnonymousReport, ReportSourceChannel};
 pub use subscription::{
     Comparison, ConsumerMatch, EmptyGeoArea, EmptySubscriptionRules, GeoArea, MatchDecision,
-    MatchReason, Subscription, SubscriptionRule, deduplicate_by_consumer, evaluate_subscription,
-    evaluate_subscriptions,
+    MatchReason, MatchedSubscription, Subscription, SubscriptionRule, deduplicate_by_consumer,
+    evaluate_subscription, evaluate_subscriptions,
 };
