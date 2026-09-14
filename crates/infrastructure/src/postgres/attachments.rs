@@ -72,6 +72,49 @@ impl PostgresAttachmentRepository {
         )))
     }
 
+    /// A report's attachments in upload order (`created_at` ascending) —
+    /// docs/API.md area `/attachments`: a reviewer can see what is attached
+    /// to a report without already knowing individual attachment ids.
+    pub async fn find_by_report_id(
+        &self,
+        report_id: ReportId,
+    ) -> Result<Vec<Attachment>, sqlx::Error> {
+        #[allow(clippy::type_complexity)]
+        let rows: Vec<(Uuid, String, String, String, i64, String)> = sqlx::query_as(
+            r#"
+            SELECT id, storage_provider::text, object_key, content_type::text,
+                   size_bytes, checksum
+            FROM attachments
+            WHERE report_id = $1
+            ORDER BY created_at
+            "#,
+        )
+        .bind(report_id.as_uuid())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(id, storage_provider, object_key, content_type, size_bytes, checksum)| {
+                    Attachment::reconstitute(
+                        AttachmentId::from_uuid(id),
+                        report_id,
+                        StorageProvider::from_database_value(&storage_provider).expect(
+                            "attachments.storage_provider is constrained by the storage_provider enum",
+                        ),
+                        object_key,
+                        AttachmentContentType::from_database_value(&content_type).expect(
+                            "attachments.content_type is constrained by the attachment_content_type enum",
+                        ),
+                        size_bytes as u64,
+                        checksum,
+                    )
+                },
+            )
+            .collect())
+    }
+
     /// Records that `actor` was issued a short-lived download URL for this
     /// attachment (docs/SECURITY_PRIVACY.md section 6: "add audit events for
     /// sensitive operations" — reading private evidence is exactly that).
