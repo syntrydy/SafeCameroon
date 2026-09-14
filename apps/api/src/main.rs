@@ -185,10 +185,10 @@ mod tests {
     use safe_cameroon_application::delivery_workflow::{plan_deliveries, start_delivery_attempt};
     use safe_cameroon_application::prepare_anonymous_report;
     use safe_cameroon_domain::{
-        AlertField, AlertFieldValue, AlertPolicy, CaseStatus, ChannelEndpoint, Comparison,
-        ConsumerId, ConsumerMatch, DeliveryPreference, DeliveryStatus, DeliveryStrategy, GeoArea,
-        IncidentType, ReportId, RetryPolicy, Severity, Subscription, SubscriptionId,
-        SubscriptionRule, TargetGeography, deduplicate_by_consumer, evaluate_subscriptions,
+        AlertField, AlertFieldValue, AlertPolicy, CaseStatus, ChannelEndpoint, ConsumerId,
+        ConsumerMatch, DeliveryPreference, DeliveryStatus, DeliveryStrategy, IncidentType,
+        ReportId, RetryPolicy, Severity, SubscriptionId, TargetGeography, deduplicate_by_consumer,
+        evaluate_subscriptions,
     };
     use safe_cameroon_infrastructure::channels::WhatsAppChannel;
     use serde_json::json;
@@ -818,10 +818,60 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
-        // 6. Subscription matching and delivery planning: no HTTP endpoint
-        // exists for either yet, so this exercises the same domain/
-        // application functions apps/worker's future subscription-driven
-        // planning step will call, against the real alert just created.
+        // 6. A reviewer registers a matching subscription and delivery
+        // preference through the real HTTP endpoints (rather than
+        // constructing domain objects in memory), then subscription
+        // matching and delivery planning run against what was actually
+        // persisted — the same domain/application functions
+        // apps/worker's subscription-matching step calls, since apps/api
+        // does not depend on the apps/worker binary crate.
+        let consumer_id = Uuid::new_v4();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/subscriptions")
+                    .header("content-type", "application/json")
+                    .header("X-Reviewer-Id", &reviewer)
+                    .body(Body::from(
+                        json!({
+                            "consumer_id": consumer_id,
+                            "rules": [
+                                {"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]},
+                                {"rule": "SEVERITY", "operator": "GREATER_THAN_OR_EQUAL", "value": "MEDIUM"},
+                                {"rule": "GEOGRAPHY", "area": "Douala"}
+                            ]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/consumers/{consumer_id}/delivery-preference"))
+                    .header("content-type", "application/json")
+                    .header("X-Reviewer-Id", &reviewer)
+                    .body(Body::from(
+                        json!({
+                            "strategy": "ALL",
+                            "channels": [{"channel": "WHATSAPP", "address": "+237600000000"}]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
         let alerts = PostgresAlertRepository::new(pool.clone());
         let alert = alerts
             .find_by_id(safe_cameroon_domain::AlertId::from_uuid(
@@ -831,36 +881,26 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let consumer_id = ConsumerId::new();
-        let subscription = Subscription::new(
-            SubscriptionId::new(),
-            consumer_id,
-            1,
-            vec![
-                SubscriptionRule::IncidentType(vec![IncidentType::MissingChild]),
-                SubscriptionRule::Severity {
-                    operator: Comparison::GreaterThanOrEqual,
-                    value: Severity::Medium,
-                },
-                SubscriptionRule::Geography(GeoArea::new("Douala").unwrap()),
-            ],
-        )
-        .unwrap();
-        let decisions = evaluate_subscriptions(&[subscription], &alert);
+        let subscriptions = PostgresSubscriptionRepository::new(pool.clone());
+        let decisions = evaluate_subscriptions(&subscriptions.list_all().await.unwrap(), &alert);
         let consumer_matches = deduplicate_by_consumer(&decisions);
         assert_eq!(
             consumer_matches.len(),
             1,
-            "the subscription must match this alert"
+            "the persisted subscription must match this alert"
         );
+        assert_eq!(consumer_matches[0].consumer_id.as_uuid(), consumer_id);
 
-        let preference = DeliveryPreference::new(
-            DeliveryStrategy::All,
-            vec![ChannelEndpoint::new(ChannelType::WhatsApp, "+237600000000").unwrap()],
-        )
-        .unwrap();
+        let delivery_preferences = PostgresDeliveryPreferenceRepository::new(pool.clone());
         let mut preferences = std::collections::HashMap::new();
-        preferences.insert(consumer_id, preference);
+        preferences.insert(
+            ConsumerId::from_uuid(consumer_id),
+            delivery_preferences
+                .find_by_consumer(ConsumerId::from_uuid(consumer_id))
+                .await
+                .unwrap()
+                .unwrap(),
+        );
 
         let planned = plan_deliveries(
             &alert,
