@@ -226,8 +226,8 @@ mod tests {
     use super::*;
     use safe_cameroon_domain::{
         AlertField, AlertFieldValue, AlertPolicy, Case, CaseStatus, ChannelEndpoint, ChannelType,
-        DeliveryEventType, DeliveryStatus, DeliveryStrategy, IncidentType, ReportId, Severity,
-        SubscriptionId, TargetGeography,
+        DeliveryEventType, DeliveryStatus, DeliveryStrategy, IncidentType, MatchedSubscription,
+        ReportId, Severity, SubscriptionId, TargetGeography,
     };
 
     fn alert() -> Alert {
@@ -261,7 +261,10 @@ mod tests {
         preferences.insert(consumer_id, preference);
         let consumer_matches = vec![ConsumerMatch {
             consumer_id,
-            matching_subscriptions: vec![SubscriptionId::new()],
+            matching_subscriptions: vec![MatchedSubscription {
+                subscription_id: SubscriptionId::new(),
+                subscription_version: 1,
+            }],
         }];
 
         let mut planned = plan_deliveries(

@@ -9,8 +9,8 @@ use safe_cameroon_application::delivery_workflow::{
 use safe_cameroon_application::prepare_anonymous_report;
 use safe_cameroon_domain::{
     AlertField, AlertFieldValue, AlertPolicy, CaseStatus, ChannelEndpoint, ChannelType, ConsumerId,
-    ConsumerMatch, DeliveryStatus, DeliveryStrategy, IncidentType, ReportId, RetryPolicy, Severity,
-    SubscriptionId, TargetGeography,
+    ConsumerMatch, DeliveryStatus, DeliveryStrategy, IncidentType, MatchedSubscription, ReportId,
+    RetryPolicy, Severity, SubscriptionId, TargetGeography,
 };
 use safe_cameroon_infrastructure::postgres::{
     DeliveryTransitionOutcome, PostgresAlertRepository, PostgresCaseRepository,
@@ -127,7 +127,10 @@ async fn plans_and_persists_a_delivery_without_duplicating_it_on_replay() {
     preferences.insert(consumer_id, preference);
     let consumer_matches = vec![ConsumerMatch {
         consumer_id,
-        matching_subscriptions: vec![SubscriptionId::new()],
+        matching_subscriptions: vec![MatchedSubscription {
+            subscription_id: SubscriptionId::new(),
+            subscription_version: 1,
+        }],
     }];
 
     let planned = plan_deliveries(
@@ -199,7 +202,10 @@ async fn drives_a_delivery_to_sent_and_rejects_a_concurrent_stale_transition() {
     preferences.insert(consumer_id, preference);
     let consumer_matches = vec![ConsumerMatch {
         consumer_id,
-        matching_subscriptions: vec![SubscriptionId::new()],
+        matching_subscriptions: vec![MatchedSubscription {
+            subscription_id: SubscriptionId::new(),
+            subscription_version: 1,
+        }],
     }];
     let planned = plan_deliveries(
         &alert,
@@ -295,7 +301,10 @@ async fn a_non_retryable_failure_is_persisted_as_permanently_failed() {
     preferences.insert(consumer_id, preference);
     let consumer_matches = vec![ConsumerMatch {
         consumer_id,
-        matching_subscriptions: vec![SubscriptionId::new()],
+        matching_subscriptions: vec![MatchedSubscription {
+            subscription_id: SubscriptionId::new(),
+            subscription_version: 1,
+        }],
     }];
     let planned = plan_deliveries(
         &alert,
@@ -366,7 +375,10 @@ async fn plan_and_persist_one(
     preferences.insert(consumer_id, preference);
     let consumer_matches = vec![ConsumerMatch {
         consumer_id,
-        matching_subscriptions: vec![SubscriptionId::new()],
+        matching_subscriptions: vec![MatchedSubscription {
+            subscription_id: SubscriptionId::new(),
+            subscription_version: 1,
+        }],
     }];
     let planned = plan_deliveries(
         alert,
@@ -528,4 +540,52 @@ async fn a_retrying_delivery_is_not_reclaimed_until_its_backoff_elapses() {
     let claimed_after_backoff = delivery_repository.claim_next(10).await.unwrap();
     assert_eq!(claimed_after_backoff.len(), 1);
     assert_eq!(claimed_after_backoff[0].id(), delivery_id);
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn a_deliverys_matched_subscription_versions_survive_a_round_trip() {
+    let pool = test_pool().await;
+    let alert = verified_alert(&pool).await;
+    let delivery_repository = PostgresDeliveryRepository::new(pool.clone());
+
+    let consumer_id = ConsumerId::new();
+    let preference = safe_cameroon_domain::DeliveryPreference::new(
+        DeliveryStrategy::All,
+        vec![ChannelEndpoint::new(ChannelType::WhatsApp, "+237600000000").unwrap()],
+    )
+    .unwrap();
+    let mut preferences = HashMap::new();
+    preferences.insert(consumer_id, preference);
+    let matched = vec![
+        MatchedSubscription {
+            subscription_id: SubscriptionId::new(),
+            subscription_version: 3,
+        },
+        MatchedSubscription {
+            subscription_id: SubscriptionId::new(),
+            subscription_version: 1,
+        },
+    ];
+    let consumer_matches = vec![ConsumerMatch {
+        consumer_id,
+        matching_subscriptions: matched.clone(),
+    }];
+    let planned = plan_deliveries(
+        &alert,
+        &consumer_matches,
+        &preferences,
+        RetryPolicy::standard(),
+        Actor::Automated,
+        Uuid::new_v4(),
+    );
+    delivery_repository.create_planned(&planned).await.unwrap();
+    let delivery_id = planned[0].delivery.id();
+
+    let loaded = delivery_repository
+        .find_by_id(delivery_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(loaded.matching_subscriptions(), matched.as_slice());
 }

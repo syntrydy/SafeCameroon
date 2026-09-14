@@ -5,24 +5,58 @@ use safe_cameroon_application::delivery_workflow::{
 };
 use safe_cameroon_domain::{
     ChannelType, ConsumerId, Delivery, DeliveryAttempt, DeliveryAttemptOutcome, DeliveryId,
-    DeliveryStatus, RetryPolicy, SubscriptionId,
+    DeliveryStatus, MatchedSubscription, RetryPolicy, SubscriptionId,
 };
+use serde_json::{Value, json};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
+
+/// `matching_subscriptions` is stored as a JSONB array of
+/// `{"subscription_id": ..., "subscription_version": ...}` objects rather
+/// than a plain `UUID[]`, so the rule version a delivery actually matched
+/// under survives a later edit to that subscription
+/// (docs/SUBSCRIPTION_ENGINE.md section 11) — mirrors how
+/// `subscriptions.rules`/`consumer_delivery_preferences.channels` already
+/// store closed Rust types as JSONB.
+fn matched_subscription_to_json(matched: &MatchedSubscription) -> Value {
+    json!({
+        "subscription_id": matched.subscription_id.as_uuid(),
+        "subscription_version": matched.subscription_version,
+    })
+}
+
+fn matched_subscriptions_to_json(matched: &[MatchedSubscription]) -> Value {
+    Value::Array(matched.iter().map(matched_subscription_to_json).collect())
+}
+
+fn matched_subscription_from_json(value: &Value) -> MatchedSubscription {
+    let subscription_id = value["subscription_id"].as_str().expect(
+        "deliveries.matching_subscriptions entries are written by this repository with a \"subscription_id\" string",
+    );
+    let subscription_id = Uuid::parse_str(subscription_id)
+        .expect("deliveries.matching_subscriptions subscription_id is written as a valid UUID");
+    let subscription_version = value["subscription_version"].as_u64().expect(
+        "deliveries.matching_subscriptions entries are written by this repository with a \"subscription_version\" number",
+    );
+    MatchedSubscription {
+        subscription_id: SubscriptionId::from_uuid(subscription_id),
+        subscription_version: subscription_version as u32,
+    }
+}
 
 /// Column shape shared by every query that reads a full delivery row.
 #[allow(clippy::type_complexity)]
 type DeliveryRow = (
-    Uuid,      // alert_id
-    Uuid,      // consumer_id
-    String,    // channel
-    String,    // endpoint_address
-    i16,       // tier
-    Vec<Uuid>, // matching_subscription_ids
-    String,    // status
-    i32,       // attempt_count
-    i32,       // max_attempts
-    i64,       // aggregate_version
+    Uuid,   // alert_id
+    Uuid,   // consumer_id
+    String, // channel
+    String, // endpoint_address
+    i16,    // tier
+    Value,  // matching_subscriptions
+    String, // status
+    i32,    // attempt_count
+    i32,    // max_attempts
+    i64,    // aggregate_version
 );
 
 fn delivery_from_row(delivery_id: DeliveryId, row: DeliveryRow) -> Delivery {
@@ -32,7 +66,7 @@ fn delivery_from_row(delivery_id: DeliveryId, row: DeliveryRow) -> Delivery {
         channel,
         endpoint_address,
         tier,
-        matching_subscription_ids,
+        matching_subscriptions,
         status,
         attempt_count,
         max_attempts,
@@ -47,9 +81,13 @@ fn delivery_from_row(delivery_id: DeliveryId, row: DeliveryRow) -> Delivery {
             .expect("deliveries.channel is constrained by the channel_type enum"),
         endpoint_address,
         tier as u8,
-        matching_subscription_ids
-            .into_iter()
-            .map(SubscriptionId::from_uuid)
+        matching_subscriptions
+            .as_array()
+            .expect(
+                "deliveries.matching_subscriptions is constrained to be a JSON array by the CHECK constraint",
+            )
+            .iter()
+            .map(matched_subscription_from_json)
             .collect(),
         RetryPolicy::new(max_attempts as u32)
             .expect("deliveries.max_attempts is constrained to be positive"),
@@ -86,7 +124,7 @@ impl PostgresDeliveryRepository {
         let row: Option<DeliveryRow> = sqlx::query_as(
             r#"
             SELECT alert_id, consumer_id, channel::text, endpoint_address, tier,
-                   matching_subscription_ids, status::text, attempt_count, max_attempts,
+                   matching_subscriptions, status::text, attempt_count, max_attempts,
                    aggregate_version
             FROM deliveries
             WHERE id = $1
@@ -144,7 +182,7 @@ impl PostgresDeliveryRepository {
             String,
             String,
             i16,
-            Vec<Uuid>,
+            Value,
             String,
             i32,
             i32,
@@ -152,7 +190,7 @@ impl PostgresDeliveryRepository {
         )> = sqlx::query_as(
             r#"
             SELECT id, alert_id, consumer_id, channel::text, endpoint_address, tier,
-                   matching_subscription_ids, status::text, attempt_count, max_attempts,
+                   matching_subscriptions, status::text, attempt_count, max_attempts,
                    aggregate_version
             FROM deliveries
             WHERE status IN ('QUEUED', 'RETRYING')
@@ -174,7 +212,7 @@ impl PostgresDeliveryRepository {
             channel,
             endpoint_address,
             tier,
-            matching_subscription_ids,
+            matching_subscriptions,
             status,
             attempt_count,
             max_attempts,
@@ -189,7 +227,7 @@ impl PostgresDeliveryRepository {
                     channel,
                     endpoint_address,
                     tier,
-                    matching_subscription_ids,
+                    matching_subscriptions,
                     status,
                     attempt_count,
                     max_attempts,
@@ -349,16 +387,12 @@ async fn insert_delivery(
     item: &PlannedDelivery,
 ) -> Result<bool, sqlx::Error> {
     let delivery = &item.delivery;
-    let subscription_ids: Vec<Uuid> = delivery
-        .matching_subscription_ids()
-        .iter()
-        .map(|id| id.as_uuid())
-        .collect();
+    let matching_subscriptions = matched_subscriptions_to_json(delivery.matching_subscriptions());
     let result = sqlx::query(
         r#"
         INSERT INTO deliveries (
             id, alert_id, consumer_id, channel, endpoint_address, tier,
-            idempotency_key_hash, matching_subscription_ids, status, attempt_count,
+            idempotency_key_hash, matching_subscriptions, status, attempt_count,
             max_attempts, aggregate_version
         )
         VALUES (
@@ -374,7 +408,7 @@ async fn insert_delivery(
     .bind(delivery.endpoint_address())
     .bind(delivery.tier() as i16)
     .bind(&item.idempotency_key_hash)
-    .bind(&subscription_ids)
+    .bind(matching_subscriptions)
     .bind(delivery.status().as_database_value())
     .bind(delivery.attempt_count() as i32)
     .bind(delivery.max_attempts() as i32)
