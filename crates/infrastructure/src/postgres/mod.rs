@@ -20,4 +20,4 @@ pub use outbox::{ClaimedOutboxEvent, PostgresOutboxRepository};
 pub use rate_limits::PostgresRateLimiter;
 pub use reports::{PostgresReportRepository, SubmissionResult};
 pub use reviewers::{CreateReviewerOutcome, PostgresReviewerRepository, ReviewerRecord};
-pub use subscriptions::PostgresSubscriptionRepository;
+pub use subscriptions::{PostgresSubscriptionRepository, SubscriptionUpdateOutcome};

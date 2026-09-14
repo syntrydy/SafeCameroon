@@ -6,6 +6,7 @@
 //! only ever `.expect()`s the shape it itself wrote (mirrors how
 //! `PostgresDeliveryRepository` trusts its own enum columns).
 
+use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_domain::{
     CaseEventType, Comparison, ConsumerId, GeoArea, IncidentType, Severity, Subscription,
     SubscriptionId, SubscriptionRule,
@@ -75,6 +76,15 @@ fn rule_from_json(value: &Value) -> SubscriptionRule {
         ),
         other => panic!("unknown subscription rule tag {other:?} in subscriptions.rules"),
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubscriptionUpdateOutcome {
+    Updated,
+    /// The in-memory subscription was mutated from a stale read; the caller
+    /// must reload it and retry rather than silently overwrite a concurrent
+    /// change (mirrors `PostgresAlertRepository::cancel`).
+    Conflict,
 }
 
 type SubscriptionRow = (Uuid, Uuid, i32, Value);
@@ -160,5 +170,55 @@ impl PostgresSubscriptionRepository {
         .fetch_all(&self.pool)
         .await?;
         Ok(rows.into_iter().map(subscription_from_row).collect())
+    }
+
+    /// `subscription` must already reflect the desired new state (i.e. the
+    /// caller already called `Subscription::update_rules` on it); this
+    /// applies it with optimistic concurrency on `version` and records an
+    /// audit event, both in one transaction. `create` does not audit itself
+    /// yet — a separate, deliberate follow-up (see #22/#29) rather than
+    /// changing that widely-used method's signature here.
+    pub async fn update(
+        &self,
+        subscription: &Subscription,
+        actor: Actor,
+        request_id: Uuid,
+    ) -> Result<SubscriptionUpdateOutcome, sqlx::Error> {
+        let mut transaction = self.pool.begin().await?;
+        let expected_previous_version = subscription.version() as i32 - 1;
+        let result = sqlx::query(
+            r#"
+            UPDATE subscriptions
+            SET version = $1, rules = $2, updated_at = now()
+            WHERE id = $3 AND version = $4
+            "#,
+        )
+        .bind(subscription.version() as i32)
+        .bind(rules_to_json(subscription.rules()))
+        .bind(subscription.id().as_uuid())
+        .bind(expected_previous_version)
+        .execute(&mut *transaction)
+        .await?;
+        if result.rows_affected() != 1 {
+            transaction.rollback().await?;
+            return Ok(SubscriptionUpdateOutcome::Conflict);
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO audit_events (id, actor_type, actor_id, action, resource_type, resource_id, request_id)
+            VALUES ($1, $2, $3, 'SUBSCRIPTION_UPDATED', 'SUBSCRIPTION', $4, $5)
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(actor.as_database_value())
+        .bind(actor.actor_id())
+        .bind(subscription.id().as_uuid())
+        .bind(request_id)
+        .execute(&mut *transaction)
+        .await?;
+
+        transaction.commit().await?;
+        Ok(SubscriptionUpdateOutcome::Updated)
     }
 }
