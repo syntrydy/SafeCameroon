@@ -109,7 +109,13 @@ pub async fn create_alert(
     Json(request): Json<CreateAlertRequest>,
 ) -> Result<(StatusCode, Json<AlertResponse>), ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
 
     let policy = resolve_policy(&request.policy_id).ok_or(ApiError {
         status: StatusCode::BAD_REQUEST,
@@ -226,7 +232,13 @@ pub async fn cancel(
     headers: HeaderMap,
 ) -> Result<Json<AlertResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
 
     let mut alert = state
         .alerts

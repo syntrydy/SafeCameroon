@@ -13,8 +13,11 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use safe_cameroon_application::authorization::authorize_reviewer_registration;
+use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_application::rate_limit::RateLimitScope;
-use safe_cameroon_application::reviewer_auth::{PasswordError, hash_password, verify_password};
+use safe_cameroon_application::reviewer_auth::{
+    PasswordError, SessionRevocationStore, hash_password, verify_password,
+};
 use safe_cameroon_infrastructure::postgres::CreateReviewerOutcome;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -52,7 +55,13 @@ pub async fn register(
     Json(request): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<RegisterResponse>), ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
 
     let existing_reviewer_count = state
         .reviewers
@@ -183,4 +192,39 @@ pub async fn login(
         expires_in_seconds: issued.expires_in.as_secs(),
         reviewer_id: record.id,
     }))
+}
+
+/// Invalidates every session currently issued to the calling reviewer
+/// (docs/SECURITY_PRIVACY.md section 10: "unauthorized access" incident
+/// response) — "logout everywhere", not just the token used for this
+/// request. Requires an authenticated reviewer; there is nothing to log out
+/// of `Actor::Automated`.
+pub async fn logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<StatusCode, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    let Actor::Reviewer(reviewer_id) = actor else {
+        return Err(ApiError {
+            status: StatusCode::UNAUTHORIZED,
+            code: "NOT_AUTHENTICATED",
+            message: "Logout requires an authenticated session.",
+            request_id,
+        });
+    };
+
+    state
+        .reviewers
+        .revoke_all_sessions(reviewer_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

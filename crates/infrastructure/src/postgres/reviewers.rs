@@ -1,7 +1,12 @@
 //! Persistence for reviewer accounts (migration 0011). Password hashing
 //! itself is `safe_cameroon_application::reviewer_auth`'s job — this
-//! repository only ever stores/reads the already-hashed string.
+//! repository only ever stores/reads the already-hashed string. Also
+//! implements `SessionRevocationStore` (migration 0015): the same table
+//! backs both concerns, so one repository type serves both roles rather
+//! than introducing a second one for a single column.
 
+use async_trait::async_trait;
+use safe_cameroon_application::reviewer_auth::{SessionRevocationError, SessionRevocationStore};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -79,5 +84,47 @@ impl PostgresReviewerRepository {
         .fetch_optional(&self.pool)
         .await?;
         Ok(row.map(|(id, password_hash)| ReviewerRecord { id, password_hash }))
+    }
+}
+
+#[async_trait]
+impl SessionRevocationStore for PostgresReviewerRepository {
+    /// An unknown `reviewer_id` is treated as revoked (deny by default) —
+    /// unlike `InMemorySessionRevocationStore` (which only ever tracks
+    /// revocation timestamps and has no notion of "does this reviewer
+    /// exist"), this repository owns the `reviewers` table and can tell the
+    /// two cases apart. A validly-signed token can only ever have been
+    /// issued for a reviewer that existed at login time, so this path is
+    /// unreachable in practice today (there is no reviewer-deletion
+    /// feature) — the stricter default is defense in depth, not a case this
+    /// exercises normally.
+    async fn is_session_revoked(
+        &self,
+        reviewer_id: Uuid,
+        issued_at_epoch_seconds: i64,
+    ) -> Result<bool, SessionRevocationError> {
+        let row: Option<(bool,)> = sqlx::query_as(
+            "SELECT sessions_revoked_at IS NOT NULL AND sessions_revoked_at > to_timestamp($2) \
+             FROM reviewers WHERE id = $1",
+        )
+        .bind(reviewer_id)
+        .bind(issued_at_epoch_seconds as f64)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| SessionRevocationError {
+            reason: error.to_string(),
+        })?;
+        Ok(row.is_none_or(|(revoked,)| revoked))
+    }
+
+    async fn revoke_all_sessions(&self, reviewer_id: Uuid) -> Result<(), SessionRevocationError> {
+        sqlx::query("UPDATE reviewers SET sessions_revoked_at = now() WHERE id = $1")
+            .bind(reviewer_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|error| SessionRevocationError {
+                reason: error.to_string(),
+            })?;
+        Ok(())
     }
 }

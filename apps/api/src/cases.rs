@@ -64,7 +64,13 @@ pub async fn create_case(
     Json(request): Json<CreateCaseRequest>,
 ) -> Result<(StatusCode, Json<CaseResponse>), ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
 
     let creation = create_case_from_report(
         request.incident_type,
@@ -133,7 +139,13 @@ pub async fn link_report(
     Json(request): Json<LinkReportRequest>,
 ) -> Result<Json<CaseResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
     let case_id = CaseId::from_uuid(case_id);
 
     let mut case = state
@@ -242,7 +254,13 @@ pub async fn create_case_event(
     Json(request): Json<CaseEventRequest>,
 ) -> Result<Json<CaseResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
     transition_case(state, case_id, actor, request.to, request_id).await
 }
 
@@ -252,7 +270,13 @@ pub async fn verify_case(
     headers: HeaderMap,
 ) -> Result<Json<CaseResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
     transition_case(state, case_id, actor, CaseStatus::Verified, request_id).await
 }
 
@@ -262,6 +286,12 @@ pub async fn resolve_case(
     headers: HeaderMap,
 ) -> Result<Json<CaseResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
     transition_case(state, case_id, actor, CaseStatus::Resolved, request_id).await
 }

@@ -1,10 +1,13 @@
 //! Session tokens issued after a successful reviewer login (prompt 09).
 //! HMAC-SHA256 over `reviewer_id:expires_at`, the same real, working scheme
 //! `HmacSignedWebhookVerifier`/`HmacSignedAttachmentStorage` already use —
-//! stateless and self-verifying, so no session table/lookup is needed on
-//! every request. Revocation before expiry is not supported (a deliberate
-//! simplification; see docs/SECURITY_PRIVACY.md section 10 for the incident
-//! response path if a token is compromised before it naturally expires).
+//! stateless and self-verifying, so no session table/lookup is needed to
+//! check the signature/expiry themselves. `VerifiedSessionToken::issued_at`
+//! (reconstructed as `expires_at - ttl`, without changing the token format)
+//! lets a caller additionally check revocation
+//! (`safe_cameroon_application::reviewer_auth::SessionRevocationStore`) —
+//! that check is the caller's job, not this module's, since it is the one
+//! part of verification that does need a lookup.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -22,6 +25,12 @@ const DEFAULT_TTL: Duration = Duration::from_secs(12 * 60 * 60);
 pub struct IssuedSessionToken {
     pub token: String,
     pub expires_in: Duration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VerifiedSessionToken {
+    pub reviewer_id: Uuid,
+    pub issued_at: u64,
 }
 
 #[derive(Clone)]
@@ -58,12 +67,12 @@ impl ReviewerSessionTokenIssuer {
         }
     }
 
-    /// Parses and verifies `token`, returning the reviewer it was issued
-    /// for. Any structural problem (wrong shape, bad signature, expired,
-    /// signed with a different secret) is treated identically as "not a
-    /// valid token" rather than distinguished — a caller only ever needs to
-    /// know whether to trust it.
-    pub fn verify(&self, token: &str) -> Option<Uuid> {
+    /// Parses and verifies `token`, returning the reviewer it was issued for
+    /// plus when. Any structural problem (wrong shape, bad signature,
+    /// expired, signed with a different secret) is treated identically as
+    /// "not a valid token" rather than distinguished — a caller only ever
+    /// needs to know whether to trust it.
+    pub fn verify(&self, token: &str) -> Option<VerifiedSessionToken> {
         let mut parts = token.splitn(3, '.');
         let reviewer_id = Uuid::parse_str(parts.next()?).ok()?;
         let expires_at: u64 = parts.next()?.parse().ok()?;
@@ -83,7 +92,10 @@ impl ReviewerSessionTokenIssuer {
         mac.update(format!("{reviewer_id}:{expires_at}").as_bytes());
         mac.verify_slice(&signature_bytes).ok()?;
 
-        Some(reviewer_id)
+        Some(VerifiedSessionToken {
+            reviewer_id,
+            issued_at: expires_at.saturating_sub(self.ttl.as_secs()),
+        })
     }
 }
 
@@ -98,7 +110,26 @@ mod tests {
         let issuer = ReviewerSessionTokenIssuer::new(b"secret".to_vec());
         let reviewer_id = uuid::Uuid::new_v4();
         let issued = issuer.issue(reviewer_id);
-        assert_eq!(issuer.verify(&issued.token), Some(reviewer_id));
+        assert_eq!(
+            issuer.verify(&issued.token).unwrap().reviewer_id,
+            reviewer_id
+        );
+    }
+
+    #[test]
+    fn verify_reconstructs_issued_at_from_expires_at_minus_the_ttl() {
+        let issuer = ReviewerSessionTokenIssuer::new(b"secret".to_vec());
+        let reviewer_id = uuid::Uuid::new_v4();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let issued = issuer.issue(reviewer_id);
+
+        let verified = issuer.verify(&issued.token).unwrap();
+        // Allow a tiny window for the wall clock advancing between `issue`
+        // and this assertion.
+        assert!(verified.issued_at.abs_diff(now) <= 2);
     }
 
     #[test]

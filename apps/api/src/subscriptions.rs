@@ -154,7 +154,13 @@ pub async fn create_subscription(
     Json(request): Json<CreateSubscriptionRequest>,
 ) -> Result<(StatusCode, Json<SubscriptionResponse>), ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
     authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
 
     let rules = request
@@ -194,7 +200,13 @@ pub async fn list_subscriptions_for_consumer(
     headers: HeaderMap,
 ) -> Result<Json<Vec<SubscriptionResponse>>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
     authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
 
     let subscriptions = state
@@ -224,7 +236,13 @@ pub async fn update_subscription(
     Json(request): Json<UpdateSubscriptionRequest>,
 ) -> Result<Json<SubscriptionResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
     authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
 
     let mut subscription = state
@@ -322,7 +340,13 @@ pub async fn set_delivery_preference(
     Json(request): Json<SetDeliveryPreferenceRequest>,
 ) -> Result<Json<DeliveryPreferenceResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
     authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
 
     let strategy = DeliveryStrategy::from_database_value(&request.strategy).ok_or(ApiError {
@@ -382,7 +406,13 @@ pub async fn get_delivery_preference(
     headers: HeaderMap,
 ) -> Result<Json<DeliveryPreferenceResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
     authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
 
     let consumer_id = ConsumerId::from_uuid(consumer_id);

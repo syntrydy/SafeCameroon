@@ -94,6 +94,7 @@ fn build_router(state: AppState) -> Router {
         .route("/health", get(health::health))
         .route("/v1/auth/register", post(auth::register))
         .route("/v1/auth/login", post(auth::login))
+        .route("/v1/auth/logout", post(auth::logout))
         .route("/v1/reports", post(reports::create_anonymous_report))
         .route(
             "/v1/reports/{report_id}/attachments",
@@ -931,6 +932,79 @@ mod tests {
         assert_eq!(
             wrong_password_code, unknown_email_code,
             "the two failure cases must be indistinguishable to the caller"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn logout_requires_an_authenticated_session() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/logout")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("NOT_AUTHENTICATED")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn logout_revokes_the_session_and_the_old_token_stops_working() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let token = login_reviewer(app.clone()).await;
+
+        let protected_request = |app: Router, token: &str| {
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/subscriptions")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::from(
+                        json!({
+                            "consumer_id": Uuid::new_v4(),
+                            "rules": [{"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]}]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+        };
+
+        let before_logout = protected_request(app.clone(), &token).await.unwrap();
+        assert_eq!(before_logout.status(), StatusCode::CREATED);
+
+        let logout_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/logout")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(logout_response.status(), StatusCode::NO_CONTENT);
+
+        let after_logout = protected_request(app, &token).await.unwrap();
+        assert_eq!(after_logout.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            json_body(after_logout).await["error"]["code"],
+            json!("INVALID_OR_EXPIRED_SESSION")
         );
     }
 
