@@ -111,6 +111,24 @@ async fn find_by_id_returns_none_for_an_unknown_subscription() {
 
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn list_all_returns_every_subscription_regardless_of_consumer() {
+    let pool = test_pool().await;
+    let repository = PostgresSubscriptionRepository::new(pool);
+    let rule = || SubscriptionRule::IncidentType(vec![IncidentType::MissingChild]);
+
+    let a = Subscription::new(SubscriptionId::new(), ConsumerId::new(), 1, vec![rule()]).unwrap();
+    let b = Subscription::new(SubscriptionId::new(), ConsumerId::new(), 1, vec![rule()]).unwrap();
+    repository.create(&a).await.unwrap();
+    repository.create(&b).await.unwrap();
+
+    let all = repository.list_all().await.unwrap();
+    assert_eq!(all.len(), 2);
+    assert!(all.iter().any(|s| s.id() == a.id()));
+    assert!(all.iter().any(|s| s.id() == b.id()));
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
 async fn a_delivery_preference_round_trips_and_can_be_replaced() {
     let pool = test_pool().await;
     let repository = PostgresDeliveryPreferenceRepository::new(pool);

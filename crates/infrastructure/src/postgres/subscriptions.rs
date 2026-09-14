@@ -147,4 +147,18 @@ impl PostgresSubscriptionRepository {
         .await?;
         Ok(rows.into_iter().map(subscription_from_row).collect())
     }
+
+    /// Every subscription in the system, with no candidate filtering
+    /// (docs/SUBSCRIPTION_ENGINE.md section 7 defers indexed/geographic
+    /// filtering until an actual query pattern needs it — "do not
+    /// overengineer the first release", AGENTS.md). The caller runs
+    /// `safe_cameroon_domain::evaluate_subscriptions` against the result.
+    pub async fn list_all(&self) -> Result<Vec<Subscription>, sqlx::Error> {
+        let rows: Vec<SubscriptionRow> = sqlx::query_as(
+            "SELECT id, consumer_id, version, rules FROM subscriptions ORDER BY created_at",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(subscription_from_row).collect())
+    }
 }
