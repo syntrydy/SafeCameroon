@@ -6,7 +6,7 @@ use safe_cameroon_application::case_workflow::{
 use safe_cameroon_application::prepare_anonymous_report;
 use safe_cameroon_domain::{CaseEventType, CaseStatus, IncidentType};
 use safe_cameroon_infrastructure::postgres::{
-    CaseCreationOutcome, CaseLinkOutcome, CaseReviewOutcome, PostgresCaseRepository,
+    CaseCreationOutcome, CaseFilter, CaseLinkOutcome, CaseReviewOutcome, PostgresCaseRepository,
     PostgresReportRepository,
 };
 use sqlx::{PgPool, postgres::PgPoolOptions};
@@ -344,4 +344,145 @@ async fn list_events_returns_empty_for_an_unknown_case() {
         .unwrap();
 
     assert!(events.is_empty());
+}
+
+/// Creates a case for a freshly seeded report and, when `verify` is true,
+/// advances it to `VERIFIED` (updating `updated_at`, which the listing
+/// endpoint orders by).
+async fn seed_case(
+    pool: &PgPool,
+    repository: &PostgresCaseRepository,
+    incident_type: IncidentType,
+    verify: bool,
+) -> Uuid {
+    let report_id = seed_report(pool).await;
+    let creation = create_case_from_report(
+        incident_type,
+        safe_cameroon_domain::ReportId::from_uuid(report_id),
+        Actor::Reviewer(Uuid::new_v4()),
+        Uuid::new_v4(),
+    );
+    repository.create(&creation).await.unwrap();
+    let case_id = creation.case.id();
+
+    if verify {
+        let mut case = repository.find_by_id(case_id).await.unwrap().unwrap();
+        for target in [CaseStatus::UnderReview, CaseStatus::Verified] {
+            let review = review_case(
+                &mut case,
+                Actor::Reviewer(Uuid::new_v4()),
+                target,
+                Uuid::new_v4(),
+            )
+            .unwrap();
+            repository.apply_review(&case, &review).await.unwrap();
+        }
+    }
+
+    case_id.as_uuid()
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn list_filters_by_status_and_incident_type_most_recently_updated_first() {
+    let pool = test_pool().await;
+    let repository = PostgresCaseRepository::new(pool.clone());
+
+    let reported_missing_child =
+        seed_case(&pool, &repository, IncidentType::MissingChild, false).await;
+    let reported_other = seed_case(
+        &pool,
+        &repository,
+        IncidentType::OtherProtectionIncident,
+        false,
+    )
+    .await;
+    // Verified last, so its review updates are the most recent writes and it
+    // sorts first under `ORDER BY updated_at DESC`.
+    let verified_missing_child =
+        seed_case(&pool, &repository, IncidentType::MissingChild, true).await;
+
+    let all = repository
+        .list(&CaseFilter::default(), 10, 0)
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 3);
+    // Most recently updated first: verifying a case bumps its updated_at
+    // past the other two, which were only ever created.
+    assert_eq!(all[0].id().as_uuid(), verified_missing_child);
+
+    let reported_only = repository
+        .list(
+            &CaseFilter {
+                status: Some(CaseStatus::Reported),
+                incident_type: None,
+            },
+            10,
+            0,
+        )
+        .await
+        .unwrap();
+    let reported_ids: Vec<Uuid> = reported_only
+        .iter()
+        .map(|case| case.id().as_uuid())
+        .collect();
+    assert_eq!(reported_ids.len(), 2);
+    assert!(reported_ids.contains(&reported_missing_child));
+    assert!(reported_ids.contains(&reported_other));
+
+    let missing_child_only = repository
+        .list(
+            &CaseFilter {
+                status: None,
+                incident_type: Some(IncidentType::MissingChild),
+            },
+            10,
+            0,
+        )
+        .await
+        .unwrap();
+    let missing_child_ids: Vec<Uuid> = missing_child_only
+        .iter()
+        .map(|case| case.id().as_uuid())
+        .collect();
+    assert_eq!(missing_child_ids.len(), 2);
+    assert!(missing_child_ids.contains(&reported_missing_child));
+    assert!(missing_child_ids.contains(&verified_missing_child));
+
+    let verified_missing_child_only = repository
+        .list(
+            &CaseFilter {
+                status: Some(CaseStatus::Verified),
+                incident_type: Some(IncidentType::MissingChild),
+            },
+            10,
+            0,
+        )
+        .await
+        .unwrap();
+    assert_eq!(verified_missing_child_only.len(), 1);
+    assert_eq!(
+        verified_missing_child_only[0].id().as_uuid(),
+        verified_missing_child
+    );
+    assert_eq!(verified_missing_child_only[0].report_ids().len(), 1);
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn list_respects_limit_and_offset() {
+    let pool = test_pool().await;
+    let repository = PostgresCaseRepository::new(pool.clone());
+
+    for _ in 0..5 {
+        seed_case(&pool, &repository, IncidentType::MissingChild, false).await;
+    }
+
+    let page1 = repository.list(&CaseFilter::default(), 2, 0).await.unwrap();
+    let page2 = repository.list(&CaseFilter::default(), 2, 2).await.unwrap();
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page2.len(), 2);
+    let page1_ids: Vec<Uuid> = page1.iter().map(|case| case.id().as_uuid()).collect();
+    let page2_ids: Vec<Uuid> = page2.iter().map(|case| case.id().as_uuid()).collect();
+    assert!(page1_ids.iter().all(|id| !page2_ids.contains(id)));
 }

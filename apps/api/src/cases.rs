@@ -7,7 +7,7 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
 };
 use safe_cameroon_application::authorization::{Capability, authorize};
@@ -15,10 +15,10 @@ use safe_cameroon_application::case_workflow::{
     Actor, CaseReviewError, create_case_from_report, link_report_to_case, review_case,
 };
 use safe_cameroon_domain::{
-    CaseEventType, CaseId, CaseStatus, DuplicateReportLink, IncidentType, ReportId,
+    Case, CaseEventType, CaseId, CaseStatus, DuplicateReportLink, IncidentType, ReportId,
 };
 use safe_cameroon_infrastructure::postgres::{
-    CaseCreationOutcome, CaseEventRecord, CaseLinkOutcome, CaseReviewOutcome,
+    CaseCreationOutcome, CaseEventRecord, CaseFilter, CaseLinkOutcome, CaseReviewOutcome,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -50,10 +50,15 @@ fn not_authorized(request_id: Uuid) -> ApiError {
     ApiError {
         status: StatusCode::FORBIDDEN,
         code: "NOT_AUTHORIZED",
-        message: "Only an identified reviewer may view case history.",
+        message: "Only an identified reviewer may view case detail.",
         request_id,
     }
 }
+
+const DEFAULT_LIMIT: u32 = 50;
+/// A hard ceiling regardless of what the caller asks for, so a single
+/// request can never force an unbounded scan/response.
+const MAX_LIMIT: u32 = 100;
 
 #[derive(Serialize)]
 pub struct CaseResponse {
@@ -62,6 +67,58 @@ pub struct CaseResponse {
     status: CaseStatus,
     report_ids: Vec<Uuid>,
     version: u64,
+}
+
+fn case_response(case: &Case) -> CaseResponse {
+    CaseResponse {
+        case_id: case.id().as_uuid(),
+        incident_type: case.incident_type(),
+        status: case.status(),
+        report_ids: case.report_ids().iter().map(|id| id.as_uuid()).collect(),
+        version: case.version(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ListCasesQuery {
+    status: Option<CaseStatus>,
+    incident_type: Option<IncidentType>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+}
+
+/// Most recently updated first (`cases_status_updated_at_idx`), optionally
+/// narrowed by `status` and/or `incident_type` — the only way to find a case
+/// without already knowing its id.
+pub async fn list_cases(
+    State(state): State<AppState>,
+    Query(query): Query<ListCasesQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<CaseResponse>>, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    authorize(actor, Capability::ViewCase).map_err(|_| not_authorized(request_id))?;
+
+    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as i64;
+    let offset = query.offset.unwrap_or(0) as i64;
+    let filter = CaseFilter {
+        status: query.status,
+        incident_type: query.incident_type,
+    };
+
+    let cases = state
+        .cases
+        .list(&filter, limit, offset)
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+
+    Ok(Json(cases.iter().map(case_response).collect()))
 }
 
 #[derive(Deserialize)]

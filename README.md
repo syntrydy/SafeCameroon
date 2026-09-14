@@ -77,6 +77,13 @@ attempt) answer docs/OBSERVABILITY.md's "which deliveries were attempted,
 and why did one fail?" through the API instead of a direct database query;
 gated by `Capability::ViewCase`, the same as attachment download.
 
+`GET /v1/cases` lists cases, most recently updated first
+(`cases_status_updated_at_idx`), optionally narrowed by `status` and/or
+`incident_type` — the only way to find a case without already knowing its
+id. Same `limit`/`offset` convention as `GET /v1/audit-events` (default 50,
+capped at 100), gated by `Capability::ViewCase`; shares the `/v1/cases`
+path with the existing `POST` (case creation) handler.
+
 `GET /v1/cases/{id}/events` returns a case's full lifecycle history —
 every transition recorded in `case_events` (creation, report links, review
 steps) in chronological order, not just the current status `GET /v1/cases/{id}`
