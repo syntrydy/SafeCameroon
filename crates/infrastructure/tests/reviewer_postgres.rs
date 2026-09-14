@@ -1,8 +1,17 @@
 use std::env;
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use safe_cameroon_application::reviewer_auth::SessionRevocationStore;
 use safe_cameroon_infrastructure::postgres::{CreateReviewerOutcome, PostgresReviewerRepository};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use uuid::Uuid;
+
+fn now_epoch_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
 
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
 
@@ -96,5 +105,66 @@ async fn find_by_email_returns_none_for_an_unknown_email() {
             .await
             .unwrap(),
         None
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn a_reviewer_with_no_revocation_is_never_revoked() {
+    let pool = test_pool().await;
+    let repository = PostgresReviewerRepository::new(pool);
+    let reviewer_id = Uuid::new_v4();
+    repository
+        .create(reviewer_id, "never-revoked@example.test", "hash-1")
+        .await
+        .unwrap();
+
+    assert!(
+        !repository
+            .is_session_revoked(reviewer_id, now_epoch_seconds())
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn revoke_all_sessions_invalidates_tokens_issued_before_it_but_not_after() {
+    let pool = test_pool().await;
+    let repository = PostgresReviewerRepository::new(pool);
+    let reviewer_id = Uuid::new_v4();
+    repository
+        .create(reviewer_id, "revoked@example.test", "hash-1")
+        .await
+        .unwrap();
+    let issued_before = now_epoch_seconds() - 10;
+
+    repository.revoke_all_sessions(reviewer_id).await.unwrap();
+    let issued_after = now_epoch_seconds() + 10;
+
+    assert!(
+        repository
+            .is_session_revoked(reviewer_id, issued_before)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repository
+            .is_session_revoked(reviewer_id, issued_after)
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn an_unknown_reviewer_id_is_treated_as_revoked() {
+    let pool = test_pool().await;
+    let repository = PostgresReviewerRepository::new(pool);
+    assert!(
+        repository
+            .is_session_revoked(Uuid::new_v4(), now_epoch_seconds())
+            .await
+            .unwrap()
     );
 }

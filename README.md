@@ -46,7 +46,10 @@ with HMAC-SHA256 over `REVIEWER_SESSION_SECRET` (`ReviewerSessionTokenIssuer`,
 the same signed-token scheme `HmacSignedAttachmentStorage` uses for
 short-lived URLs). Registration is open, unauthenticated only to bootstrap a
 fresh deployment's very first reviewer; every registration after that
-requires an authenticated reviewer.
+requires an authenticated reviewer. `POST /v1/auth/logout` revokes every
+session currently issued to the calling reviewer ("logout everywhere") —
+a compromised or offboarded reviewer no longer has to wait out a token's
+12h expiry.
 
 `POST /v1/reports` and `POST /v1/auth/login` are rate-limited
 (docs/SECURITY_PRIVACY.md section 8): a fixed-window counter in Postgres

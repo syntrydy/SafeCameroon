@@ -145,7 +145,13 @@ pub async fn create_download_url(
     headers: HeaderMap,
 ) -> Result<Json<DownloadUrlResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
     authorize(actor, Capability::ViewCase).map_err(|_| {
         tracing::warn!(%request_id, attachment_id = %attachment_id, "unauthorized attachment access attempt");
         ApiError {
