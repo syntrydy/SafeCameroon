@@ -121,3 +121,77 @@ async fn records_an_audit_event_for_download_access() {
     .unwrap();
     assert_eq!(count, 1);
 }
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn find_by_report_id_returns_that_reports_attachments_in_upload_order() {
+    let pool = test_pool().await;
+    let reports = PostgresReportRepository::new(pool.clone());
+    let submission =
+        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+    reports.submit_anonymous(&submission).await.unwrap();
+    let other_submission =
+        prepare_anonymous_report("Unrelated report.".into(), Uuid::new_v4(), None).unwrap();
+    reports.submit_anonymous(&other_submission).await.unwrap();
+
+    let attachments = PostgresAttachmentRepository::new(pool.clone());
+    let first = Attachment::new(
+        submission.report.id,
+        StorageProvider::R2,
+        "attachments/report-1/key-1",
+        AttachmentContentType::ImagePng,
+        4096,
+        "abc123",
+    )
+    .unwrap();
+    attachments.create(&first).await.unwrap();
+    let second = Attachment::new(
+        submission.report.id,
+        StorageProvider::R2,
+        "attachments/report-1/key-2",
+        AttachmentContentType::ApplicationPdf,
+        8192,
+        "def456",
+    )
+    .unwrap();
+    attachments.create(&second).await.unwrap();
+    let unrelated = Attachment::new(
+        other_submission.report.id,
+        StorageProvider::R2,
+        "attachments/report-2/key-1",
+        AttachmentContentType::ImagePng,
+        4096,
+        "ghi789",
+    )
+    .unwrap();
+    attachments.create(&unrelated).await.unwrap();
+
+    let listed = attachments
+        .find_by_report_id(submission.report.id)
+        .await
+        .unwrap();
+
+    assert_eq!(listed.len(), 2);
+    assert_eq!(listed[0].id(), first.id());
+    assert_eq!(listed[1].id(), second.id());
+    for attachment in &listed {
+        assert_eq!(attachment.report_id(), submission.report.id);
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn find_by_report_id_returns_empty_for_a_report_with_no_attachments() {
+    let pool = test_pool().await;
+    let reports = PostgresReportRepository::new(pool.clone());
+    let submission =
+        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+    reports.submit_anonymous(&submission).await.unwrap();
+
+    let attachments = PostgresAttachmentRepository::new(pool.clone());
+    let listed = attachments
+        .find_by_report_id(submission.report.id)
+        .await
+        .unwrap();
+    assert!(listed.is_empty());
+}

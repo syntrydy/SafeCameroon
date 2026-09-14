@@ -134,6 +134,64 @@ pub async fn create_attachment(
 }
 
 #[derive(Serialize)]
+pub struct AttachmentSummaryResponse {
+    attachment_id: Uuid,
+    object_key: String,
+    content_type: &'static str,
+    size_bytes: u64,
+    checksum: String,
+}
+
+fn attachment_summary_response(
+    attachment: &safe_cameroon_domain::Attachment,
+) -> AttachmentSummaryResponse {
+    AttachmentSummaryResponse {
+        attachment_id: attachment.id().as_uuid(),
+        object_key: attachment.object_key().to_owned(),
+        content_type: attachment.content_type().as_mime_type(),
+        size_bytes: attachment.size_bytes(),
+        checksum: attachment.checksum().to_owned(),
+    }
+}
+
+/// Metadata only (never the file bytes or a live download URL) — a reviewer
+/// still calls `create_download_url` per attachment for that, so this stays
+/// a lightweight "what is attached to this report" listing.
+pub async fn list_attachments_for_report(
+    State(state): State<AppState>,
+    Path(report_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AttachmentSummaryResponse>>, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    authorize(actor, Capability::ViewCase).map_err(|_| ApiError {
+        status: StatusCode::FORBIDDEN,
+        code: "NOT_AUTHORIZED",
+        message: "Only an identified reviewer may list a report's attachments.",
+        request_id,
+    })?;
+
+    let attachments = state
+        .attachments
+        .find_by_report_id(ReportId::from_uuid(report_id))
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+
+    Ok(Json(
+        attachments
+            .iter()
+            .map(attachment_summary_response)
+            .collect(),
+    ))
+}
+
+#[derive(Serialize)]
 pub struct DownloadUrlResponse {
     download_url: String,
     expires_in_seconds: u64,

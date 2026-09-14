@@ -38,6 +38,14 @@ HMAC-SHA256-signed mock URLs over `ATTACHMENT_STORAGE_SECRET`
 URL). Uploading requires no actor (part of anonymous report submission);
 requesting a download URL requires an identified reviewer and is audited.
 
+`GET /v1/reports/{report_id}/attachments` lists a report's attachments —
+metadata only (id, object key, content type, size, checksum), never the
+file bytes or a live download URL; a reviewer still calls the existing
+`GET /v1/attachments/{id}/download-url` per attachment for that. Gated by
+`Capability::ViewCase`, same as the download-url endpoint; shares the
+`/v1/reports/{report_id}/attachments` path with the existing `POST` (upload)
+handler.
+
 Reviewer accounts (`POST /v1/auth/register`, `POST /v1/auth/login`) are the
 first real authentication in the system: every protected endpoint used to
 trust a client-supplied `X-Reviewer-Id` header outright, now it requires an

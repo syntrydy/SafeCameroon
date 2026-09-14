@@ -103,7 +103,7 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/reports", post(reports::create_anonymous_report))
         .route(
             "/v1/reports/{report_id}/attachments",
-            post(attachments::create_attachment),
+            get(attachments::list_attachments_for_report).post(attachments::create_attachment),
         )
         .route(
             "/v1/attachments/{id}/download-url",
@@ -695,6 +695,79 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn listing_attachments_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let report_id = seeded_report(&pool).await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/reports/{}/attachments", report_id.as_uuid()))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_lists_a_reports_attachments_in_upload_order() {
+        let pool = test_pool().await;
+        let report_id = seeded_report(&pool).await;
+        let attachments = PostgresAttachmentRepository::new(pool.clone());
+        let first = safe_cameroon_domain::Attachment::new(
+            report_id,
+            safe_cameroon_domain::StorageProvider::R2,
+            "attachments/report-1/key-1",
+            safe_cameroon_domain::AttachmentContentType::ImageJpeg,
+            2048,
+            "deadbeef",
+        )
+        .unwrap();
+        attachments.create(&first).await.unwrap();
+        let second = safe_cameroon_domain::Attachment::new(
+            report_id,
+            safe_cameroon_domain::StorageProvider::R2,
+            "attachments/report-1/key-2",
+            safe_cameroon_domain::AttachmentContentType::ApplicationPdf,
+            4096,
+            "cafef00d",
+        )
+        .unwrap();
+        attachments.create(&second).await.unwrap();
+
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/reports/{}/attachments", report_id.as_uuid()))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let listed = json_body(response).await;
+        let listed = listed.as_array().unwrap();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0]["attachment_id"], json!(first.id().as_uuid()));
+        assert_eq!(listed[0]["object_key"], json!("attachments/report-1/key-1"));
+        assert_eq!(listed[0]["content_type"], json!("image/jpeg"));
+        assert_eq!(listed[0]["size_bytes"], json!(2048));
+        assert_eq!(listed[0]["checksum"], json!("deadbeef"));
+        assert_eq!(listed[1]["attachment_id"], json!(second.id().as_uuid()));
     }
 
     #[tokio::test]
