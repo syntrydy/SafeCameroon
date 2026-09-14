@@ -156,6 +156,7 @@ impl PostgresDeliveryRepository {
                    aggregate_version
             FROM deliveries
             WHERE status IN ('QUEUED', 'RETRYING')
+              AND (next_attempt_at IS NULL OR next_attempt_at <= now())
             ORDER BY created_at
             LIMIT $1
             FOR UPDATE SKIP LOCKED
@@ -392,10 +393,19 @@ async fn advance_delivery(
     delivery: &Delivery,
 ) -> Result<bool, sqlx::Error> {
     let expected_previous_version = delivery.version() as i64 - 1;
+    // `Some(..)` only while `delivery` is Retrying (`Delivery::retry_backoff`);
+    // computed as a plain seconds float and turned into a point in time
+    // entirely in SQL (`now() + make_interval(...)`) so no date/time crate is
+    // needed on the Rust side, mirroring `ReviewerSessionTokenIssuer`/
+    // `PostgresRateLimiter`'s own epoch-second arithmetic.
+    let backoff_seconds = delivery
+        .retry_backoff()
+        .map(|backoff| backoff.as_secs_f64());
     let result = sqlx::query(
         r#"
         UPDATE deliveries
-        SET status = $1::delivery_status, attempt_count = $2, aggregate_version = $3, updated_at = now()
+        SET status = $1::delivery_status, attempt_count = $2, aggregate_version = $3, updated_at = now(),
+            next_attempt_at = CASE WHEN $6::float8 IS NULL THEN NULL ELSE now() + make_interval(secs => $6) END
         WHERE id = $4 AND aggregate_version = $5
         "#,
     )
@@ -404,6 +414,7 @@ async fn advance_delivery(
     .bind(delivery.version() as i64)
     .bind(delivery.id().as_uuid())
     .bind(expected_previous_version)
+    .bind(backoff_seconds)
     .execute(&mut **transaction)
     .await?;
     Ok(result.rows_affected() == 1)

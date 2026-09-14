@@ -476,3 +476,56 @@ async fn claim_next_never_lets_two_concurrent_workers_claim_the_same_delivery() 
         "every delivery must be claimed exactly once across all concurrent workers"
     );
 }
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn a_retrying_delivery_is_not_reclaimed_until_its_backoff_elapses() {
+    let pool = test_pool().await;
+    let alert = verified_alert(&pool).await;
+    let delivery_repository = PostgresDeliveryRepository::new(pool.clone());
+    let delivery_id =
+        plan_and_persist_one(&delivery_repository, &alert, ChannelType::WhatsApp).await;
+
+    let mut delivery = delivery_repository
+        .find_by_id(delivery_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let start = start_delivery_attempt(&mut delivery, Actor::Automated, Uuid::new_v4()).unwrap();
+    delivery_repository
+        .apply_transition(&delivery, &start)
+        .await
+        .unwrap();
+
+    let failed = record_delivery_failure(
+        &mut delivery,
+        true,
+        "provider timeout",
+        Actor::Automated,
+        Uuid::new_v4(),
+    )
+    .unwrap();
+    delivery_repository
+        .apply_attempt_transition(&delivery, &failed)
+        .await
+        .unwrap();
+    assert_eq!(delivery.status(), DeliveryStatus::Retrying);
+
+    let claimed_too_soon = delivery_repository.claim_next(10).await.unwrap();
+    assert!(
+        claimed_too_soon.is_empty(),
+        "a Retrying delivery must not be reclaimed before its backoff elapses"
+    );
+
+    sqlx::query(
+        "UPDATE deliveries SET next_attempt_at = now() - interval '1 second' WHERE id = $1",
+    )
+    .bind(delivery_id.as_uuid())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let claimed_after_backoff = delivery_repository.claim_next(10).await.unwrap();
+    assert_eq!(claimed_after_backoff.len(), 1);
+    assert_eq!(claimed_after_backoff[0].id(), delivery_id);
+}
