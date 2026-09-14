@@ -101,13 +101,20 @@ pub async fn register(
         .await
         .map_err(|_| persistence_failed(request_id))?
     {
-        CreateReviewerOutcome::Created => Ok((
-            StatusCode::CREATED,
-            Json(RegisterResponse {
-                reviewer_id,
-                email: email.to_owned(),
-            }),
-        )),
+        CreateReviewerOutcome::Created => {
+            state
+                .reviewers
+                .record_registration(reviewer_id, actor, request_id)
+                .await
+                .map_err(|_| persistence_failed(request_id))?;
+            Ok((
+                StatusCode::CREATED,
+                Json(RegisterResponse {
+                    reviewer_id,
+                    email: email.to_owned(),
+                }),
+            ))
+        }
         CreateReviewerOutcome::EmailAlreadyRegistered => Err(ApiError {
             status: StatusCode::CONFLICT,
             code: "EMAIL_ALREADY_REGISTERED",
@@ -173,6 +180,7 @@ pub async fn login(
         .find_by_email(&normalized_email)
         .await
         .map_err(|_| persistence_failed(request_id))?;
+    let matched_reviewer_id = record.as_ref().map(|record| record.id);
 
     let password_matches = match &record {
         Some(record) => verify_password(&request.password, &record.password_hash),
@@ -182,9 +190,21 @@ pub async fn login(
         }
     };
 
-    let Some(record) = record.filter(|_| password_matches) else {
+    if !password_matches {
+        state
+            .reviewers
+            .record_login_failure(matched_reviewer_id, &normalized_email, request_id)
+            .await
+            .map_err(|_| persistence_failed(request_id))?;
         return Err(invalid_credentials());
-    };
+    }
+    let record = record.expect("password_matches is only true when a record was found");
+
+    state
+        .reviewers
+        .record_login_success(record.id, request_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
 
     let issued = state.reviewer_session_tokens.issue(record.id);
     Ok(Json(LoginResponse {
@@ -223,6 +243,11 @@ pub async fn logout(
     state
         .reviewers
         .revoke_all_sessions(reviewer_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+    state
+        .reviewers
+        .record_logout(reviewer_id, request_id)
         .await
         .map_err(|_| persistence_failed(request_id))?;
 

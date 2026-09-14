@@ -1010,6 +1010,124 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn register_login_and_logout_each_write_an_audit_event() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool.clone()));
+        let email = "audited@example.test";
+        let password = "correct-horse-battery-staple";
+
+        let register_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"email": email, "password": password}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let reviewer_id = json_body(register_response)
+            .await
+            .get("reviewer_id")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let (register_audit_count,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM audit_events WHERE action = 'REVIEWER_REGISTERED' AND resource_id = $1",
+        )
+        .bind(Uuid::parse_str(&reviewer_id).unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(register_audit_count, 1);
+
+        let failed_login = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"email": email, "password": "wrong password"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(failed_login.status(), StatusCode::UNAUTHORIZED);
+
+        let (login_failed_count,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM audit_events WHERE action = 'REVIEWER_LOGIN_FAILED' \
+             AND resource_id = $1 AND metadata->>'email' = $2",
+        )
+        .bind(Uuid::parse_str(&reviewer_id).unwrap())
+        .bind(email)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(login_failed_count, 1);
+
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"email": email, "password": password}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(login_response.status(), StatusCode::OK);
+        let token = json_body(login_response).await["token"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let (login_succeeded_count,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM audit_events WHERE action = 'REVIEWER_LOGIN_SUCCEEDED' AND resource_id = $1",
+        )
+        .bind(Uuid::parse_str(&reviewer_id).unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(login_succeeded_count, 1);
+
+        let logout_response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/logout")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(logout_response.status(), StatusCode::NO_CONTENT);
+
+        let (logout_count,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM audit_events WHERE action = 'REVIEWER_LOGOUT' AND resource_id = $1",
+        )
+        .bind(Uuid::parse_str(&reviewer_id).unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(logout_count, 1);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
     async fn a_garbage_bearer_token_is_rejected_rather_than_treated_as_automated() {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));
