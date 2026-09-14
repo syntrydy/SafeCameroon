@@ -69,6 +69,13 @@ attempt) answer docs/OBSERVABILITY.md's "which deliveries were attempted,
 and why did one fail?" through the API instead of a direct database query;
 gated by `Capability::ViewCase`, the same as attachment download.
 
+`GET /v1/cases/{id}/events` returns a case's full lifecycle history —
+every transition recorded in `case_events` (creation, report links, review
+steps) in chronological order, not just the current status `GET /v1/cases/{id}`
+already returns. Same read-only, `Capability::ViewCase`-gated shape as
+delivery visibility; shares the `/v1/cases/{id}/events` path with the
+existing `POST` (case-transition) handler.
+
 `GET /v1/audit-events` (docs/SECURITY_PRIVACY.md section 6) reads the
 generic `audit_events` table that every other endpoint only ever writes to,
 filterable by `resource_type`, `resource_id`, `action`, and `actor_id`, most

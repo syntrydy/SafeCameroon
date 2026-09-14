@@ -2,7 +2,9 @@ use safe_cameroon_application::case_workflow::{
     Actor, CaseCreation, CaseReportLink, CaseReview, case_created_event_payload,
     case_report_linked_event_payload, case_status_changed_event_payload,
 };
-use safe_cameroon_domain::{Case, CaseEvent, CaseId, CaseStatus, IncidentType, ReportId};
+use safe_cameroon_domain::{
+    Case, CaseEvent, CaseEventType, CaseId, CaseStatus, IncidentType, ReportId,
+};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -29,6 +31,19 @@ pub enum CaseLinkOutcome {
 pub enum CaseReviewOutcome {
     Applied,
     Conflict,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaseEventRecord {
+    pub id: Uuid,
+    pub case_id: Uuid,
+    pub event_type: CaseEventType,
+    pub aggregate_version: u64,
+    pub actor_type: String,
+    pub actor_id: Option<Uuid>,
+    /// See `AuditEventRecord::occurred_at` (`postgres/audit_events.rs`) for
+    /// why this stays a plain `String` rather than a decoded date/time type.
+    pub occurred_at: String,
 }
 
 #[derive(Clone)]
@@ -211,6 +226,42 @@ impl PostgresCaseRepository {
         .await?;
         transaction.commit().await?;
         Ok(CaseReviewOutcome::Applied)
+    }
+
+    /// Chronological order (`aggregate_version` ascending) — the full history
+    /// of a case's lifecycle, not just its current status.
+    pub async fn list_events(&self, case_id: CaseId) -> Result<Vec<CaseEventRecord>, sqlx::Error> {
+        #[allow(clippy::type_complexity)]
+        let rows: Vec<(Uuid, String, i64, String, Option<Uuid>, String)> = sqlx::query_as(
+            r#"
+            SELECT id, event_type::text, aggregate_version, actor_type, actor_id, occurred_at::text
+            FROM case_events
+            WHERE case_id = $1
+            ORDER BY aggregate_version
+            "#,
+        )
+        .bind(case_id.as_uuid())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(id, event_type, aggregate_version, actor_type, actor_id, occurred_at)| {
+                    CaseEventRecord {
+                        id,
+                        case_id: case_id.as_uuid(),
+                        event_type: CaseEventType::from_database_value(&event_type).expect(
+                            "case_events.event_type is constrained by the case_event_type enum",
+                        ),
+                        aggregate_version: aggregate_version as u64,
+                        actor_type,
+                        actor_id,
+                        occurred_at,
+                    }
+                },
+            )
+            .collect())
     }
 }
 

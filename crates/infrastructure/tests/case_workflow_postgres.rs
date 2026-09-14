@@ -4,7 +4,7 @@ use safe_cameroon_application::case_workflow::{
     Actor, create_case_from_report, link_report_to_case, review_case,
 };
 use safe_cameroon_application::prepare_anonymous_report;
-use safe_cameroon_domain::{CaseStatus, IncidentType};
+use safe_cameroon_domain::{CaseEventType, CaseStatus, IncidentType};
 use safe_cameroon_infrastructure::postgres::{
     CaseCreationOutcome, CaseLinkOutcome, CaseReviewOutcome, PostgresCaseRepository,
     PostgresReportRepository,
@@ -282,4 +282,66 @@ async fn review_lifecycle_persists_status_and_events() {
             .await
             .unwrap();
     assert_eq!(event_count, 3, "created, under review, and verified");
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn list_events_returns_the_full_case_history_in_chronological_order() {
+    let pool = test_pool().await;
+    let report_id = seed_report(&pool).await;
+    let repository = PostgresCaseRepository::new(pool.clone());
+    let creating_actor = Actor::Reviewer(Uuid::new_v4());
+
+    let creation = create_case_from_report(
+        IncidentType::MissingChild,
+        safe_cameroon_domain::ReportId::from_uuid(report_id),
+        creating_actor,
+        Uuid::new_v4(),
+    );
+    repository.create(&creation).await.unwrap();
+    let mut case = repository
+        .find_by_id(creation.case.id())
+        .await
+        .unwrap()
+        .unwrap();
+
+    let reviewing_actor = Actor::Reviewer(Uuid::new_v4());
+    for target in [CaseStatus::UnderReview, CaseStatus::Verified] {
+        let review = review_case(&mut case, reviewing_actor, target, Uuid::new_v4()).unwrap();
+        repository.apply_review(&case, &review).await.unwrap();
+    }
+
+    let events = repository.list_events(case.id()).await.unwrap();
+
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0].event_type, CaseEventType::CaseCreated);
+    assert_eq!(events[0].aggregate_version, 1);
+    assert_eq!(events[0].actor_type, "REVIEWER");
+    assert_eq!(events[0].actor_id, creating_actor.actor_id());
+    assert!(!events[0].occurred_at.is_empty());
+
+    assert_eq!(events[1].event_type, CaseEventType::CaseUnderReview);
+    assert_eq!(events[1].aggregate_version, 2);
+    assert_eq!(events[1].actor_id, reviewing_actor.actor_id());
+
+    assert_eq!(events[2].event_type, CaseEventType::CaseVerified);
+    assert_eq!(events[2].aggregate_version, 3);
+
+    for event in &events {
+        assert_eq!(event.case_id, case.id().as_uuid());
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn list_events_returns_empty_for_an_unknown_case() {
+    let pool = test_pool().await;
+    let repository = PostgresCaseRepository::new(pool.clone());
+
+    let events = repository
+        .list_events(safe_cameroon_domain::CaseId::from_uuid(Uuid::new_v4()))
+        .await
+        .unwrap();
+
+    assert!(events.is_empty());
 }
