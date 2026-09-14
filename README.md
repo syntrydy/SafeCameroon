@@ -48,6 +48,17 @@ short-lived URLs). Registration is open, unauthenticated only to bootstrap a
 fresh deployment's very first reviewer; every registration after that
 requires an authenticated reviewer.
 
+`POST /v1/reports` and `POST /v1/auth/login` are rate-limited
+(docs/SECURITY_PRIVACY.md section 8): a fixed-window counter in Postgres
+(`rate_limit_windows`, `PostgresRateLimiter`) refuses a request with
+`429 RATE_LIMIT_EXCEEDED` once its source exceeds the scope's limit.
+Reporting is keyed by `X-Forwarded-For` (the real client address once
+Cloudflare — docs/DEPLOYMENT.md's edge — is in front; a shared bucket
+otherwise); login is keyed by the targeted email so credential stuffing
+against one account is throttled even across rotating source IPs. This is
+defense-in-depth alongside Cloudflare's own edge rate limiting, not a
+replacement for it.
+
 Both binaries log structured, JSON-free `tracing` output (`RUST_LOG`
 overrides the `info` default, e.g. `RUST_LOG=debug`). Every API request
 carries a `x-request-id` header — the client's own value if it sent one,
@@ -76,6 +87,7 @@ TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --te
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test subscription_persistence_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test outbox_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test reviewer_postgres -- --ignored
+TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test rate_limit_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-worker --bins -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-api --bins -- --ignored
 ```

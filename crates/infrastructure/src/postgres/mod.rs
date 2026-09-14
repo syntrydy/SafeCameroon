@@ -6,6 +6,7 @@ pub mod cases;
 pub mod deliveries;
 pub mod delivery_preferences;
 pub mod outbox;
+pub mod rate_limits;
 pub mod reports;
 pub mod reviewers;
 pub mod subscriptions;
@@ -16,6 +17,7 @@ pub use cases::{CaseCreationOutcome, CaseLinkOutcome, CaseReviewOutcome, Postgre
 pub use deliveries::{DeliveryTransitionOutcome, PostgresDeliveryRepository};
 pub use delivery_preferences::PostgresDeliveryPreferenceRepository;
 pub use outbox::{ClaimedOutboxEvent, PostgresOutboxRepository};
+pub use rate_limits::PostgresRateLimiter;
 pub use reports::{PostgresReportRepository, SubmissionResult};
 pub use reviewers::{CreateReviewerOutcome, PostgresReviewerRepository, ReviewerRecord};
 pub use subscriptions::PostgresSubscriptionRepository;

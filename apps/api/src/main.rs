@@ -4,9 +4,11 @@ mod auth;
 mod cases;
 mod error;
 mod health;
+mod rate_limit;
 mod reports;
 mod request_id;
 mod reviewer;
+mod source_key;
 mod state;
 mod subscriptions;
 mod webhooks;
@@ -23,8 +25,8 @@ use safe_cameroon_domain::ChannelType;
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresAttachmentRepository, PostgresCaseRepository,
-    PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository, PostgresReportRepository,
-    PostgresReviewerRepository, PostgresSubscriptionRepository,
+    PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository, PostgresRateLimiter,
+    PostgresReportRepository, PostgresReviewerRepository, PostgresSubscriptionRepository,
 };
 use safe_cameroon_infrastructure::storage::HmacSignedAttachmentStorage;
 use safe_cameroon_infrastructure::webhook::{
@@ -77,6 +79,7 @@ fn build_state(
         delivery_preferences: PostgresDeliveryPreferenceRepository::new(pool.clone()),
         reviewers: PostgresReviewerRepository::new(pool.clone()),
         reviewer_session_tokens: ReviewerSessionTokenIssuer::new(reviewer_session_secret),
+        rate_limiter: Arc::new(PostgresRateLimiter::new(pool.clone())),
         attachment_storage: Arc::new(HmacSignedAttachmentStorage::new(
             attachment_storage_base_url,
             attachment_storage_secret,
@@ -244,7 +247,7 @@ mod tests {
             "TRUNCATE attachments, webhook_replay_events, delivery_events, delivery_attempts, \
              deliveries, alert_events, alert_fields, alerts, case_events, case_reports, cases, \
              outbox_events, audit_events, reports, reporters, consumer_delivery_preferences, \
-             subscriptions, reviewers",
+             subscriptions, reviewers, rate_limit_windows",
         )
         .execute(&pool)
         .await
@@ -952,6 +955,77 @@ mod tests {
         assert_eq!(
             json_body(response).await["error"]["code"],
             json!("INVALID_OR_EXPIRED_SESSION")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn exceeding_the_login_rate_limit_returns_too_many_requests() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let email = "throttle-target@example.test";
+        let attempt = |app: Router| {
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"email": email, "password": "wrong password"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+        };
+
+        for attempt_number in 1..=5 {
+            let response = attempt(app.clone()).await.unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "attempt {attempt_number} should be a normal credential failure, not throttled yet"
+            );
+        }
+
+        let throttled = attempt(app).await.unwrap();
+        assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            json_body(throttled).await["error"]["code"],
+            json!("RATE_LIMIT_EXCEEDED")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn exceeding_the_anonymous_report_rate_limit_returns_too_many_requests() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let submit = |app: Router| {
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content": "A child is missing."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+        };
+
+        for attempt_number in 1..=10 {
+            let response = submit(app.clone()).await.unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::CREATED,
+                "attempt {attempt_number} should still be within the limit"
+            );
+        }
+
+        let throttled = submit(app).await.unwrap();
+        assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            json_body(throttled).await["error"]["code"],
+            json!("RATE_LIMIT_EXCEEDED")
         );
     }
 
