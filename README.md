@@ -77,6 +77,15 @@ attempt) answer docs/OBSERVABILITY.md's "which deliveries were attempted,
 and why did one fail?" through the API instead of a direct database query;
 gated by `Capability::ViewCase`, the same as attachment download.
 
+`GET /v1/reports` is the only way to read a report's content through the
+API — `POST /v1/reports` (anonymous submission) had no matching reader,
+so a reviewer had no API path to see what a report says before deciding
+whether to open a case. Lists most recently received first
+(`reports_status_received_at_idx`), optionally filtered by `status`; same
+`limit`/`offset` convention as `GET /v1/audit-events`, gated by
+`Capability::ViewCase`; shares the `/v1/reports` path with the existing
+`POST` (submission) handler.
+
 `GET /v1/cases` lists cases, most recently updated first
 (`cases_status_updated_at_idx`), optionally narrowed by `status` and/or
 `incident_type` — the only way to find a case without already knowing its

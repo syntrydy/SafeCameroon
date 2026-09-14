@@ -100,7 +100,10 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/auth/logout", post(auth::logout))
         .route("/v1/audit-events", get(audit_events::list_audit_events))
-        .route("/v1/reports", post(reports::create_anonymous_report))
+        .route(
+            "/v1/reports",
+            get(reports::list_reports).post(reports::create_anonymous_report),
+        )
         .route(
             "/v1/reports/{report_id}/attachments",
             get(attachments::list_attachments_for_report).post(attachments::create_attachment),
@@ -1483,6 +1486,91 @@ mod tests {
             json_body(throttled).await["error"]["code"],
             json!("RATE_LIMIT_EXCEEDED")
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn listing_reports_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/reports")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_lists_and_filters_reports() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content": "My child has not returned from school."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let report_id = json_body(response).await["report_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/reports")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let listed = json_body(response).await;
+        let listed = listed.as_array().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0]["report_id"], json!(report_id));
+        assert_eq!(
+            listed[0]["raw_content"],
+            json!("My child has not returned from school.")
+        );
+        assert_eq!(listed[0]["status"], json!("RECEIVED"));
+        assert_eq!(listed[0]["source_channel"], json!("WEB"));
+        assert!(listed[0]["received_at"].as_str().is_some());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/reports?status=UNDER_REVIEW")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(json_body(response).await.as_array().unwrap().is_empty());
     }
 
     #[tokio::test]

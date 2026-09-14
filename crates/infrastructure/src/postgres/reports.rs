@@ -1,5 +1,5 @@
 use safe_cameroon_application::{AnonymousReportSubmission, report_submitted_event_payload};
-use safe_cameroon_domain::ReportId;
+use safe_cameroon_domain::{ReportId, ReportSourceChannel, ReportStatus};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -7,6 +7,17 @@ use uuid::Uuid;
 pub enum SubmissionResult {
     Created,
     Duplicate { report_id: Uuid },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReportSummary {
+    pub id: Uuid,
+    pub source_channel: ReportSourceChannel,
+    pub status: ReportStatus,
+    pub raw_content: String,
+    /// See `AuditEventRecord::occurred_at` (`postgres/audit_events.rs`) for
+    /// why this stays a plain `String` rather than a decoded date/time type.
+    pub received_at: String,
 }
 
 #[derive(Clone)]
@@ -42,6 +53,50 @@ impl PostgresReportRepository {
             .fetch_optional(&self.pool)
             .await?;
         Ok(found.is_some())
+    }
+
+    /// Most recently received first (`reports_status_received_at_idx`),
+    /// optionally narrowed by status. `limit`/`offset` are taken as given —
+    /// the API layer clamps `limit` to a sane maximum before it ever reaches
+    /// here.
+    pub async fn list(
+        &self,
+        status: Option<ReportStatus>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<ReportSummary>, sqlx::Error> {
+        #[allow(clippy::type_complexity)]
+        let rows: Vec<(Uuid, String, String, String, String)> = sqlx::query_as(
+            r#"
+            SELECT id, source_channel::text, status::text, raw_content, received_at::text
+            FROM reports
+            WHERE ($1::report_status IS NULL OR status = $1::report_status)
+            ORDER BY received_at DESC
+            LIMIT $2 OFFSET $3
+            "#,
+        )
+        .bind(status.map(ReportStatus::as_database_value))
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(id, source_channel, status, raw_content, received_at)| ReportSummary {
+                    id,
+                    source_channel: ReportSourceChannel::from_database_value(&source_channel)
+                        .expect(
+                            "reports.source_channel is constrained by the report_source_channel enum",
+                        ),
+                    status: ReportStatus::from_database_value(&status)
+                        .expect("reports.status is constrained by the report_status enum"),
+                    raw_content,
+                    received_at,
+                },
+            )
+            .collect())
     }
 }
 
