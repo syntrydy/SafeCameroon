@@ -112,7 +112,10 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/cases", post(cases::create_case))
         .route("/v1/cases/{id}", get(cases::get_case))
         .route("/v1/cases/{id}/reports", post(cases::link_report))
-        .route("/v1/cases/{id}/events", post(cases::create_case_event))
+        .route(
+            "/v1/cases/{id}/events",
+            get(cases::list_case_events).post(cases::create_case_event),
+        )
         .route("/v1/cases/{id}/verify", post(cases::verify_case))
         .route("/v1/cases/{id}/resolve", post(cases::resolve_case))
         .route("/v1/cases/{id}/alerts", post(alerts::create_alert))
@@ -1747,6 +1750,111 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(json_body(response).await["status"], json!("RESOLVED"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn listing_case_events_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/cases/{}/events", Uuid::new_v4()))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_lists_a_cases_full_event_history_in_order() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content": "My child has not returned from school."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let report_id = json_body(response).await["report_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/cases")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::from(
+                        json!({"report_id": report_id, "incident_type": "MISSING_CHILD"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let case_id = json_body(response).await["case_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/events"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::from(json!({"to": "UNDER_REVIEW"}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/cases/{case_id}/events"))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let events = json_body(response).await;
+        let events = events.as_array().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["event_type"], json!("CASE_CREATED"));
+        assert_eq!(events[0]["aggregate_version"], json!(1));
+        assert_eq!(events[0]["case_id"], json!(case_id));
+        assert!(events[0]["occurred_at"].as_str().is_some());
+        assert_eq!(events[1]["event_type"], json!("CASE_UNDER_REVIEW"));
+        assert_eq!(events[1]["aggregate_version"], json!(2));
     }
 
     #[tokio::test]

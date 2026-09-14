@@ -10,12 +10,15 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
+use safe_cameroon_application::authorization::{Capability, authorize};
 use safe_cameroon_application::case_workflow::{
     Actor, CaseReviewError, create_case_from_report, link_report_to_case, review_case,
 };
-use safe_cameroon_domain::{CaseId, CaseStatus, DuplicateReportLink, IncidentType, ReportId};
+use safe_cameroon_domain::{
+    CaseEventType, CaseId, CaseStatus, DuplicateReportLink, IncidentType, ReportId,
+};
 use safe_cameroon_infrastructure::postgres::{
-    CaseCreationOutcome, CaseLinkOutcome, CaseReviewOutcome,
+    CaseCreationOutcome, CaseEventRecord, CaseLinkOutcome, CaseReviewOutcome,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -39,6 +42,15 @@ fn persistence_failed(request_id: Uuid) -> ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
         code: "CASE_PERSISTENCE_FAILED",
         message: "The case could not be saved. Please try again.",
+        request_id,
+    }
+}
+
+fn not_authorized(request_id: Uuid) -> ApiError {
+    ApiError {
+        status: StatusCode::FORBIDDEN,
+        code: "NOT_AUTHORIZED",
+        message: "Only an identified reviewer may view case history.",
         request_id,
     }
 }
@@ -294,4 +306,57 @@ pub async fn resolve_case(
     )
     .await?;
     transition_case(state, case_id, actor, CaseStatus::Resolved, request_id).await
+}
+
+#[derive(Serialize)]
+pub struct CaseEventHistoryResponse {
+    id: Uuid,
+    case_id: Uuid,
+    event_type: CaseEventType,
+    aggregate_version: u64,
+    actor_type: String,
+    actor_id: Option<Uuid>,
+    occurred_at: String,
+}
+
+fn case_event_history_response(event: &CaseEventRecord) -> CaseEventHistoryResponse {
+    CaseEventHistoryResponse {
+        id: event.id,
+        case_id: event.case_id,
+        event_type: event.event_type,
+        aggregate_version: event.aggregate_version,
+        actor_type: event.actor_type.clone(),
+        actor_id: event.actor_id,
+        occurred_at: event.occurred_at.clone(),
+    }
+}
+
+/// The case's full lifecycle history (docs/OBSERVABILITY.md), not just its
+/// current status — same "may this reviewer see case-adjacent detail"
+/// question as delivery visibility, so it reuses `Capability::ViewCase`
+/// rather than introducing a new one.
+pub async fn list_case_events(
+    State(state): State<AppState>,
+    Path(case_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<CaseEventHistoryResponse>>, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    authorize(actor, Capability::ViewCase).map_err(|_| not_authorized(request_id))?;
+
+    let events = state
+        .cases
+        .list_events(CaseId::from_uuid(case_id))
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+
+    Ok(Json(
+        events.iter().map(case_event_history_response).collect(),
+    ))
 }
