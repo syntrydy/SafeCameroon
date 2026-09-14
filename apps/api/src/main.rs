@@ -1,5 +1,6 @@
 mod alerts;
 mod attachments;
+mod auth;
 mod cases;
 mod error;
 mod health;
@@ -19,10 +20,11 @@ use axum::{
 };
 use safe_cameroon_application::webhook::WebhookVerifierRegistry;
 use safe_cameroon_domain::ChannelType;
+use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresAttachmentRepository, PostgresCaseRepository,
     PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository, PostgresReportRepository,
-    PostgresSubscriptionRepository,
+    PostgresReviewerRepository, PostgresSubscriptionRepository,
 };
 use safe_cameroon_infrastructure::storage::HmacSignedAttachmentStorage;
 use safe_cameroon_infrastructure::webhook::{
@@ -52,6 +54,7 @@ fn build_state(
     webhook_secret: Vec<u8>,
     attachment_storage_secret: Vec<u8>,
     attachment_storage_base_url: String,
+    reviewer_session_secret: Vec<u8>,
 ) -> AppState {
     let mut webhook_verifiers = WebhookVerifierRegistry::new();
     for channel in [ChannelType::WhatsApp, ChannelType::Sms, ChannelType::Email] {
@@ -72,6 +75,8 @@ fn build_state(
         attachments: PostgresAttachmentRepository::new(pool.clone()),
         subscriptions: PostgresSubscriptionRepository::new(pool.clone()),
         delivery_preferences: PostgresDeliveryPreferenceRepository::new(pool.clone()),
+        reviewers: PostgresReviewerRepository::new(pool.clone()),
+        reviewer_session_tokens: ReviewerSessionTokenIssuer::new(reviewer_session_secret),
         attachment_storage: Arc::new(HmacSignedAttachmentStorage::new(
             attachment_storage_base_url,
             attachment_storage_secret,
@@ -84,6 +89,8 @@ fn build_state(
 fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health::health))
+        .route("/v1/auth/register", post(auth::register))
+        .route("/v1/auth/login", post(auth::login))
         .route("/v1/reports", post(reports::create_anonymous_report))
         .route(
             "/v1/reports/{report_id}/attachments",
@@ -150,6 +157,9 @@ async fn main() {
         .into_bytes();
     let attachment_storage_base_url = std::env::var("ATTACHMENT_STORAGE_BASE_URL")
         .unwrap_or_else(|_| "https://storage.sandbox.local".to_owned());
+    let reviewer_session_secret = std::env::var("REVIEWER_SESSION_SECRET")
+        .expect("REVIEWER_SESSION_SECRET must be configured")
+        .into_bytes();
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&database_url)
@@ -161,6 +171,7 @@ async fn main() {
         webhook_secret,
         attachment_storage_secret,
         attachment_storage_base_url,
+        reviewer_session_secret,
     ));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
@@ -205,6 +216,7 @@ mod tests {
             TEST_SECRET.to_vec(),
             b"test-attachment-storage-secret".to_vec(),
             "https://storage.example".to_owned(),
+            b"test-reviewer-session-secret".to_vec(),
         )
     }
 
@@ -232,7 +244,7 @@ mod tests {
             "TRUNCATE attachments, webhook_replay_events, delivery_events, delivery_attempts, \
              deliveries, alert_events, alert_fields, alerts, case_events, case_reports, cases, \
              outbox_events, audit_events, reports, reporters, consumer_delivery_preferences, \
-             subscriptions",
+             subscriptions, reviewers",
         )
         .execute(&pool)
         .await
@@ -578,6 +590,7 @@ mod tests {
             .unwrap();
         assert_eq!(unauthorized.status(), StatusCode::FORBIDDEN);
 
+        let token = login_reviewer(app.clone()).await;
         let authorized = app
             .oneshot(
                 Request::builder()
@@ -586,7 +599,7 @@ mod tests {
                         "/v1/attachments/{}/download-url",
                         attachment.id().as_uuid()
                     ))
-                    .header("X-Reviewer-Id", Uuid::new_v4().to_string())
+                    .header("Authorization", format!("Bearer {token}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -681,6 +694,267 @@ mod tests {
         serde_json::from_slice(&bytes).unwrap()
     }
 
+    /// Registers a fresh reviewer and logs in, returning a bearer session
+    /// token. Relies on the reviewers table being empty at the start of each
+    /// test (`test_pool`'s `TRUNCATE`), so registration is always the
+    /// deployment's bootstrapping first-reviewer case and needs no
+    /// authorization of its own.
+    async fn login_reviewer(app: Router) -> String {
+        let email = format!("reviewer-{}@example.test", Uuid::new_v4());
+        let password = "correct-horse-battery-staple";
+
+        let register_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"email": email, "password": password}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            register_response.status(),
+            StatusCode::CREATED,
+            "reviewer registration must succeed in test setup"
+        );
+
+        let login_response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"email": email, "password": password}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            login_response.status(),
+            StatusCode::OK,
+            "reviewer login must succeed in test setup"
+        );
+        json_body(login_response).await["token"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_second_reviewer_registration_without_authentication_is_forbidden() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        // Bootstraps the first reviewer, consuming the "no reviewers yet" window.
+        login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"email": "second@example.test", "password": "correct-horse-battery-staple"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn an_authenticated_reviewer_may_register_a_second_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let token = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::from(
+                        json!({"email": "second@example.test", "password": "correct-horse-battery-staple"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn registering_an_already_used_email_is_rejected() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        // Bootstraps the first reviewer, consuming the "no reviewers yet"
+        // window, so both registrations below go through the same
+        // authenticated reviewer.
+        let token = login_reviewer(app.clone()).await;
+        let email = "duplicate@example.test";
+        let register = |app: Router, token: String| {
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::from(
+                        json!({"email": email, "password": "correct-horse-battery-staple"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+        };
+
+        let first = register(app.clone(), token.clone()).await.unwrap();
+        assert_eq!(first.status(), StatusCode::CREATED);
+
+        let second = register(app, token).await.unwrap();
+        assert_eq!(second.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            json_body(second).await["error"]["code"],
+            json!("EMAIL_ALREADY_REGISTERED")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn registering_with_a_short_password_is_rejected() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"email": "short@example.test", "password": "short1"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("WEAK_PASSWORD")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn login_rejects_a_wrong_password_and_an_unknown_email_identically() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let email = "reviewer@example.test";
+
+        let register = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"email": email, "password": "correct-horse-battery-staple"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(register.status(), StatusCode::CREATED);
+
+        let wrong_password = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"email": email, "password": "not the right password"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(wrong_password.status(), StatusCode::UNAUTHORIZED);
+        let wrong_password_code = json_body(wrong_password).await["error"]["code"].clone();
+
+        let unknown_email = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"email": "nobody@example.test", "password": "whatever-password"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unknown_email.status(), StatusCode::UNAUTHORIZED);
+        let unknown_email_code = json_body(unknown_email).await["error"]["code"].clone();
+
+        assert_eq!(wrong_password_code, json!("INVALID_CREDENTIALS"));
+        assert_eq!(
+            wrong_password_code, unknown_email_code,
+            "the two failure cases must be indistinguishable to the caller"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_garbage_bearer_token_is_rejected_rather_than_treated_as_automated() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/subscriptions")
+                    .header("content-type", "application/json")
+                    .header("Authorization", "Bearer not-a-real-token")
+                    .body(Body::from(
+                        json!({
+                            "consumer_id": Uuid::new_v4(),
+                            "rules": [{"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]}]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("INVALID_OR_EXPIRED_SESSION")
+        );
+    }
+
     /// docs/TESTING.md section 8, Scenario A ("missing child"), driven end to
     /// end through the real HTTP surface wherever one exists: anonymous
     /// report -> case review -> verified case -> community alert ->
@@ -696,7 +970,7 @@ mod tests {
     async fn full_missing_child_scenario_from_anonymous_report_to_resolution() {
         let pool = test_pool().await;
         let app = build_router(test_state(pool.clone()));
-        let reviewer = Uuid::new_v4().to_string();
+        let reviewer = login_reviewer(app.clone()).await;
 
         // 1. Anonymous report - no actor required.
         let response = app
@@ -727,7 +1001,7 @@ mod tests {
                     .method("POST")
                     .uri("/v1/cases")
                     .header("content-type", "application/json")
-                    .header("X-Reviewer-Id", &reviewer)
+                    .header("Authorization", format!("Bearer {reviewer}"))
                     .body(Body::from(
                         json!({"report_id": report_id, "incident_type": "MISSING_CHILD"})
                             .to_string(),
@@ -749,7 +1023,7 @@ mod tests {
                     .method("POST")
                     .uri(format!("/v1/cases/{case_id}/events"))
                     .header("content-type", "application/json")
-                    .header("X-Reviewer-Id", &reviewer)
+                    .header("Authorization", format!("Bearer {reviewer}"))
                     .body(Body::from(json!({"to": "UNDER_REVIEW"}).to_string()))
                     .unwrap(),
             )
@@ -763,7 +1037,7 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri(format!("/v1/cases/{case_id}/verify"))
-                    .header("X-Reviewer-Id", &reviewer)
+                    .header("Authorization", format!("Bearer {reviewer}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -780,7 +1054,7 @@ mod tests {
                     .method("POST")
                     .uri(format!("/v1/cases/{case_id}/alerts"))
                     .header("content-type", "application/json")
-                    .header("X-Reviewer-Id", &reviewer)
+                    .header("Authorization", format!("Bearer {reviewer}"))
                     .body(Body::from(
                         json!({
                             "policy_id": "MISSING_CHILD_COMMUNITY",
@@ -810,7 +1084,7 @@ mod tests {
                     .method("POST")
                     .uri(format!("/v1/cases/{case_id}/events"))
                     .header("content-type", "application/json")
-                    .header("X-Reviewer-Id", &reviewer)
+                    .header("Authorization", format!("Bearer {reviewer}"))
                     .body(Body::from(json!({"to": "ACTIVE"}).to_string()))
                     .unwrap(),
             )
@@ -833,7 +1107,7 @@ mod tests {
                     .method("POST")
                     .uri("/v1/subscriptions")
                     .header("content-type", "application/json")
-                    .header("X-Reviewer-Id", &reviewer)
+                    .header("Authorization", format!("Bearer {reviewer}"))
                     .body(Body::from(
                         json!({
                             "consumer_id": consumer_id,
@@ -858,7 +1132,7 @@ mod tests {
                     .method("PUT")
                     .uri(format!("/v1/consumers/{consumer_id}/delivery-preference"))
                     .header("content-type", "application/json")
-                    .header("X-Reviewer-Id", &reviewer)
+                    .header("Authorization", format!("Bearer {reviewer}"))
                     .body(Body::from(
                         json!({
                             "strategy": "ALL",
@@ -976,7 +1250,7 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri(format!("/v1/cases/{case_id}/resolve"))
-                    .header("X-Reviewer-Id", &reviewer)
+                    .header("Authorization", format!("Bearer {reviewer}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1018,7 +1292,7 @@ mod tests {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));
         let consumer_id = Uuid::new_v4();
-        let reviewer = Uuid::new_v4().to_string();
+        let reviewer = login_reviewer(app.clone()).await;
 
         let response = app
             .clone()
@@ -1027,7 +1301,7 @@ mod tests {
                     .method("POST")
                     .uri("/v1/subscriptions")
                     .header("content-type", "application/json")
-                    .header("X-Reviewer-Id", &reviewer)
+                    .header("Authorization", format!("Bearer {reviewer}"))
                     .body(Body::from(
                         json!({
                             "consumer_id": consumer_id,
@@ -1054,7 +1328,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri(format!("/v1/consumers/{consumer_id}/subscriptions"))
-                    .header("X-Reviewer-Id", &reviewer)
+                    .header("Authorization", format!("Bearer {reviewer}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1071,6 +1345,7 @@ mod tests {
     async fn creating_a_subscription_with_no_rules_is_rejected() {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));
+        let token = login_reviewer(app.clone()).await;
 
         let response = app
             .oneshot(
@@ -1078,7 +1353,7 @@ mod tests {
                     .method("POST")
                     .uri("/v1/subscriptions")
                     .header("content-type", "application/json")
-                    .header("X-Reviewer-Id", Uuid::new_v4().to_string())
+                    .header("Authorization", format!("Bearer {token}"))
                     .body(Body::from(
                         json!({"consumer_id": Uuid::new_v4(), "rules": []}).to_string(),
                     ))
@@ -1099,7 +1374,7 @@ mod tests {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));
         let consumer_id = Uuid::new_v4();
-        let reviewer = Uuid::new_v4().to_string();
+        let reviewer = login_reviewer(app.clone()).await;
 
         let response = app
             .clone()
@@ -1108,7 +1383,7 @@ mod tests {
                     .method("PUT")
                     .uri(format!("/v1/consumers/{consumer_id}/delivery-preference"))
                     .header("content-type", "application/json")
-                    .header("X-Reviewer-Id", &reviewer)
+                    .header("Authorization", format!("Bearer {reviewer}"))
                     .body(Body::from(
                         json!({
                             "strategy": "PRIMARY_FALLBACK",
@@ -1133,7 +1408,7 @@ mod tests {
                 Request::builder()
                     .method("GET")
                     .uri(format!("/v1/consumers/{consumer_id}/delivery-preference"))
-                    .header("X-Reviewer-Id", &reviewer)
+                    .header("Authorization", format!("Bearer {reviewer}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1148,6 +1423,7 @@ mod tests {
     async fn reading_an_unset_delivery_preference_returns_not_found() {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));
+        let token = login_reviewer(app.clone()).await;
 
         let response = app
             .oneshot(
@@ -1157,7 +1433,7 @@ mod tests {
                         "/v1/consumers/{}/delivery-preference",
                         Uuid::new_v4()
                     ))
-                    .header("X-Reviewer-Id", Uuid::new_v4().to_string())
+                    .header("Authorization", format!("Bearer {token}"))
                     .body(Body::empty())
                     .unwrap(),
             )

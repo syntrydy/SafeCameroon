@@ -19,6 +19,7 @@ struct ErrorDetail {
 }
 
 /// A stable, machine-readable API error (docs/API.md, section 8).
+#[derive(Debug)]
 pub struct ApiError {
     pub status: StatusCode,
     pub code: &'static str,

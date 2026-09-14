@@ -16,7 +16,7 @@ use case is missing children.
 
 ```bash
 cargo test --workspace
-DATABASE_URL=postgres://... WEBHOOK_SHARED_SECRET=... ATTACHMENT_STORAGE_SECRET=... cargo run -p safe-cameroon-api
+DATABASE_URL=postgres://... WEBHOOK_SHARED_SECRET=... ATTACHMENT_STORAGE_SECRET=... REVIEWER_SESSION_SECRET=... cargo run -p safe-cameroon-api
 curl http://localhost:3000/health
 DATABASE_URL=postgres://... cargo run -p safe-cameroon-worker
 ```
@@ -37,6 +37,16 @@ HMAC-SHA256-signed mock URLs over `ATTACHMENT_STORAGE_SECRET`
 (`ATTACHMENT_STORAGE_BASE_URL` optionally overrides the placeholder base
 URL). Uploading requires no actor (part of anonymous report submission);
 requesting a download URL requires an identified reviewer and is audited.
+
+Reviewer accounts (`POST /v1/auth/register`, `POST /v1/auth/login`) are the
+first real authentication in the system: every protected endpoint used to
+trust a client-supplied `X-Reviewer-Id` header outright, now it requires an
+`Authorization: Bearer <token>` issued by a successful login and verified
+with HMAC-SHA256 over `REVIEWER_SESSION_SECRET` (`ReviewerSessionTokenIssuer`,
+the same signed-token scheme `HmacSignedAttachmentStorage` uses for
+short-lived URLs). Registration is open, unauthenticated only to bootstrap a
+fresh deployment's very first reviewer; every registration after that
+requires an authenticated reviewer.
 
 Both binaries log structured, JSON-free `tracing` output (`RUST_LOG`
 overrides the `info` default, e.g. `RUST_LOG=debug`). Every API request
@@ -63,6 +73,9 @@ TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --te
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test delivery_engine_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test webhook_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test attachments_postgres -- --ignored
+TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test subscription_persistence_postgres -- --ignored
+TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test outbox_postgres -- --ignored
+TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test reviewer_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-worker --bins -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-api --bins -- --ignored
 ```

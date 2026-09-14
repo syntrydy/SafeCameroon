@@ -1,10 +1,9 @@
 //! Case endpoints (docs/API.md, section 3). All state-changing operations here
-//! are "authenticated authorized users only" per that spec; until the auth
-//! foundation (prompt 09) lands, the caller's reviewer identity is taken from
-//! an `X-Reviewer-Id` header as an explicit, temporary authorization hook.
-//! Its absence means the request is treated as an automated/system actor,
-//! which the application layer allows to start review but never to verify,
-//! reject, activate, resolve, or cancel a case.
+//! are "authenticated authorized users only" per that spec; the caller's
+//! reviewer identity comes from a verified session token (see `reviewer.rs`).
+//! No `Authorization` header at all means the request is treated as an
+//! automated/system actor, which the application layer allows to start
+//! review but never to verify, reject, activate, resolve, or cancel a case.
 
 use axum::{
     Json,
@@ -65,7 +64,7 @@ pub async fn create_case(
     Json(request): Json<CreateCaseRequest>,
 ) -> Result<(StatusCode, Json<CaseResponse>), ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&headers, request_id)?;
+    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
 
     let creation = create_case_from_report(
         request.incident_type,
@@ -134,7 +133,7 @@ pub async fn link_report(
     Json(request): Json<LinkReportRequest>,
 ) -> Result<Json<CaseResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&headers, request_id)?;
+    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
     let case_id = CaseId::from_uuid(case_id);
 
     let mut case = state
@@ -243,7 +242,7 @@ pub async fn create_case_event(
     Json(request): Json<CaseEventRequest>,
 ) -> Result<Json<CaseResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&headers, request_id)?;
+    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
     transition_case(state, case_id, actor, request.to, request_id).await
 }
 
@@ -253,7 +252,7 @@ pub async fn verify_case(
     headers: HeaderMap,
 ) -> Result<Json<CaseResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&headers, request_id)?;
+    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
     transition_case(state, case_id, actor, CaseStatus::Verified, request_id).await
 }
 
@@ -263,6 +262,6 @@ pub async fn resolve_case(
     headers: HeaderMap,
 ) -> Result<Json<CaseResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let actor = actor_from_headers(&headers, request_id)?;
+    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
     transition_case(state, case_id, actor, CaseStatus::Resolved, request_id).await
 }
