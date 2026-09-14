@@ -14,24 +14,12 @@ use safe_cameroon_application::attachment_workflow::{AttachmentStorage, SignedUr
 use safe_cameroon_domain::{AttachmentContentType, StorageProvider};
 use sha2::Sha256;
 
+use crate::hex;
+
 type HmacSha256 = Hmac<Sha256>;
 
 const DEFAULT_UPLOAD_TTL: Duration = Duration::from_secs(15 * 60);
 const DEFAULT_DOWNLOAD_TTL: Duration = Duration::from_secs(5 * 60);
-
-fn encode_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-fn decode_hex(value: &str) -> Option<Vec<u8>> {
-    if value.len() % 2 != 0 {
-        return None;
-    }
-    (0..value.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&value[i..i + 2], 16).ok())
-        .collect()
-}
 
 pub struct HmacSignedAttachmentStorage {
     base_url: String,
@@ -54,7 +42,7 @@ impl HmacSignedAttachmentStorage {
         let mut mac = HmacSha256::new_from_slice(&self.secret)
             .expect("HMAC-SHA256 accepts a key of any length");
         mac.update(format!("{object_key}:{expires_at}").as_bytes());
-        encode_hex(&mac.finalize().into_bytes())
+        hex::encode(&mac.finalize().into_bytes())
     }
 
     /// Recomputes the signature for `(object_key, expires_at)` and compares
@@ -70,7 +58,7 @@ impl HmacSignedAttachmentStorage {
         if expires_at < now {
             return false;
         }
-        let Some(signature_bytes) = decode_hex(signature) else {
+        let Some(signature_bytes) = hex::decode(signature) else {
             return false;
         };
         let mut mac = HmacSha256::new_from_slice(&self.secret)

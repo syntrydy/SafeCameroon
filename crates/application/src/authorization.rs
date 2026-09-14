@@ -67,6 +67,23 @@ pub fn authorize(actor: Actor, capability: Capability) -> Result<(), Authorizati
     }
 }
 
+/// Whether a new reviewer account may be registered. The very first
+/// reviewer in a fresh deployment must be creatable without an existing
+/// authenticated reviewer to authorize it (there is no bootstrapping
+/// mechanism otherwise, per migrations/README.md: "the first migration
+/// deliberately does not create ... user tables. Those will arrive with the
+/// authorization foundation"). Every subsequent registration goes through
+/// the normal `ManageOrganization` capability check like anything else.
+pub fn authorize_reviewer_registration(
+    actor: Actor,
+    existing_reviewer_count: u64,
+) -> Result<(), AuthorizationDenied> {
+    if existing_reviewer_count == 0 {
+        return Ok(());
+    }
+    authorize(actor, Capability::ManageOrganization)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,5 +121,22 @@ mod tests {
                 capability: Capability::ViewCase
             }
         );
+    }
+
+    #[test]
+    fn the_first_reviewer_may_register_without_being_authenticated() {
+        assert!(authorize_reviewer_registration(Actor::Automated, 0).is_ok());
+    }
+
+    #[test]
+    fn a_further_registration_requires_manage_organization() {
+        assert_eq!(
+            authorize_reviewer_registration(Actor::Automated, 1).unwrap_err(),
+            AuthorizationDenied {
+                actor: Actor::Automated,
+                capability: Capability::ManageOrganization
+            }
+        );
+        assert!(authorize_reviewer_registration(Actor::Reviewer(Uuid::new_v4()), 1).is_ok());
     }
 }
