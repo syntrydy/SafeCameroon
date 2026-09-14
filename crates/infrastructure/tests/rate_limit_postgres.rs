@@ -1,8 +1,16 @@
 use std::env;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use safe_cameroon_application::rate_limit::{RateLimitScope, RateLimiter};
 use safe_cameroon_infrastructure::postgres::PostgresRateLimiter;
 use sqlx::{PgPool, postgres::PgPoolOptions};
+
+fn now_epoch_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
 
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
 
@@ -129,4 +137,44 @@ async fn concurrent_requests_from_the_same_source_never_exceed_the_limit() {
         scope.limit(),
         "exactly the scope's limit of requests must be allowed across all concurrent callers"
     );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn delete_expired_windows_removes_only_old_rows() {
+    let pool = test_pool().await;
+    let limiter = PostgresRateLimiter::new(pool.clone());
+
+    // A row far enough in the past that no scope's window could still cover
+    // it, inserted directly since `record_and_check` always stamps "now".
+    sqlx::query(
+        "INSERT INTO rate_limit_windows (scope, source_key, window_start_epoch_seconds, request_count) \
+         VALUES ('ANONYMOUS_REPORT_SUBMISSION', 'stale-source', $1, 1)",
+    )
+    .bind(now_epoch_seconds() - 25 * 60 * 60)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // A fresh row from an ordinary request, which must survive cleanup.
+    limiter
+        .record_and_check(RateLimitScope::ReviewerLoginAttempt, "fresh-source")
+        .await
+        .unwrap();
+
+    let deleted = limiter.delete_expired_windows().await.unwrap();
+    assert_eq!(deleted, 1);
+
+    let (remaining,): (i64,) = sqlx::query_as("SELECT count(*) FROM rate_limit_windows")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(remaining, 1);
+
+    let (remaining_source,): (String,) =
+        sqlx::query_as("SELECT source_key FROM rate_limit_windows")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(remaining_source, "fresh-source");
 }

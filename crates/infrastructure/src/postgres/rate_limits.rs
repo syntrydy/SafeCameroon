@@ -55,3 +55,32 @@ impl RateLimiter for PostgresRateLimiter {
         Ok((request_count as u32) <= scope.limit())
     }
 }
+
+/// Well past the longest scope window today (1 hour,
+/// `RateLimitScope::AnonymousReportSubmission`) — deliberately a single
+/// generous cutoff applied to every scope rather than an exact per-scope
+/// one, so adding a scope with a longer window later can't silently make
+/// this delete live rows early (AGENTS.md: "do not overengineer the first
+/// release").
+const RETENTION: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+impl PostgresRateLimiter {
+    /// Deletes window rows old enough that no scope's window could still be
+    /// open for them — maintenance, not part of the `RateLimiter` port
+    /// itself (nothing about checking/recording a limit needs this).
+    /// Returns how many rows were removed.
+    pub async fn delete_expired_windows(&self) -> Result<u64, sqlx::Error> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after the Unix epoch")
+            .as_secs() as i64;
+        let cutoff = now - RETENTION.as_secs() as i64;
+
+        let result =
+            sqlx::query("DELETE FROM rate_limit_windows WHERE window_start_epoch_seconds < $1")
+                .bind(cutoff)
+                .execute(&self.pool)
+                .await?;
+        Ok(result.rows_affected())
+    }
+}

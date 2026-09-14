@@ -2,18 +2,21 @@ mod dispatch;
 mod subscription_matching;
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use safe_cameroon_application::channel::ChannelRegistry;
 use safe_cameroon_infrastructure::channels::{EmailChannel, SmsChannel, WhatsAppChannel};
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository,
-    PostgresOutboxRepository, PostgresSubscriptionRepository,
+    PostgresOutboxRepository, PostgresRateLimiter, PostgresSubscriptionRepository,
 };
 use sqlx::postgres::PgPoolOptions;
 
 const BATCH_SIZE: i64 = 10;
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
+/// Rate-limit window cleanup is maintenance, not backlog processing — it
+/// runs on its own much coarser interval rather than every poll cycle.
+const RATE_LIMIT_CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 #[tokio::main]
 async fn main() {
@@ -35,7 +38,8 @@ async fn main() {
     let alerts = PostgresAlertRepository::new(pool.clone());
     let outbox = PostgresOutboxRepository::new(pool.clone());
     let subscriptions = PostgresSubscriptionRepository::new(pool.clone());
-    let delivery_preferences = PostgresDeliveryPreferenceRepository::new(pool);
+    let delivery_preferences = PostgresDeliveryPreferenceRepository::new(pool.clone());
+    let rate_limiter = PostgresRateLimiter::new(pool);
 
     // Mock/sandbox adapters: real vendor credentials are not available yet
     // (prompt 08). Endpoint validation and provider-error mapping are real;
@@ -44,6 +48,11 @@ async fn main() {
     registry.register(Arc::new(WhatsAppChannel));
     registry.register(Arc::new(SmsChannel));
     registry.register(Arc::new(EmailChannel));
+
+    // Runs the first cleanup pass immediately on startup rather than waiting
+    // a full interval, matching how the poll loop below does its first
+    // cycle right away too.
+    let mut last_rate_limit_cleanup = Instant::now() - RATE_LIMIT_CLEANUP_INTERVAL;
 
     tracing::info!(poll_interval = ?POLL_INTERVAL, "safe-cameroon-worker: polling for alerts and deliveries");
     loop {
@@ -62,6 +71,19 @@ async fn main() {
                     }
                 }
             }
+        }
+
+        if last_rate_limit_cleanup.elapsed() >= RATE_LIMIT_CLEANUP_INTERVAL {
+            match rate_limiter.delete_expired_windows().await {
+                Ok(count) => tracing::info!(
+                    count,
+                    "safe-cameroon-worker: cleaned up expired rate-limit windows"
+                ),
+                Err(error) => {
+                    tracing::error!(%error, "safe-cameroon-worker: error cleaning up rate-limit windows")
+                }
+            }
+            last_rate_limit_cleanup = Instant::now();
         }
     }
 }

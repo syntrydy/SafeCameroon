@@ -60,7 +60,8 @@ Cloudflare — docs/DEPLOYMENT.md's edge — is in front; a shared bucket
 otherwise); login is keyed by the targeted email so credential stuffing
 against one account is throttled even across rotating source IPs. This is
 defense-in-depth alongside Cloudflare's own edge rate limiting, not a
-replacement for it.
+replacement for it. `apps/worker` deletes expired `rate_limit_windows` rows
+once an hour so the table doesn't grow forever.
 
 Both binaries log structured, JSON-free `tracing` output (`RUST_LOG`
 overrides the `info` default, e.g. `RUST_LOG=debug`). Every API request
