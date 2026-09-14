@@ -31,7 +31,7 @@ pub use ids::{
     AlertEventId, AlertId, AttachmentId, AuditEventId, CaseEventId, CaseId, ConsumerId,
     DeliveryAttemptId, DeliveryEventId, DeliveryId, OutboxEventId, ReportId, SubscriptionId,
 };
-pub use report::{AnonymousReport, ReportSourceChannel};
+pub use report::{AnonymousReport, ReportSourceChannel, ReportStatus};
 pub use subscription::{
     Comparison, ConsumerMatch, EmptyGeoArea, EmptySubscriptionRules, GeoArea, MatchDecision,
     MatchReason, MatchedSubscription, Subscription, SubscriptionRule, deduplicate_by_consumer,

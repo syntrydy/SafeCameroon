@@ -1,13 +1,20 @@
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{
+    Json,
+    extract::{Query, State},
+    http::StatusCode,
+};
+use safe_cameroon_application::authorization::{Capability, authorize};
 use safe_cameroon_application::rate_limit::RateLimitScope;
 use safe_cameroon_application::{ReportValidationError, prepare_anonymous_report};
-use safe_cameroon_infrastructure::postgres::SubmissionResult;
+use safe_cameroon_domain::{ReportSourceChannel, ReportStatus};
+use safe_cameroon_infrastructure::postgres::{ReportSummary, SubmissionResult};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::rate_limit::enforce_rate_limit;
 use crate::request_id::request_id_from_headers;
+use crate::reviewer::actor_from_headers;
 use crate::source_key::source_key_from_headers;
 use crate::state::AppState;
 
@@ -98,4 +105,75 @@ pub async fn create_anonymous_report(
             status: "RECEIVED",
         }),
     ))
+}
+
+const DEFAULT_LIMIT: u32 = 50;
+/// A hard ceiling regardless of what the caller asks for, so a single
+/// request can never force an unbounded scan/response.
+const MAX_LIMIT: u32 = 100;
+
+#[derive(Deserialize)]
+pub struct ListReportsQuery {
+    status: Option<ReportStatus>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+}
+
+#[derive(Serialize)]
+pub struct ReportSummaryResponse {
+    report_id: Uuid,
+    source_channel: ReportSourceChannel,
+    status: ReportStatus,
+    raw_content: String,
+    received_at: String,
+}
+
+fn report_summary_response(report: &ReportSummary) -> ReportSummaryResponse {
+    ReportSummaryResponse {
+        report_id: report.id,
+        source_channel: report.source_channel,
+        status: report.status,
+        raw_content: report.raw_content.clone(),
+        received_at: report.received_at.clone(),
+    }
+}
+
+/// A reviewer's only way to read report content before deciding whether to
+/// open a case (`POST /v1/cases`) — there is still no single-report `GET`,
+/// only this list.
+pub async fn list_reports(
+    State(state): State<AppState>,
+    Query(query): Query<ListReportsQuery>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<Vec<ReportSummaryResponse>>, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    authorize(actor, Capability::ViewCase).map_err(|_| ApiError {
+        status: StatusCode::FORBIDDEN,
+        code: "NOT_AUTHORIZED",
+        message: "Only an identified reviewer may list reports.",
+        request_id,
+    })?;
+
+    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as i64;
+    let offset = query.offset.unwrap_or(0) as i64;
+
+    let reports = state
+        .reports
+        .list(query.status, limit, offset)
+        .await
+        .map_err(|_| ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            code: "REPORT_QUERY_FAILED",
+            message: "Reports could not be read. Please try again.",
+            request_id,
+        })?;
+
+    Ok(Json(reports.iter().map(report_summary_response).collect()))
 }

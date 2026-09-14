@@ -1,6 +1,7 @@
 use std::env;
 
 use safe_cameroon_application::prepare_anonymous_report;
+use safe_cameroon_domain::ReportStatus;
 use safe_cameroon_infrastructure::postgres::{PostgresReportRepository, SubmissionResult};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use uuid::Uuid;
@@ -141,4 +142,60 @@ async fn idempotency_key_prevents_a_duplicate_report() {
             report_id: first.report.id.as_uuid()
         }
     );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn list_filters_by_status_most_recently_received_first() {
+    let pool = test_pool().await;
+    let repository = PostgresReportRepository::new(pool.clone());
+
+    let first = prepare_anonymous_report("First report.".into(), Uuid::new_v4(), None).unwrap();
+    repository.submit_anonymous(&first).await.unwrap();
+    let second = prepare_anonymous_report("Second report.".into(), Uuid::new_v4(), None).unwrap();
+    repository.submit_anonymous(&second).await.unwrap();
+
+    sqlx::query("UPDATE reports SET status = 'UNDER_REVIEW' WHERE id = $1")
+        .bind(second.report.id.as_uuid())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let all = repository.list(None, 10, 0).await.unwrap();
+    assert_eq!(all.len(), 2);
+    // Most recently received first.
+    assert_eq!(all[0].id, second.report.id.as_uuid());
+    assert_eq!(all[0].status, ReportStatus::UnderReview);
+    assert_eq!(all[0].raw_content, "Second report.");
+    assert!(!all[0].received_at.is_empty());
+    assert_eq!(all[1].id, first.report.id.as_uuid());
+    assert_eq!(all[1].status, ReportStatus::Received);
+
+    let received_only = repository
+        .list(Some(ReportStatus::Received), 10, 0)
+        .await
+        .unwrap();
+    assert_eq!(received_only.len(), 1);
+    assert_eq!(received_only[0].id, first.report.id.as_uuid());
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn list_respects_limit_and_offset() {
+    let pool = test_pool().await;
+    let repository = PostgresReportRepository::new(pool.clone());
+
+    for index in 0..5 {
+        let report =
+            prepare_anonymous_report(format!("Report {index}"), Uuid::new_v4(), None).unwrap();
+        repository.submit_anonymous(&report).await.unwrap();
+    }
+
+    let page1 = repository.list(None, 2, 0).await.unwrap();
+    let page2 = repository.list(None, 2, 2).await.unwrap();
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page2.len(), 2);
+    let page1_ids: Vec<Uuid> = page1.iter().map(|report| report.id).collect();
+    let page2_ids: Vec<Uuid> = page2.iter().map(|report| report.id).collect();
+    assert!(page1_ids.iter().all(|id| !page2_ids.contains(id)));
 }

@@ -23,6 +23,6 @@ pub use deliveries::{DeliveryTransitionOutcome, PostgresDeliveryRepository};
 pub use delivery_preferences::PostgresDeliveryPreferenceRepository;
 pub use outbox::{ClaimedOutboxEvent, PostgresOutboxRepository};
 pub use rate_limits::PostgresRateLimiter;
-pub use reports::{PostgresReportRepository, SubmissionResult};
+pub use reports::{PostgresReportRepository, ReportSummary, SubmissionResult};
 pub use reviewers::{CreateReviewerOutcome, PostgresReviewerRepository, ReviewerRecord};
 pub use subscriptions::{PostgresSubscriptionRepository, SubscriptionUpdateOutcome};
