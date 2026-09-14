@@ -589,3 +589,112 @@ async fn a_deliverys_matched_subscription_versions_survive_a_round_trip() {
         .unwrap();
     assert_eq!(loaded.matching_subscriptions(), matched.as_slice());
 }
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn find_by_alert_id_returns_every_delivery_planned_for_that_alert_only() {
+    let pool = test_pool().await;
+    let alert = verified_alert(&pool).await;
+    let other_alert = verified_alert(&pool).await;
+    let delivery_repository = PostgresDeliveryRepository::new(pool.clone());
+
+    let whatsapp_id =
+        plan_and_persist_one(&delivery_repository, &alert, ChannelType::WhatsApp).await;
+    let sms_id = plan_and_persist_one(&delivery_repository, &alert, ChannelType::Sms).await;
+    plan_and_persist_one(&delivery_repository, &other_alert, ChannelType::Email).await;
+
+    let found = delivery_repository
+        .find_by_alert_id(alert.id())
+        .await
+        .unwrap();
+    let mut found_ids: Vec<_> = found.iter().map(|delivery| delivery.id()).collect();
+    found_ids.sort_by_key(|id| id.as_uuid());
+    let mut expected_ids = vec![whatsapp_id, sms_id];
+    expected_ids.sort_by_key(|id| id.as_uuid());
+    assert_eq!(found_ids, expected_ids);
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn find_by_alert_id_returns_empty_for_an_alert_with_no_deliveries() {
+    let pool = test_pool().await;
+    let alert = verified_alert(&pool).await;
+    let delivery_repository = PostgresDeliveryRepository::new(pool);
+
+    let found = delivery_repository
+        .find_by_alert_id(alert.id())
+        .await
+        .unwrap();
+    assert!(found.is_empty());
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn find_attempts_returns_the_full_attempt_history_in_order() {
+    let pool = test_pool().await;
+    let alert = verified_alert(&pool).await;
+    let delivery_repository = PostgresDeliveryRepository::new(pool);
+    let delivery_id =
+        plan_and_persist_one(&delivery_repository, &alert, ChannelType::WhatsApp).await;
+
+    let mut delivery = delivery_repository
+        .find_by_id(delivery_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let start = start_delivery_attempt(&mut delivery, Actor::Automated, Uuid::new_v4()).unwrap();
+    delivery_repository
+        .apply_transition(&delivery, &start)
+        .await
+        .unwrap();
+    let failed = record_delivery_failure(
+        &mut delivery,
+        true,
+        "provider timeout",
+        Actor::Automated,
+        Uuid::new_v4(),
+    )
+    .unwrap();
+    delivery_repository
+        .apply_attempt_transition(&delivery, &failed)
+        .await
+        .unwrap();
+
+    let start = start_delivery_attempt(&mut delivery, Actor::Automated, Uuid::new_v4()).unwrap();
+    delivery_repository
+        .apply_transition(&delivery, &start)
+        .await
+        .unwrap();
+    let succeeded = record_delivery_success(
+        &mut delivery,
+        Some("provider-msg-1".into()),
+        Actor::Automated,
+        Uuid::new_v4(),
+    )
+    .unwrap();
+    delivery_repository
+        .apply_attempt_transition(&delivery, &succeeded)
+        .await
+        .unwrap();
+
+    let attempts = delivery_repository
+        .find_attempts(delivery_id)
+        .await
+        .unwrap();
+    assert_eq!(attempts.len(), 2);
+    assert_eq!(attempts[0].attempt_number, 1);
+    assert_eq!(
+        attempts[0].outcome,
+        safe_cameroon_domain::DeliveryAttemptOutcome::Failed {
+            retryable: true,
+            reason: "provider timeout".into(),
+        }
+    );
+    assert_eq!(attempts[1].attempt_number, 2);
+    assert_eq!(
+        attempts[1].outcome,
+        safe_cameroon_domain::DeliveryAttemptOutcome::Sent {
+            provider_message_id: Some("provider-msg-1".into()),
+        }
+    );
+}

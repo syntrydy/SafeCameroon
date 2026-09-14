@@ -63,6 +63,12 @@ defense-in-depth alongside Cloudflare's own edge rate limiting, not a
 replacement for it. `apps/worker` deletes expired `rate_limit_windows` rows
 once an hour so the table doesn't grow forever.
 
+`GET /v1/alerts/{id}/deliveries` and `GET /v1/deliveries/{id}` (the latter
+including full attempt history — outcome, retryable, failure reason per
+attempt) answer docs/OBSERVABILITY.md's "which deliveries were attempted,
+and why did one fail?" through the API instead of a direct database query;
+gated by `Capability::ViewCase`, the same as attachment download.
+
 Both binaries log structured, JSON-free `tracing` output (`RUST_LOG`
 overrides the `info` default, e.g. `RUST_LOG=debug`). Every API request
 carries a `x-request-id` header — the client's own value if it sent one,

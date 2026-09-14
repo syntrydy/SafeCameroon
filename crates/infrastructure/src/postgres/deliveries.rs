@@ -4,8 +4,9 @@ use safe_cameroon_application::delivery_workflow::{
     delivery_requested_event_payload, delivery_transition_event_payload, start_delivery_attempt,
 };
 use safe_cameroon_domain::{
-    ChannelType, ConsumerId, Delivery, DeliveryAttempt, DeliveryAttemptOutcome, DeliveryId,
-    DeliveryStatus, MatchedSubscription, RetryPolicy, SubscriptionId,
+    AlertId, ChannelType, ConsumerId, Delivery, DeliveryAttempt, DeliveryAttemptId,
+    DeliveryAttemptOutcome, DeliveryId, DeliveryStatus, MatchedSubscription, RetryPolicy,
+    SubscriptionId,
 };
 use serde_json::{Value, json};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -134,6 +135,120 @@ impl PostgresDeliveryRepository {
         .fetch_optional(&self.pool)
         .await?;
         Ok(row.map(|row| delivery_from_row(delivery_id, row)))
+    }
+
+    /// Every delivery planned for `alert_id` (docs/OBSERVABILITY.md: "which
+    /// deliveries were attempted for this alert?").
+    pub async fn find_by_alert_id(&self, alert_id: AlertId) -> Result<Vec<Delivery>, sqlx::Error> {
+        #[allow(clippy::type_complexity)]
+        let rows: Vec<(
+            Uuid,
+            Uuid,
+            Uuid,
+            String,
+            String,
+            i16,
+            Value,
+            String,
+            i32,
+            i32,
+            i64,
+        )> = sqlx::query_as(
+            r#"
+                SELECT id, alert_id, consumer_id, channel::text, endpoint_address, tier,
+                       matching_subscriptions, status::text, attempt_count, max_attempts,
+                       aggregate_version
+                FROM deliveries
+                WHERE alert_id = $1
+                ORDER BY created_at
+                "#,
+        )
+        .bind(alert_id.as_uuid())
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(
+                    id,
+                    alert_id,
+                    consumer_id,
+                    channel,
+                    endpoint_address,
+                    tier,
+                    matching_subscriptions,
+                    status,
+                    attempt_count,
+                    max_attempts,
+                    aggregate_version,
+                )| {
+                    delivery_from_row(
+                        DeliveryId::from_uuid(id),
+                        (
+                            alert_id,
+                            consumer_id,
+                            channel,
+                            endpoint_address,
+                            tier,
+                            matching_subscriptions,
+                            status,
+                            attempt_count,
+                            max_attempts,
+                            aggregate_version,
+                        ),
+                    )
+                },
+            )
+            .collect())
+    }
+
+    /// A delivery's full attempt history in order (docs/OBSERVABILITY.md:
+    /// "why did a delivery fail?") — written on every attempt
+    /// (`insert_delivery_attempt`) but, until now, never read back anywhere.
+    pub async fn find_attempts(
+        &self,
+        delivery_id: DeliveryId,
+    ) -> Result<Vec<DeliveryAttempt>, sqlx::Error> {
+        #[allow(clippy::type_complexity)]
+        let rows: Vec<(Uuid, i32, String, Option<String>, Option<bool>, Option<String>)> =
+            sqlx::query_as(
+                r#"
+                SELECT id, attempt_number, outcome::text, provider_message_id, retryable, failure_reason
+                FROM delivery_attempts
+                WHERE delivery_id = $1
+                ORDER BY attempt_number
+                "#,
+            )
+            .bind(delivery_id.as_uuid())
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(
+                |(id, attempt_number, outcome, provider_message_id, retryable, failure_reason)| {
+                    let outcome = match outcome.as_str() {
+                        "SENT" => DeliveryAttemptOutcome::Sent {
+                            provider_message_id,
+                        },
+                        "FAILED" => DeliveryAttemptOutcome::Failed {
+                            retryable: retryable
+                                .expect("delivery_attempts FAILED rows always carry retryable"),
+                            reason: failure_reason
+                                .expect("delivery_attempts FAILED rows always carry failure_reason"),
+                        },
+                        other => panic!(
+                            "unknown delivery_attempts.outcome {other:?}, constrained by the delivery_attempt_outcome enum"
+                        ),
+                    };
+                    DeliveryAttempt {
+                        id: DeliveryAttemptId::from_uuid(id),
+                        delivery_id,
+                        attempt_number: attempt_number as u32,
+                        outcome,
+                    }
+                },
+            )
+            .collect())
     }
 
     /// Looks up the delivery a provider webhook callback refers to

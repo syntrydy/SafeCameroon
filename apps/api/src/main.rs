@@ -2,6 +2,7 @@ mod alerts;
 mod attachments;
 mod auth;
 mod cases;
+mod deliveries;
 mod error;
 mod health;
 mod rate_limit;
@@ -113,6 +114,11 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/cases/{id}/alerts", post(alerts::create_alert))
         .route("/v1/alerts/{id}", get(alerts::get_alert))
         .route("/v1/alerts/{id}/cancel", post(alerts::cancel))
+        .route(
+            "/v1/alerts/{id}/deliveries",
+            get(deliveries::list_deliveries_for_alert),
+        )
+        .route("/v1/deliveries/{id}", get(deliveries::get_delivery))
         .route(
             "/v1/subscriptions",
             post(subscriptions::create_subscription),
@@ -360,6 +366,123 @@ mod tests {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn listing_an_alerts_deliveries_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let delivery_id = seeded_delivery(&pool).await;
+        let deliveries = PostgresDeliveryRepository::new(pool.clone());
+        let alert_id = deliveries
+            .find_by_id(delivery_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .alert_id()
+            .as_uuid();
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/alerts/{alert_id}/deliveries"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_lists_an_alerts_deliveries() {
+        let pool = test_pool().await;
+        let delivery_id = seeded_delivery(&pool).await;
+        let deliveries = PostgresDeliveryRepository::new(pool.clone());
+        let alert_id = deliveries
+            .find_by_id(delivery_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .alert_id()
+            .as_uuid();
+        let app = build_router(test_state(pool));
+        let token = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/alerts/{alert_id}/deliveries"))
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        let listed = body.as_array().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0]["delivery_id"], json!(delivery_id.as_uuid()));
+        assert_eq!(listed[0]["channel"], json!("WHATSAPP"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_gets_a_deliverys_detail_including_its_attempt_history() {
+        let pool = test_pool().await;
+        let delivery_id = seeded_delivery(&pool).await;
+        let app = build_router(test_state(pool));
+        let token = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/deliveries/{}", delivery_id.as_uuid()))
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["delivery_id"], json!(delivery_id.as_uuid()));
+        assert_eq!(body["status"], json!("SENT"));
+        let attempts = body["attempts"].as_array().unwrap();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0]["attempt_number"], json!(1));
+        assert_eq!(attempts[0]["outcome"], json!("SENT"));
+        assert_eq!(
+            attempts[0]["provider_message_id"],
+            json!("wa-provider-msg-1")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn getting_an_unknown_delivery_returns_not_found() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let token = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/deliveries/{}", Uuid::new_v4()))
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
