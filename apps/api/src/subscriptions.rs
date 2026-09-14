@@ -22,6 +22,7 @@ use safe_cameroon_domain::{
     DeliveryPreferenceError, DeliveryStrategy, EmptySubscriptionRules, GeoArea, IncidentType,
     Severity, Subscription, SubscriptionId, SubscriptionRule,
 };
+use safe_cameroon_infrastructure::postgres::SubscriptionUpdateOutcome;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -205,6 +206,68 @@ pub async fn list_subscriptions_for_consumer(
     Ok(Json(
         subscriptions.iter().map(subscription_response).collect(),
     ))
+}
+
+#[derive(Deserialize)]
+pub struct UpdateSubscriptionRequest {
+    rules: Vec<SubscriptionRuleInput>,
+}
+
+/// Replaces a subscription's rule set wholesale (docs/SUBSCRIPTION_ENGINE.md
+/// section 11), bumping its version. Optimistic concurrency on the version
+/// read at the start of this request means a concurrent edit is reported as
+/// `SUBSCRIPTION_MODIFIED_CONCURRENTLY` rather than silently overwritten.
+pub async fn update_subscription(
+    State(state): State<AppState>,
+    Path(subscription_id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateSubscriptionRequest>,
+) -> Result<Json<SubscriptionResponse>, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(&state.reviewer_session_tokens, &headers, request_id)?;
+    authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
+
+    let mut subscription = state
+        .subscriptions
+        .find_by_id(SubscriptionId::from_uuid(subscription_id))
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .ok_or(ApiError {
+            status: StatusCode::NOT_FOUND,
+            code: "SUBSCRIPTION_NOT_FOUND",
+            message: "No subscription exists with the given id.",
+            request_id,
+        })?;
+
+    let rules = request
+        .rules
+        .into_iter()
+        .map(|rule| to_domain_rule(rule, request_id))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    subscription
+        .update_rules(rules)
+        .map_err(|EmptySubscriptionRules| ApiError {
+            status: StatusCode::BAD_REQUEST,
+            code: "EMPTY_SUBSCRIPTION_RULES",
+            message: "rules must contain at least one rule.",
+            request_id,
+        })?;
+
+    match state
+        .subscriptions
+        .update(&subscription, actor, request_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+    {
+        SubscriptionUpdateOutcome::Updated => Ok(Json(subscription_response(&subscription))),
+        SubscriptionUpdateOutcome::Conflict => Err(ApiError {
+            status: StatusCode::CONFLICT,
+            code: "SUBSCRIPTION_MODIFIED_CONCURRENTLY",
+            message: "The subscription changed since it was last read. Reload and retry.",
+            request_id,
+        }),
+    }
 }
 
 // --- Delivery preference -----------------------------------------------------

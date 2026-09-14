@@ -18,7 +18,7 @@ use std::sync::Arc;
 use axum::http::HeaderName;
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use safe_cameroon_application::webhook::WebhookVerifierRegistry;
 use safe_cameroon_domain::ChannelType;
@@ -115,6 +115,10 @@ fn build_router(state: AppState) -> Router {
         .route(
             "/v1/subscriptions",
             post(subscriptions::create_subscription),
+        )
+        .route(
+            "/v1/subscriptions/{id}",
+            put(subscriptions::update_subscription),
         )
         .route(
             "/v1/consumers/{consumer_id}/subscriptions",
@@ -1440,6 +1444,109 @@ mod tests {
             json_body(response).await["error"]["code"],
             json!("EMPTY_SUBSCRIPTION_RULES")
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_updates_a_subscriptions_rules_and_its_version_increments() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let token = login_reviewer(app.clone()).await;
+
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/subscriptions")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::from(
+                        json!({
+                            "consumer_id": Uuid::new_v4(),
+                            "rules": [{"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]}]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let created = json_body(create_response).await;
+        let subscription_id = created["subscription_id"].as_str().unwrap().to_owned();
+        assert_eq!(created["version"], json!(1));
+
+        let update_response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/subscriptions/{subscription_id}"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::from(
+                        json!({
+                            "rules": [{"rule": "GEOGRAPHY", "area": "Douala"}]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(update_response.status(), StatusCode::OK);
+        let updated = json_body(update_response).await;
+        assert_eq!(updated["subscription_id"], created["subscription_id"]);
+        assert_eq!(updated["version"], json!(2));
+        assert_eq!(
+            updated["rules"],
+            json!([{"rule": "GEOGRAPHY", "area": "Douala"}])
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn updating_an_unknown_subscription_returns_not_found() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let token = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/subscriptions/{}", Uuid::new_v4()))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::from(
+                        json!({"rules": [{"rule": "GEOGRAPHY", "area": "Douala"}]}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn updating_a_subscription_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/subscriptions/{}", Uuid::new_v4()))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"rules": [{"rule": "GEOGRAPHY", "area": "Douala"}]}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

@@ -213,6 +213,23 @@ impl Subscription {
     pub fn rules(&self) -> &[SubscriptionRule] {
         &self.rules
     }
+
+    /// Replaces the rule set and increments `version` in place
+    /// (docs/SUBSCRIPTION_ENGINE.md section 11: "subscriptions should be
+    /// versioned once organizations can edit rules"). Rejecting an empty
+    /// rule set leaves `self` untouched, mirroring `Subscription::new`'s own
+    /// validation.
+    pub fn update_rules(
+        &mut self,
+        rules: Vec<SubscriptionRule>,
+    ) -> Result<(), EmptySubscriptionRules> {
+        if rules.is_empty() {
+            return Err(EmptySubscriptionRules);
+        }
+        self.rules = rules;
+        self.version += 1;
+        Ok(())
+    }
 }
 
 /// A single subscription's outcome for one alert. Captures
@@ -342,6 +359,37 @@ mod tests {
             Subscription::new(SubscriptionId::new(), ConsumerId::new(), 1, vec![]).unwrap_err(),
             EmptySubscriptionRules
         );
+    }
+
+    #[test]
+    fn update_rules_replaces_the_rules_and_increments_the_version() {
+        let mut sub = subscription(vec![SubscriptionRule::IncidentType(vec![
+            IncidentType::MissingChild,
+        ])]);
+        assert_eq!(sub.version(), 1);
+
+        let new_rules = vec![SubscriptionRule::Geography(
+            GeoArea::new("Yaounde").unwrap(),
+        )];
+        sub.update_rules(new_rules.clone()).unwrap();
+
+        assert_eq!(sub.version(), 2);
+        assert_eq!(sub.rules(), new_rules.as_slice());
+    }
+
+    #[test]
+    fn update_rules_rejects_an_empty_rule_set_and_leaves_the_subscription_unchanged() {
+        let original_rules = vec![SubscriptionRule::IncidentType(vec![
+            IncidentType::MissingChild,
+        ])];
+        let mut sub = subscription(original_rules.clone());
+
+        assert_eq!(
+            sub.update_rules(vec![]).unwrap_err(),
+            EmptySubscriptionRules
+        );
+        assert_eq!(sub.version(), 1);
+        assert_eq!(sub.rules(), original_rules.as_slice());
     }
 
     #[test]

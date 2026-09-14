@@ -1,13 +1,15 @@
 use std::env;
 
+use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_domain::{
     ChannelEndpoint, ChannelType, Comparison, ConsumerId, DeliveryPreference, DeliveryStrategy,
     GeoArea, IncidentType, Severity, Subscription, SubscriptionId, SubscriptionRule,
 };
 use safe_cameroon_infrastructure::postgres::{
-    PostgresDeliveryPreferenceRepository, PostgresSubscriptionRepository,
+    PostgresDeliveryPreferenceRepository, PostgresSubscriptionRepository, SubscriptionUpdateOutcome,
 };
 use sqlx::{PgPool, postgres::PgPoolOptions};
+use uuid::Uuid;
 
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
 
@@ -30,7 +32,7 @@ async fn test_pool() -> PgPool {
     );
 
     MIGRATOR.run(&pool).await.expect("migrations must apply");
-    sqlx::query("TRUNCATE consumer_delivery_preferences, subscriptions")
+    sqlx::query("TRUNCATE consumer_delivery_preferences, subscriptions, audit_events")
         .execute(&pool)
         .await
         .expect("test tables must be reset");
@@ -177,5 +179,99 @@ async fn find_by_consumer_returns_none_when_no_preference_is_set() {
             .await
             .unwrap(),
         None
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn updating_a_subscription_persists_the_new_rules_and_version_and_audits_it() {
+    let pool = test_pool().await;
+    let repository = PostgresSubscriptionRepository::new(pool.clone());
+    let mut subscription = Subscription::new(
+        SubscriptionId::new(),
+        ConsumerId::new(),
+        1,
+        vec![SubscriptionRule::IncidentType(vec![
+            IncidentType::MissingChild,
+        ])],
+    )
+    .unwrap();
+    repository.create(&subscription).await.unwrap();
+
+    subscription
+        .update_rules(vec![SubscriptionRule::Geography(
+            GeoArea::new("Douala").unwrap(),
+        )])
+        .unwrap();
+    let reviewer = Actor::Reviewer(Uuid::new_v4());
+    let request_id = Uuid::new_v4();
+    let outcome = repository
+        .update(&subscription, reviewer, request_id)
+        .await
+        .unwrap();
+    assert_eq!(outcome, SubscriptionUpdateOutcome::Updated);
+
+    let reloaded = repository
+        .find_by_id(subscription.id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(reloaded, subscription);
+
+    let (count,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM audit_events WHERE resource_id = $1 AND action = 'SUBSCRIPTION_UPDATED' AND request_id = $2",
+    )
+    .bind(subscription.id().as_uuid())
+    .bind(request_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn updating_a_subscription_from_a_stale_read_is_a_conflict() {
+    let pool = test_pool().await;
+    let repository = PostgresSubscriptionRepository::new(pool);
+    let subscription = Subscription::new(
+        SubscriptionId::new(),
+        ConsumerId::new(),
+        1,
+        vec![SubscriptionRule::IncidentType(vec![
+            IncidentType::MissingChild,
+        ])],
+    )
+    .unwrap();
+    repository.create(&subscription).await.unwrap();
+
+    let mut first_reader = subscription.clone();
+    let mut second_reader = subscription.clone();
+    first_reader
+        .update_rules(vec![SubscriptionRule::Geography(
+            GeoArea::new("Douala").unwrap(),
+        )])
+        .unwrap();
+    second_reader
+        .update_rules(vec![SubscriptionRule::Geography(
+            GeoArea::new("Yaounde").unwrap(),
+        )])
+        .unwrap();
+
+    let actor = Actor::Reviewer(Uuid::new_v4());
+    assert_eq!(
+        repository
+            .update(&first_reader, actor, Uuid::new_v4())
+            .await
+            .unwrap(),
+        SubscriptionUpdateOutcome::Updated
+    );
+    assert_eq!(
+        repository
+            .update(&second_reader, actor, Uuid::new_v4())
+            .await
+            .unwrap(),
+        SubscriptionUpdateOutcome::Conflict,
+        "a second writer from a stale read must not silently overwrite the first update"
     );
 }
