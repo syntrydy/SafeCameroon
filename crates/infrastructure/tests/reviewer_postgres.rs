@@ -1,6 +1,7 @@
 use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_application::reviewer_auth::SessionRevocationStore;
 use safe_cameroon_infrastructure::postgres::{CreateReviewerOutcome, PostgresReviewerRepository};
 use sqlx::{PgPool, postgres::PgPoolOptions};
@@ -34,7 +35,7 @@ async fn test_pool() -> PgPool {
     );
 
     MIGRATOR.run(&pool).await.expect("migrations must apply");
-    sqlx::query("TRUNCATE reviewers")
+    sqlx::query("TRUNCATE reviewers, audit_events")
         .execute(&pool)
         .await
         .expect("test tables must be reset");
@@ -167,4 +168,125 @@ async fn an_unknown_reviewer_id_is_treated_as_revoked() {
             .await
             .unwrap()
     );
+}
+
+async fn audit_row(
+    pool: &PgPool,
+    action: &str,
+    request_id: Uuid,
+) -> Option<(String, Option<Uuid>, Option<Uuid>, serde_json::Value)> {
+    sqlx::query_as(
+        "SELECT actor_type, actor_id, resource_id, metadata FROM audit_events \
+         WHERE action = $1 AND request_id = $2",
+    )
+    .bind(action)
+    .bind(request_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn record_registration_writes_an_audit_event_for_the_registering_actor() {
+    let pool = test_pool().await;
+    let repository = PostgresReviewerRepository::new(pool.clone());
+    let reviewer_id = Uuid::new_v4();
+    let registering_reviewer = Uuid::new_v4();
+    let request_id = Uuid::new_v4();
+
+    repository
+        .record_registration(
+            reviewer_id,
+            Actor::Reviewer(registering_reviewer),
+            request_id,
+        )
+        .await
+        .unwrap();
+
+    let (actor_type, actor_id, resource_id, _) =
+        audit_row(&pool, "REVIEWER_REGISTERED", request_id)
+            .await
+            .unwrap();
+    assert_eq!(actor_type, "REVIEWER");
+    assert_eq!(actor_id, Some(registering_reviewer));
+    assert_eq!(resource_id, Some(reviewer_id));
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn record_login_success_writes_an_audit_event_for_the_reviewer_who_logged_in() {
+    let pool = test_pool().await;
+    let repository = PostgresReviewerRepository::new(pool.clone());
+    let reviewer_id = Uuid::new_v4();
+    let request_id = Uuid::new_v4();
+
+    repository
+        .record_login_success(reviewer_id, request_id)
+        .await
+        .unwrap();
+
+    let (_, actor_id, resource_id, _) = audit_row(&pool, "REVIEWER_LOGIN_SUCCEEDED", request_id)
+        .await
+        .unwrap();
+    assert_eq!(actor_id, Some(reviewer_id));
+    assert_eq!(resource_id, Some(reviewer_id));
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn record_login_failure_writes_an_audit_event_carrying_the_attempted_email() {
+    let pool = test_pool().await;
+    let repository = PostgresReviewerRepository::new(pool.clone());
+    let request_id = Uuid::new_v4();
+
+    repository
+        .record_login_failure(None, "nobody@example.test", request_id)
+        .await
+        .unwrap();
+
+    let (_, _, resource_id, metadata) = audit_row(&pool, "REVIEWER_LOGIN_FAILED", request_id)
+        .await
+        .unwrap();
+    assert_eq!(resource_id, None);
+    assert_eq!(metadata["email"], serde_json::json!("nobody@example.test"));
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn record_login_failure_still_carries_the_reviewer_id_for_a_known_email() {
+    let pool = test_pool().await;
+    let repository = PostgresReviewerRepository::new(pool.clone());
+    let reviewer_id = Uuid::new_v4();
+    let request_id = Uuid::new_v4();
+
+    repository
+        .record_login_failure(Some(reviewer_id), "known@example.test", request_id)
+        .await
+        .unwrap();
+
+    let (_, _, resource_id, _) = audit_row(&pool, "REVIEWER_LOGIN_FAILED", request_id)
+        .await
+        .unwrap();
+    assert_eq!(resource_id, Some(reviewer_id));
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn record_logout_writes_an_audit_event_for_the_reviewer_who_logged_out() {
+    let pool = test_pool().await;
+    let repository = PostgresReviewerRepository::new(pool.clone());
+    let reviewer_id = Uuid::new_v4();
+    let request_id = Uuid::new_v4();
+
+    repository
+        .record_logout(reviewer_id, request_id)
+        .await
+        .unwrap();
+
+    let (_, actor_id, resource_id, _) = audit_row(&pool, "REVIEWER_LOGOUT", request_id)
+        .await
+        .unwrap();
+    assert_eq!(actor_id, Some(reviewer_id));
+    assert_eq!(resource_id, Some(reviewer_id));
 }

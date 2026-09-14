@@ -6,7 +6,9 @@
 //! than introducing a second one for a single column.
 
 use async_trait::async_trait;
+use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_application::reviewer_auth::{SessionRevocationError, SessionRevocationStore};
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -84,6 +86,108 @@ impl PostgresReviewerRepository {
         .fetch_optional(&self.pool)
         .await?;
         Ok(row.map(|(id, password_hash)| ReviewerRecord { id, password_hash }))
+    }
+
+    /// Records an `audit_events` row for a sensitive auth action, separately
+    /// from the action itself — mirrors `PostgresAttachmentRepository::record_download_access`
+    /// rather than folding this into `create`/`find_by_email`, which have
+    /// other call sites/tests that do not need it.
+    async fn record_audit_event(
+        &self,
+        actor: Actor,
+        action: &str,
+        resource_id: Option<Uuid>,
+        request_id: Uuid,
+        metadata: serde_json::Value,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO audit_events (id, actor_type, actor_id, action, resource_type, resource_id, request_id, metadata)
+            VALUES ($1, $2, $3, $4, 'REVIEWER', $5, $6, $7)
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(actor.as_database_value())
+        .bind(actor.actor_id())
+        .bind(action)
+        .bind(resource_id)
+        .bind(request_id)
+        .bind(metadata)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// `actor` is whoever performed the registration: `Actor::Automated` for
+    /// a fresh deployment's bootstrapping first reviewer, or the
+    /// authenticated reviewer who registered a colleague
+    /// (`authorize_reviewer_registration`).
+    pub async fn record_registration(
+        &self,
+        reviewer_id: Uuid,
+        actor: Actor,
+        request_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        self.record_audit_event(
+            actor,
+            "REVIEWER_REGISTERED",
+            Some(reviewer_id),
+            request_id,
+            json!({}),
+        )
+        .await
+    }
+
+    pub async fn record_login_success(
+        &self,
+        reviewer_id: Uuid,
+        request_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        self.record_audit_event(
+            Actor::Reviewer(reviewer_id),
+            "REVIEWER_LOGIN_SUCCEEDED",
+            Some(reviewer_id),
+            request_id,
+            json!({}),
+        )
+        .await
+    }
+
+    /// `reviewer_id` is `None` when the attempted email matches no account —
+    /// the caller is never authenticated at this point, so `actor` is always
+    /// `Automated`. `email` is recorded in `metadata` (useful for spotting a
+    /// credential-stuffing pattern against one account, or a scan across
+    /// many); this is the same data the reviewer already gave the login
+    /// endpoint, not new sensitive collection.
+    pub async fn record_login_failure(
+        &self,
+        reviewer_id: Option<Uuid>,
+        email: &str,
+        request_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        self.record_audit_event(
+            Actor::Automated,
+            "REVIEWER_LOGIN_FAILED",
+            reviewer_id,
+            request_id,
+            json!({ "email": email }),
+        )
+        .await
+    }
+
+    pub async fn record_logout(
+        &self,
+        reviewer_id: Uuid,
+        request_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        self.record_audit_event(
+            Actor::Reviewer(reviewer_id),
+            "REVIEWER_LOGOUT",
+            Some(reviewer_id),
+            request_id,
+            json!({}),
+        )
+        .await
     }
 }
 
