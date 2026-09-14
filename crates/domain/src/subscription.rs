@@ -39,6 +39,27 @@ impl Comparison {
             Self::LessThan => "<",
         }
     }
+
+    pub fn as_database_value(self) -> &'static str {
+        match self {
+            Self::GreaterThan => "GREATER_THAN",
+            Self::GreaterThanOrEqual => "GREATER_THAN_OR_EQUAL",
+            Self::Equal => "EQUAL",
+            Self::LessThanOrEqual => "LESS_THAN_OR_EQUAL",
+            Self::LessThan => "LESS_THAN",
+        }
+    }
+
+    pub fn from_database_value(value: &str) -> Option<Self> {
+        match value {
+            "GREATER_THAN" => Some(Self::GreaterThan),
+            "GREATER_THAN_OR_EQUAL" => Some(Self::GreaterThanOrEqual),
+            "EQUAL" => Some(Self::Equal),
+            "LESS_THAN_OR_EQUAL" => Some(Self::LessThanOrEqual),
+            "LESS_THAN" => Some(Self::LessThan),
+            _ => None,
+        }
+    }
 }
 
 /// A coarse, human-named subscriber area (a region, city, or municipality
@@ -530,5 +551,26 @@ mod tests {
         for consumer_match in &consumer_matches {
             assert_eq!(consumer_match.matching_subscriptions.len(), 1);
         }
+    }
+
+    #[test]
+    fn comparison_database_value_round_trips_for_every_variant() {
+        for operator in [
+            Comparison::GreaterThan,
+            Comparison::GreaterThanOrEqual,
+            Comparison::Equal,
+            Comparison::LessThanOrEqual,
+            Comparison::LessThan,
+        ] {
+            assert_eq!(
+                Comparison::from_database_value(operator.as_database_value()),
+                Some(operator)
+            );
+        }
+    }
+
+    #[test]
+    fn comparison_from_database_value_rejects_unknown_strings() {
+        assert_eq!(Comparison::from_database_value("~="), None);
     }
 }
