@@ -7,6 +7,7 @@ mod reports;
 mod request_id;
 mod reviewer;
 mod state;
+mod subscriptions;
 mod webhooks;
 
 use std::sync::Arc;
@@ -20,7 +21,8 @@ use safe_cameroon_application::webhook::WebhookVerifierRegistry;
 use safe_cameroon_domain::ChannelType;
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresAttachmentRepository, PostgresCaseRepository,
-    PostgresDeliveryRepository, PostgresReportRepository,
+    PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository, PostgresReportRepository,
+    PostgresSubscriptionRepository,
 };
 use safe_cameroon_infrastructure::storage::HmacSignedAttachmentStorage;
 use safe_cameroon_infrastructure::webhook::{
@@ -68,6 +70,8 @@ fn build_state(
         alerts: PostgresAlertRepository::new(pool.clone()),
         deliveries: PostgresDeliveryRepository::new(pool.clone()),
         attachments: PostgresAttachmentRepository::new(pool.clone()),
+        subscriptions: PostgresSubscriptionRepository::new(pool.clone()),
+        delivery_preferences: PostgresDeliveryPreferenceRepository::new(pool.clone()),
         attachment_storage: Arc::new(HmacSignedAttachmentStorage::new(
             attachment_storage_base_url,
             attachment_storage_secret,
@@ -98,6 +102,18 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/cases/{id}/alerts", post(alerts::create_alert))
         .route("/v1/alerts/{id}", get(alerts::get_alert))
         .route("/v1/alerts/{id}/cancel", post(alerts::cancel))
+        .route(
+            "/v1/subscriptions",
+            post(subscriptions::create_subscription),
+        )
+        .route(
+            "/v1/consumers/{consumer_id}/subscriptions",
+            get(subscriptions::list_subscriptions_for_consumer),
+        )
+        .route(
+            "/v1/consumers/{consumer_id}/delivery-preference",
+            get(subscriptions::get_delivery_preference).put(subscriptions::set_delivery_preference),
+        )
         .route(
             "/v1/webhooks/{channel}/{provider}",
             post(webhooks::receive_webhook),
@@ -215,7 +231,8 @@ mod tests {
         sqlx::query(
             "TRUNCATE attachments, webhook_replay_events, delivery_events, delivery_attempts, \
              deliveries, alert_events, alert_fields, alerts, case_events, case_reports, cases, \
-             outbox_events, audit_events, reports, reporters",
+             outbox_events, audit_events, reports, reporters, consumer_delivery_preferences, \
+             subscriptions",
         )
         .execute(&pool)
         .await
@@ -927,5 +944,185 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(json_body(response).await["status"], json!("RESOLVED"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn creating_a_subscription_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/subscriptions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "consumer_id": Uuid::new_v4(),
+                            "rules": [{"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]}]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_creates_a_subscription_and_lists_it_for_its_consumer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let consumer_id = Uuid::new_v4();
+        let reviewer = Uuid::new_v4().to_string();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/subscriptions")
+                    .header("content-type", "application/json")
+                    .header("X-Reviewer-Id", &reviewer)
+                    .body(Body::from(
+                        json!({
+                            "consumer_id": consumer_id,
+                            "rules": [
+                                {"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]},
+                                {"rule": "SEVERITY", "operator": "GREATER_THAN_OR_EQUAL", "value": "HIGH"},
+                                {"rule": "GEOGRAPHY", "area": "Douala"}
+                            ]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = json_body(response).await;
+        assert_eq!(body["consumer_id"], json!(consumer_id));
+        assert_eq!(body["version"], json!(1));
+        assert_eq!(body["rules"].as_array().unwrap().len(), 3);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/consumers/{consumer_id}/subscriptions"))
+                    .header("X-Reviewer-Id", &reviewer)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let listed = json_body(response).await;
+        assert_eq!(listed.as_array().unwrap().len(), 1);
+        assert_eq!(listed[0]["subscription_id"], body["subscription_id"]);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn creating_a_subscription_with_no_rules_is_rejected() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/subscriptions")
+                    .header("content-type", "application/json")
+                    .header("X-Reviewer-Id", Uuid::new_v4().to_string())
+                    .body(Body::from(
+                        json!({"consumer_id": Uuid::new_v4(), "rules": []}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("EMPTY_SUBSCRIPTION_RULES")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_sets_and_reads_back_a_consumers_delivery_preference() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let consumer_id = Uuid::new_v4();
+        let reviewer = Uuid::new_v4().to_string();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/consumers/{consumer_id}/delivery-preference"))
+                    .header("content-type", "application/json")
+                    .header("X-Reviewer-Id", &reviewer)
+                    .body(Body::from(
+                        json!({
+                            "strategy": "PRIMARY_FALLBACK",
+                            "channels": [
+                                {"channel": "WHATSAPP", "address": "+237600000000"},
+                                {"channel": "SMS", "address": "+237600000001"}
+                            ]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["strategy"], json!("PRIMARY_FALLBACK"));
+        assert_eq!(body["channels"].as_array().unwrap().len(), 2);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/consumers/{consumer_id}/delivery-preference"))
+                    .header("X-Reviewer-Id", &reviewer)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await, body);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn reading_an_unset_delivery_preference_returns_not_found() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!(
+                        "/v1/consumers/{}/delivery-preference",
+                        Uuid::new_v4()
+                    ))
+                    .header("X-Reviewer-Id", Uuid::new_v4().to_string())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }
