@@ -16,7 +16,7 @@ pub use alerts::{AlertCancelOutcome, PostgresAlertRepository};
 pub use attachments::PostgresAttachmentRepository;
 pub use audit_events::{AuditEventFilter, AuditEventRecord, PostgresAuditEventRepository};
 pub use cases::{
-    CaseCreationOutcome, CaseEventRecord, CaseLinkOutcome, CaseReviewOutcome,
+    CaseCreationOutcome, CaseEventRecord, CaseFilter, CaseLinkOutcome, CaseReviewOutcome,
     PostgresCaseRepository,
 };
 pub use deliveries::{DeliveryTransitionOutcome, PostgresDeliveryRepository};

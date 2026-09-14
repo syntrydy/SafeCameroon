@@ -109,7 +109,7 @@ fn build_router(state: AppState) -> Router {
             "/v1/attachments/{id}/download-url",
             get(attachments::create_download_url),
         )
-        .route("/v1/cases", post(cases::create_case))
+        .route("/v1/cases", get(cases::list_cases).post(cases::create_case))
         .route("/v1/cases/{id}", get(cases::get_case))
         .route("/v1/cases/{id}/reports", post(cases::link_report))
         .route(
@@ -1928,6 +1928,134 @@ mod tests {
         assert!(events[0]["occurred_at"].as_str().is_some());
         assert_eq!(events[1]["event_type"], json!("CASE_UNDER_REVIEW"));
         assert_eq!(events[1]["aggregate_version"], json!(2));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn listing_cases_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/cases")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_lists_and_filters_cases() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        async fn create_case(
+            app: Router,
+            reviewer: &str,
+            content: &str,
+            incident_type: &str,
+        ) -> String {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/v1/reports")
+                        .header("content-type", "application/json")
+                        .body(Body::from(json!({"content": content}).to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let report_id = json_body(response).await["report_id"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/v1/cases")
+                        .header("content-type", "application/json")
+                        .header("Authorization", format!("Bearer {reviewer}"))
+                        .body(Body::from(
+                            json!({"report_id": report_id, "incident_type": incident_type})
+                                .to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            json_body(response).await["case_id"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        }
+
+        let missing_child_case = create_case(
+            app.clone(),
+            &reviewer,
+            "A child has not returned from school.",
+            "MISSING_CHILD",
+        )
+        .await;
+        let other_case = create_case(
+            app.clone(),
+            &reviewer,
+            "An unrelated protection incident.",
+            "OTHER_PROTECTION_INCIDENT",
+        )
+        .await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/cases")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let all_cases = json_body(response).await;
+        let all_ids: Vec<String> = all_cases
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|case| case["case_id"].as_str().unwrap().to_owned())
+            .collect();
+        assert!(all_ids.contains(&missing_child_case));
+        assert!(all_ids.contains(&other_case));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/cases?incident_type=MISSING_CHILD&status=REPORTED")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let filtered = json_body(response).await;
+        let filtered = filtered.as_array().unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0]["case_id"], json!(missing_child_case));
+        assert_eq!(filtered[0]["incident_type"], json!("MISSING_CHILD"));
+        assert_eq!(filtered[0]["status"], json!("REPORTED"));
     }
 
     #[tokio::test]

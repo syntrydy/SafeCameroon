@@ -33,6 +33,12 @@ pub enum CaseReviewOutcome {
     Conflict,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CaseFilter {
+    pub status: Option<CaseStatus>,
+    pub incident_type: Option<IncidentType>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaseEventRecord {
     pub id: Uuid,
@@ -86,6 +92,70 @@ impl PostgresCaseRepository {
             report_ids.into_iter().map(ReportId::from_uuid).collect(),
             aggregate_version as u64,
         )))
+    }
+
+    /// Most recently updated first (`cases_status_updated_at_idx`), optionally
+    /// narrowed by status and/or incident type. `limit`/`offset` are taken as
+    /// given — the API layer clamps `limit` to a sane maximum before it ever
+    /// reaches here.
+    pub async fn list(
+        &self,
+        filter: &CaseFilter,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Case>, sqlx::Error> {
+        let rows: Vec<(Uuid, String, String, i64)> = sqlx::query_as(
+            r#"
+            SELECT id, incident_type::text, status::text, aggregate_version
+            FROM cases
+            WHERE ($1::case_status IS NULL OR status = $1::case_status)
+              AND ($2::incident_type IS NULL OR incident_type = $2::incident_type)
+            ORDER BY updated_at DESC
+            LIMIT $3 OFFSET $4
+            "#,
+        )
+        .bind(filter.status.map(CaseStatus::as_database_value))
+        .bind(filter.incident_type.map(IncidentType::as_database_value))
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let case_ids: Vec<Uuid> = rows.iter().map(|(id, ..)| *id).collect();
+        let links: Vec<(Uuid, Uuid)> = sqlx::query_as(
+            "SELECT case_id, report_id FROM case_reports WHERE case_id = ANY($1) ORDER BY linked_at",
+        )
+        .bind(&case_ids)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut report_ids_by_case: std::collections::HashMap<Uuid, Vec<ReportId>> =
+            std::collections::HashMap::new();
+        for (case_id, report_id) in links {
+            report_ids_by_case
+                .entry(case_id)
+                .or_default()
+                .push(ReportId::from_uuid(report_id));
+        }
+
+        Ok(rows
+            .into_iter()
+            .map(|(id, incident_type, status, aggregate_version)| {
+                Case::reconstitute(
+                    CaseId::from_uuid(id),
+                    IncidentType::from_database_value(&incident_type)
+                        .expect("cases.incident_type is constrained by the incident_type enum"),
+                    CaseStatus::from_database_value(&status)
+                        .expect("cases.status is constrained by the case_status enum"),
+                    report_ids_by_case.remove(&id).unwrap_or_default(),
+                    aggregate_version as u64,
+                )
+            })
+            .collect())
     }
 
     /// Persists the case, its first report link, the `CASE_CREATED` event, the
