@@ -1,5 +1,6 @@
 mod alerts;
 mod attachments;
+mod audit_events;
 mod auth;
 mod cases;
 mod deliveries;
@@ -25,9 +26,10 @@ use safe_cameroon_application::webhook::WebhookVerifierRegistry;
 use safe_cameroon_domain::ChannelType;
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::postgres::{
-    PostgresAlertRepository, PostgresAttachmentRepository, PostgresCaseRepository,
-    PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository, PostgresRateLimiter,
-    PostgresReportRepository, PostgresReviewerRepository, PostgresSubscriptionRepository,
+    PostgresAlertRepository, PostgresAttachmentRepository, PostgresAuditEventRepository,
+    PostgresCaseRepository, PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository,
+    PostgresRateLimiter, PostgresReportRepository, PostgresReviewerRepository,
+    PostgresSubscriptionRepository,
 };
 use safe_cameroon_infrastructure::storage::HmacSignedAttachmentStorage;
 use safe_cameroon_infrastructure::webhook::{
@@ -76,6 +78,7 @@ fn build_state(
         alerts: PostgresAlertRepository::new(pool.clone()),
         deliveries: PostgresDeliveryRepository::new(pool.clone()),
         attachments: PostgresAttachmentRepository::new(pool.clone()),
+        audit_events: PostgresAuditEventRepository::new(pool.clone()),
         subscriptions: PostgresSubscriptionRepository::new(pool.clone()),
         delivery_preferences: PostgresDeliveryPreferenceRepository::new(pool.clone()),
         reviewers: PostgresReviewerRepository::new(pool.clone()),
@@ -96,6 +99,7 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/auth/register", post(auth::register))
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/auth/logout", post(auth::logout))
+        .route("/v1/audit-events", get(audit_events::list_audit_events))
         .route("/v1/reports", post(reports::create_anonymous_report))
         .route(
             "/v1/reports/{report_id}/attachments",
@@ -1247,6 +1251,95 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(logout_count, 1);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn listing_audit_events_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/audit-events")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_lists_audit_events_filtered_by_resource_type_and_action() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        // `login_reviewer` itself writes a REVIEWER_REGISTERED and a
+        // REVIEWER_LOGIN_SUCCEEDED audit event for the account it creates.
+        let token = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/audit-events?resource_type=REVIEWER&action=REVIEWER_REGISTERED")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let events = json_body(response).await;
+        let events = events.as_array().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["action"], json!("REVIEWER_REGISTERED"));
+        assert_eq!(events[0]["resource_type"], json!("REVIEWER"));
+        assert!(events[0]["occurred_at"].as_str().is_some());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn listing_audit_events_respects_the_limit_query_parameter() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        // Bootstraps one reviewer (REVIEWER_REGISTERED + REVIEWER_LOGIN_SUCCEEDED),
+        // then registers a second using the first's token (another
+        // REVIEWER_REGISTERED) — at least 3 audit events exist by now.
+        let token = login_reviewer(app.clone()).await;
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::from(
+                        json!({"email": "second@example.test", "password": "correct-horse-battery-staple"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/audit-events?limit=1")
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let events = json_body(response).await;
+        assert_eq!(events.as_array().unwrap().len(), 1);
     }
 
     #[tokio::test]
