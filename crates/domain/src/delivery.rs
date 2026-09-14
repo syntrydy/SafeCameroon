@@ -15,6 +15,7 @@
 //! changing the [`Delivery`] shape.
 
 use core::fmt;
+use core::time::Duration;
 
 use crate::{Alert, AlertId, ConsumerId, ConsumerMatch, SubscriptionId};
 
@@ -272,6 +273,22 @@ impl RetryPolicy {
     pub fn max_attempts(&self) -> u32 {
         self.max_attempts
     }
+
+    /// Exponential backoff before the attempt after `attempt_count` may run
+    /// (docs/CHANNELS.md's retry/fallback story). No documented provider SLA
+    /// exists yet (docs/OPEN_QUESTIONS.md); a 30s base, doubling each
+    /// attempt and capped at 30 minutes, is a deliberately explicit starting
+    /// point, mirroring [`Self::standard`]'s own reasoning.
+    pub fn backoff_after_attempt(&self, attempt_count: u32) -> Duration {
+        const BASE_SECS: u64 = 30;
+        const MAX: Duration = Duration::from_secs(30 * 60);
+        // 2^6 * 30s = 1920s already exceeds MAX, so capping the exponent
+        // here keeps the multiplication itself from ever needing to worry
+        // about overflow.
+        let exponent = attempt_count.saturating_sub(1).min(6);
+        let multiplier = 1u64 << exponent;
+        Duration::from_secs(BASE_SECS * multiplier).min(MAX)
+    }
 }
 
 /// docs/CHANNELS.md section 4. `Failed` is deliberately not a resting
@@ -506,6 +523,14 @@ impl Delivery {
         self.version
     }
 
+    /// The delay before this delivery may be claimed again, when
+    /// [`Self::status`] is [`DeliveryStatus::Retrying`] — `None` for every
+    /// other status, since only a `Retrying` delivery is waiting on a timer.
+    pub fn retry_backoff(&self) -> Option<Duration> {
+        (self.status == DeliveryStatus::Retrying)
+            .then(|| self.retry_policy.backoff_after_attempt(self.attempt_count))
+    }
+
     fn event(&self, event_type: DeliveryEventType) -> DeliveryEvent {
         DeliveryEvent {
             id: crate::DeliveryEventId::new(),
@@ -735,6 +760,19 @@ mod tests {
     }
 
     #[test]
+    fn backoff_after_attempt_doubles_each_time_and_is_capped() {
+        let policy = RetryPolicy::standard();
+        assert_eq!(policy.backoff_after_attempt(1), Duration::from_secs(30));
+        assert_eq!(policy.backoff_after_attempt(2), Duration::from_secs(60));
+        assert_eq!(policy.backoff_after_attempt(3), Duration::from_secs(120));
+        assert_eq!(
+            policy.backoff_after_attempt(20),
+            Duration::from_secs(30 * 60),
+            "backoff must not grow without bound"
+        );
+    }
+
+    #[test]
     fn all_strategy_assigns_tier_zero_to_every_channel() {
         let alert = alert();
         let preference = DeliveryPreference::new(
@@ -952,6 +990,27 @@ mod tests {
                 reason: "provider timeout".into()
             }
         );
+        assert_eq!(
+            delivery.retry_backoff(),
+            Some(Duration::from_secs(30)),
+            "a Retrying delivery must report the backoff before its next attempt"
+        );
+    }
+
+    #[test]
+    fn retry_backoff_is_none_outside_the_retrying_status() {
+        let queued = single_delivery(|_| {});
+        assert_eq!(queued.status(), DeliveryStatus::Queued);
+        assert_eq!(queued.retry_backoff(), None);
+
+        let mut sending = single_delivery(|delivery| {
+            delivery.start_attempt().unwrap();
+        });
+        assert_eq!(sending.retry_backoff(), None);
+
+        let (_, _) = sending.record_success(None).unwrap();
+        assert_eq!(sending.status(), DeliveryStatus::Sent);
+        assert_eq!(sending.retry_backoff(), None);
     }
 
     #[test]
