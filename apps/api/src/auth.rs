@@ -13,12 +13,14 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use safe_cameroon_application::authorization::authorize_reviewer_registration;
+use safe_cameroon_application::rate_limit::RateLimitScope;
 use safe_cameroon_application::reviewer_auth::{PasswordError, hash_password, verify_password};
 use safe_cameroon_infrastructure::postgres::CreateReviewerOutcome;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::rate_limit::enforce_rate_limit;
 use crate::request_id::request_id_from_headers;
 use crate::reviewer::actor_from_headers;
 use crate::state::AppState;
@@ -138,6 +140,18 @@ pub async fn login(
     Json(request): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
+    let normalized_email = request.email.trim().to_lowercase();
+    // Keyed by the targeted account (not the caller's IP) so a credential-
+    // stuffing attempt against one reviewer is throttled even if the
+    // attacker rotates source addresses.
+    enforce_rate_limit(
+        state.rate_limiter.as_ref(),
+        RateLimitScope::ReviewerLoginAttempt,
+        &normalized_email,
+        request_id,
+    )
+    .await?;
+
     let invalid_credentials = || ApiError {
         status: StatusCode::UNAUTHORIZED,
         code: "INVALID_CREDENTIALS",
@@ -147,7 +161,7 @@ pub async fn login(
 
     let record = state
         .reviewers
-        .find_by_email(request.email.trim())
+        .find_by_email(&normalized_email)
         .await
         .map_err(|_| persistence_failed(request_id))?;
 

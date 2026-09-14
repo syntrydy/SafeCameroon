@@ -1,11 +1,14 @@
 use axum::{Json, extract::State, http::StatusCode};
+use safe_cameroon_application::rate_limit::RateLimitScope;
 use safe_cameroon_application::{ReportValidationError, prepare_anonymous_report};
 use safe_cameroon_infrastructure::postgres::SubmissionResult;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::rate_limit::enforce_rate_limit;
 use crate::request_id::request_id_from_headers;
+use crate::source_key::source_key_from_headers;
 use crate::state::AppState;
 
 #[derive(Deserialize)]
@@ -26,6 +29,14 @@ pub async fn create_anonymous_report(
     Json(request): Json<CreateReportRequest>,
 ) -> Result<(StatusCode, Json<CreateReportResponse>), ApiError> {
     let request_id = request_id_from_headers(&headers);
+    enforce_rate_limit(
+        state.rate_limiter.as_ref(),
+        RateLimitScope::AnonymousReportSubmission,
+        source_key_from_headers(&headers),
+        request_id,
+    )
+    .await?;
+
     let idempotency_key = headers
         .get("Idempotency-Key")
         .and_then(|value| value.to_str().ok())
