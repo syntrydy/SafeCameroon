@@ -28,7 +28,11 @@ const ALERT_CREATED_EVENT_TYPE: &str = "ALERT_CREATED";
 /// off before polling again), mirroring `dispatch::process_batch`. A
 /// database error aborts the batch; per-alert matching never does — an alert
 /// with no matching subscriptions, or matched consumers with no delivery
-/// preference, is a normal outcome, not a failure.
+/// preference, is a normal outcome, not a failure. Each event is marked
+/// published only right after its own matching succeeds — never up front at
+/// claim time — so an error partway through a batch leaves every event from
+/// that point on still unpublished (claimed, not silently dropped) rather
+/// than permanently skipped.
 pub async fn process_batch(
     outbox: &PostgresOutboxRepository,
     alerts: &PostgresAlertRepository,
@@ -50,6 +54,7 @@ pub async fn process_batch(
             AlertId::from_uuid(event.aggregate_id),
         )
         .await?;
+        outbox.mark_published(event.id).await?;
     }
     Ok(count)
 }
@@ -288,6 +293,39 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(delivery_count, 1);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn successful_matching_marks_the_outbox_event_published_not_just_claimed() {
+        let pool = test_pool().await;
+        verified_alert(&pool).await;
+        let repos = repositories(&pool);
+
+        let processed = process_batch(
+            &repos.outbox,
+            &repos.alerts,
+            &repos.subscriptions,
+            &repos.delivery_preferences,
+            &repos.deliveries,
+            10,
+        )
+        .await
+        .unwrap();
+        assert_eq!(processed, 1);
+
+        let (claimed_at_set, published_at_set): (bool, bool) = sqlx::query_as(
+            "SELECT claimed_at IS NOT NULL, published_at IS NOT NULL FROM outbox_events \
+             WHERE event_type = 'ALERT_CREATED'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(claimed_at_set);
+        assert!(
+            published_at_set,
+            "a fully processed event must end up published, not just claimed"
+        );
     }
 
     #[tokio::test]

@@ -1,0 +1,23 @@
+-- `claim_unpublished` used to mark the entire claimed batch
+-- `published_at = now()` at claim time, before any event was actually
+-- processed (crates/infrastructure/src/postgres/outbox.rs). Since a batch
+-- is claimed and marked published in one UPDATE before the worker loop
+-- (apps/worker/src/subscription_matching.rs) processes a single event, any
+-- event from that point in the batch onward is permanently, silently
+-- dropped the moment matching fails on an earlier event in the same
+-- batch -- `published_at` is the only "still needs processing" marker and
+-- nothing ever unsets it. This violates this project's alert-safety
+-- guarantee that a real ALERT_CREATED event must reach every matched
+-- consumer.
+--
+-- claimed_at separates "handed to a consumer" (set at claim time, inside
+-- the same FOR UPDATE SKIP LOCKED transaction as before) from "processed"
+-- (published_at, set only once that specific event's processing actually
+-- succeeds) -- mirroring how PostgresDeliveryRepository::claim_next moves a
+-- delivery into the intermediate SENDING status rather than a terminal
+-- one. Like SENDING, a row with claimed_at set but no published_at is not
+-- automatically reclaimed if a worker crashes mid-batch; that gap already
+-- exists for SENDING deliveries in this codebase and is accepted at the
+-- same level here, not solved for the first time in this migration.
+
+ALTER TABLE outbox_events ADD COLUMN claimed_at TIMESTAMPTZ;
