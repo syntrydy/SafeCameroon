@@ -1,8 +1,9 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
+import { AppLayout } from "./components/AppLayout";
 import { RequireAuth } from "./auth/RequireAuth";
-import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
+import { ReviewQueue } from "./pages/review-queue/ReviewQueue";
 
 export function App() {
   return (
@@ -12,7 +13,9 @@ export function App() {
         path="/"
         element={
           <RequireAuth>
-            <Home />
+            <AppLayout>
+              <ReviewQueue />
+            </AppLayout>
           </RequireAuth>
         }
       />

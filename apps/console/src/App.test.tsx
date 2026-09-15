@@ -23,6 +23,33 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
+const LOGIN_RESPONSE = {
+  token: "a-session-token",
+  expires_in_seconds: 3600,
+  reviewer_id: "22222222-2222-2222-2222-222222222222",
+};
+
+/** Routes a mocked fetch by method + path so login (and the review queue it
+ * lands on) can be exercised without a real backend. */
+function stubBackend() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation((input: string, init?: RequestInit) => {
+      const url = new URL(input, "http://localhost");
+      if (url.pathname === "/v1/auth/login") {
+        return Promise.resolve(jsonResponse(200, LOGIN_RESPONSE));
+      }
+      if (url.pathname === "/v1/auth/logout") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url.pathname === "/v1/reports" && (init?.method ?? "GET") === "GET") {
+        return Promise.resolve(jsonResponse(200, []));
+      }
+      throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url.pathname}`);
+    }),
+  );
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -35,17 +62,8 @@ describe("console auth flow", () => {
     expect(screen.getByLabelText("Email")).toBeInTheDocument();
   });
 
-  it("logs in with valid credentials and reaches the home screen", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        jsonResponse(200, {
-          token: "a-session-token",
-          expires_in_seconds: 3600,
-          reviewer_id: "22222222-2222-2222-2222-222222222222",
-        }),
-      ),
-    );
+  it("logs in with valid credentials and reaches the review queue", async () => {
+    stubBackend();
     const user = userEvent.setup();
     renderApp("/login");
 
@@ -54,10 +72,9 @@ describe("console auth flow", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     await waitFor(() => {
-      expect(
-        screen.getByText("Signed in as reviewer 22222222-2222-2222-2222-222222222222."),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Review queue" })).toBeInTheDocument();
     });
+    expect(screen.getByText(`Reviewer ${LOGIN_RESPONSE.reviewer_id}`)).toBeInTheDocument();
   });
 
   it("shows the backend's error message and request id on invalid credentials", async () => {
@@ -86,21 +103,7 @@ describe("console auth flow", () => {
   });
 
   it("signs out back to the login screen", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((_input: string, init?: RequestInit) => {
-        if (init?.method === "POST" && (init.body as string)?.includes("email")) {
-          return Promise.resolve(
-            jsonResponse(200, {
-              token: "a-session-token",
-              expires_in_seconds: 3600,
-              reviewer_id: "44444444-4444-4444-4444-444444444444",
-            }),
-          );
-        }
-        return Promise.resolve(new Response(null, { status: 204 }));
-      }),
-    );
+    stubBackend();
     const user = userEvent.setup();
     renderApp("/login");
 
