@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import {
   createCaseEvent,
@@ -13,7 +13,9 @@ import {
 } from "../../api/cases";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
+import { canCreateAlert } from "../../domain/alertEligibility";
 import { nextStatusOptions } from "../../domain/caseTransitions";
+import { CreateAlertForm } from "../alerts/CreateAlertForm";
 import { LinkedReportAttachments } from "./LinkedReportAttachments";
 
 const STATUS_LABELS: Record<CaseStatus, string> = {
@@ -34,6 +36,7 @@ async function applyTransition(token: string, caseId: string, to: CaseStatus): P
 
 export function CaseDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { session } = useAuth();
   // Safe: this page only renders inside <RequireAuth>.
   const token = session!.token;
@@ -147,6 +150,16 @@ export function CaseDetail() {
           </ul>
         )}
       </section>
+
+      {canCreateAlert(caseData.status, caseData.incident_type) && (
+        <section className="mb-6">
+          <CreateAlertForm
+            token={token}
+            caseId={caseData.case_id}
+            onCreated={(alert) => navigate(`/alerts/${alert.alert_id}`)}
+          />
+        </section>
+      )}
 
       <section>
         <h3 className="mb-2 text-sm font-semibold text-slate-900">History</h3>

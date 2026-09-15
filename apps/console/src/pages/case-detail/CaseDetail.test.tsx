@@ -30,6 +30,7 @@ const LOGIN_RESPONSE = {
 
 const CASE_ID = "aaaaaaaa-1111-1111-1111-111111111111";
 const REPORT_ID = "bbbbbbbb-2222-2222-2222-222222222222";
+const ALERT_ID = "dddddddd-4444-4444-4444-444444444444";
 
 let caseData: Case;
 let events: CaseEvent[];
@@ -78,6 +79,47 @@ function stubBackend() {
       ) {
         return Promise.resolve(
           jsonResponse(200, { download_url: "https://storage.example/signed", expires_in_seconds: 60 }),
+        );
+      }
+      if (url.pathname === `/v1/cases/${CASE_ID}/alerts` && method === "POST") {
+        const body = JSON.parse(init?.body as string) as {
+          severity: string;
+          target_geography: string;
+          fields: { field: string; value: string }[];
+        };
+        return Promise.resolve(
+          jsonResponse(201, {
+            alert_id: ALERT_ID,
+            case_id: CASE_ID,
+            policy_id: "MISSING_CHILD_COMMUNITY",
+            policy_version: 1,
+            incident_type: "MISSING_CHILD",
+            severity: body.severity,
+            visibility: "COMMUNITY",
+            trigger: "CASE_VERIFIED",
+            target_geography: body.target_geography,
+            status: "ACTIVE",
+            fields: body.fields,
+            version: 1,
+          }),
+        );
+      }
+      if (url.pathname === `/v1/alerts/${ALERT_ID}` && method === "GET") {
+        return Promise.resolve(
+          jsonResponse(200, {
+            alert_id: ALERT_ID,
+            case_id: CASE_ID,
+            policy_id: "MISSING_CHILD_COMMUNITY",
+            policy_version: 1,
+            incident_type: "MISSING_CHILD",
+            severity: "HIGH",
+            visibility: "COMMUNITY",
+            trigger: "CASE_VERIFIED",
+            target_geography: "Douala, Bonamoussadi",
+            status: "ACTIVE",
+            fields: [],
+            version: 1,
+          }),
         );
       }
       throw new Error(`unexpected fetch: ${method} ${url.pathname}`);
@@ -167,5 +209,22 @@ describe("CaseDetail", () => {
 
     const link = await screen.findByRole("link", { name: "Open" });
     expect(link).toHaveAttribute("href", "https://storage.example/signed");
+  });
+
+  it("creates an alert from a verified case and navigates to its preview", async () => {
+    caseData = { ...caseData, status: "VERIFIED" };
+    const user = await loginAndReachCase();
+
+    await user.type(screen.getByLabelText("Target geography"), "Douala, Bonamoussadi");
+    await user.type(screen.getByLabelText("Safe description"), "Last seen wearing a red shirt.");
+    await user.click(screen.getByRole("button", { name: "Create alert" }));
+
+    await screen.findByRole("heading", { name: `Alert ${ALERT_ID.slice(0, 8)}` });
+  });
+
+  it("does not offer alert creation before a case is verified", async () => {
+    await loginAndReachCase();
+
+    expect(screen.queryByRole("button", { name: "Create alert" })).not.toBeInTheDocument();
   });
 });
