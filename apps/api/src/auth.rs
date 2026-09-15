@@ -1,11 +1,12 @@
-//! Reviewer account registration and login (prompt 09). Registration is
+//! Reviewer account registration and Google sign-in (prompt 09). Reviewers
+//! authenticate via a verified Google ID token, never a locally stored
+//! password (crates/application/src/google_identity.rs); registration is
 //! open only to bootstrap the very first reviewer in a fresh deployment or
 //! to an already-authenticated reviewer with `ManageOrganization`
-//! (`authorize_reviewer_registration`); login exchanges verified
-//! credentials for a signed session token (`reviewer.rs` verifies it back
-//! on every subsequent request).
-
-use std::sync::OnceLock;
+//! (`authorize_reviewer_registration`) and just allowlists an email —
+//! login exchanges a Google-verified email matching that allowlist for a
+//! signed session token (`reviewer.rs` verifies it back on every subsequent
+//! request).
 
 use axum::{
     Json,
@@ -15,9 +16,7 @@ use axum::{
 use safe_cameroon_application::authorization::authorize_reviewer_registration;
 use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_application::rate_limit::RateLimitScope;
-use safe_cameroon_application::reviewer_auth::{
-    PasswordError, SessionRevocationStore, hash_password, verify_password,
-};
+use safe_cameroon_application::reviewer_auth::SessionRevocationStore;
 use safe_cameroon_infrastructure::postgres::CreateReviewerOutcome;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -26,6 +25,7 @@ use crate::error::ApiError;
 use crate::rate_limit::enforce_rate_limit;
 use crate::request_id::request_id_from_headers;
 use crate::reviewer::actor_from_headers;
+use crate::source_key::source_key_from_headers;
 use crate::state::AppState;
 
 fn persistence_failed(request_id: Uuid) -> ApiError {
@@ -40,7 +40,6 @@ fn persistence_failed(request_id: Uuid) -> ApiError {
 #[derive(Deserialize)]
 pub struct RegisterRequest {
     email: String,
-    password: String,
 }
 
 #[derive(Serialize)]
@@ -85,19 +84,10 @@ pub async fn register(
         });
     }
 
-    let password_hash = hash_password(&request.password).map_err(|error| match error {
-        PasswordError::TooShort => ApiError {
-            status: StatusCode::BAD_REQUEST,
-            code: "WEAK_PASSWORD",
-            message: "password must be at least 8 characters.",
-            request_id,
-        },
-    })?;
-
     let reviewer_id = Uuid::new_v4();
     match state
         .reviewers
-        .create(reviewer_id, email, &password_hash)
+        .create(reviewer_id, email)
         .await
         .map_err(|_| persistence_failed(request_id))?
     {
@@ -125,9 +115,8 @@ pub async fn register(
 }
 
 #[derive(Deserialize)]
-pub struct LoginRequest {
-    email: String,
-    password: String,
+pub struct GoogleLoginRequest {
+    id_token: String,
 }
 
 #[derive(Serialize)]
@@ -137,80 +126,66 @@ pub struct LoginResponse {
     reviewer_id: Uuid,
 }
 
-/// A hash of a fixed, never-issued password, computed once per process.
-/// Verifying against it when `email` matches no account keeps a failed
-/// login's timing close to a wrong-password failure, rather than letting an
-/// unknown email return noticeably faster and revealing which emails have
-/// accounts.
-fn dummy_password_hash() -> &'static str {
-    static DUMMY: OnceLock<String> = OnceLock::new();
-    DUMMY.get_or_init(|| {
-        hash_password("not-a-real-account-password")
-            .expect("this hardcoded password satisfies the minimum length")
-    })
-}
-
-pub async fn login(
+pub async fn google_login(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<LoginRequest>,
+    Json(request): Json<GoogleLoginRequest>,
 ) -> Result<Json<LoginResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
-    let normalized_email = request.email.trim().to_lowercase();
-    // Keyed by the targeted account (not the caller's IP) so a credential-
-    // stuffing attempt against one reviewer is throttled even if the
-    // attacker rotates source addresses.
+    // Keyed by source IP, not the (not yet known) target email: this must
+    // run before spending a call against Google's tokeninfo endpoint, to
+    // keep an attacker spamming garbage tokens from burning that quota.
     enforce_rate_limit(
         state.rate_limiter.as_ref(),
         RateLimitScope::ReviewerLoginAttempt,
-        &normalized_email,
+        source_key_from_headers(&headers),
         request_id,
     )
     .await?;
 
-    let invalid_credentials = || ApiError {
-        status: StatusCode::UNAUTHORIZED,
-        code: "INVALID_CREDENTIALS",
-        message: "Invalid email or password.",
-        request_id,
-    };
+    let identity = state
+        .google_identity_verifier
+        .verify_id_token(&request.id_token)
+        .await
+        .map_err(|_| ApiError {
+            status: StatusCode::UNAUTHORIZED,
+            code: "INVALID_GOOGLE_TOKEN",
+            message: "Google could not verify this sign-in.",
+            request_id,
+        })?;
+    let normalized_email = identity.email.trim().to_lowercase();
 
-    let record = state
+    let reviewer_id = state
         .reviewers
         .find_by_email(&normalized_email)
         .await
         .map_err(|_| persistence_failed(request_id))?;
-    let matched_reviewer_id = record.as_ref().map(|record| record.id);
 
-    let password_matches = match &record {
-        Some(record) => verify_password(&request.password, &record.password_hash),
-        None => {
-            verify_password(&request.password, dummy_password_hash());
-            false
-        }
-    };
-
-    if !password_matches {
+    let Some(reviewer_id) = reviewer_id else {
         state
             .reviewers
-            .record_login_failure(matched_reviewer_id, &normalized_email, request_id)
+            .record_login_failure(None, &normalized_email, request_id)
             .await
             .map_err(|_| persistence_failed(request_id))?;
-        return Err(invalid_credentials());
-    }
-    let record = record.expect("password_matches is only true when a record was found");
+        return Err(ApiError {
+            status: StatusCode::FORBIDDEN,
+            code: "REVIEWER_NOT_REGISTERED",
+            message: "This Google account is not registered as a reviewer.",
+            request_id,
+        });
+    };
 
     state
         .reviewers
-        .record_login_success(record.id, request_id)
+        .record_login_success(reviewer_id, request_id)
         .await
         .map_err(|_| persistence_failed(request_id))?;
 
-    let issued = state.reviewer_session_tokens.issue(record.id);
+    let issued = state.reviewer_session_tokens.issue(reviewer_id);
     Ok(Json(LoginResponse {
         token: issued.token,
         expires_in_seconds: issued.expires_in.as_secs(),
-        reviewer_id: record.id,
+        reviewer_id,
     }))
 }
 

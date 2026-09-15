@@ -22,7 +22,7 @@ directly and has no `.env` at all; a missing file is not an error).
 
 ```bash
 cargo test --workspace
-DATABASE_URL=postgres://... WEBHOOK_SHARED_SECRET=... ATTACHMENT_STORAGE_SECRET=... REVIEWER_SESSION_SECRET=... cargo run -p safe-cameroon-api
+DATABASE_URL=postgres://... WEBHOOK_SHARED_SECRET=... ATTACHMENT_STORAGE_SECRET=... REVIEWER_SESSION_SECRET=... GOOGLE_OAUTH_CLIENT_ID=... cargo run -p safe-cameroon-api
 curl http://localhost:3000/health
 DATABASE_URL=postgres://... cargo run -p safe-cameroon-worker
 ```
@@ -66,27 +66,34 @@ file bytes or a live download URL; a reviewer still calls the existing
 `/v1/reports/{report_id}/attachments` path with the existing `POST` (upload)
 handler.
 
-Reviewer accounts (`POST /v1/auth/register`, `POST /v1/auth/login`) are the
+Reviewer accounts (`POST /v1/auth/register`, `POST /v1/auth/google`) are the
 first real authentication in the system: every protected endpoint used to
 trust a client-supplied `X-Reviewer-Id` header outright, now it requires an
-`Authorization: Bearer <token>` issued by a successful login and verified
+`Authorization: Bearer <token>` issued by a successful sign-in and verified
 with HMAC-SHA256 over `REVIEWER_SESSION_SECRET` (`ReviewerSessionTokenIssuer`,
 the same signed-token scheme `HmacSignedAttachmentStorage` uses for
-short-lived URLs). Registration is open, unauthenticated only to bootstrap a
-fresh deployment's very first reviewer; every registration after that
-requires an authenticated reviewer. `POST /v1/auth/logout` revokes every
-session currently issued to the calling reviewer ("logout everywhere") —
-a compromised or offboarded reviewer no longer has to wait out a token's
-12h expiry.
+short-lived URLs). Reviewers never have a locally stored password: `POST
+/v1/auth/google` takes a Google ID token, verifies it against Google's own
+`tokeninfo` endpoint (`GoogleTokenInfoVerifier`,
+crates/infrastructure/src/google_identity.rs), and matches the verified
+email against the `reviewers` table — an email that verifies but isn't
+registered gets `403 REVIEWER_NOT_REGISTERED`. `POST /v1/auth/register` just
+allowlists an email; it's open, unauthenticated only to bootstrap a fresh
+deployment's very first reviewer, and every registration after that requires
+an authenticated reviewer. `POST /v1/auth/logout` revokes every session
+currently issued to the calling reviewer ("logout everywhere") — a
+compromised or offboarded reviewer no longer has to wait out a token's 12h
+expiry.
 
-`POST /v1/reports` and `POST /v1/auth/login` are rate-limited
+`POST /v1/reports` and `POST /v1/auth/google` are rate-limited
 (docs/SECURITY_PRIVACY.md section 8): a fixed-window counter in Postgres
 (`rate_limit_windows`, `PostgresRateLimiter`) refuses a request with
-`429 RATE_LIMIT_EXCEEDED` once its source exceeds the scope's limit.
-Reporting is keyed by `X-Forwarded-For` (the real client address once
-Cloudflare — docs/DEPLOYMENT.md's edge — is in front; a shared bucket
-otherwise); login is keyed by the targeted email so credential stuffing
-against one account is throttled even across rotating source IPs. This is
+`429 RATE_LIMIT_EXCEEDED` once its source exceeds the scope's limit. Both are
+keyed by `X-Forwarded-For` (the real client address once Cloudflare —
+docs/DEPLOYMENT.md's edge — is in front; a shared bucket otherwise); sign-in
+is keyed by source rather than the (not yet known, until Google verifies the
+token) target email, so a burst of garbage tokens is throttled before it can
+spend Google's tokeninfo quota. This is
 defense-in-depth alongside Cloudflare's own edge rate limiting, not a
 replacement for it. `apps/worker` deletes expired `rate_limit_windows` rows
 once an hour so the table doesn't grow forever.
