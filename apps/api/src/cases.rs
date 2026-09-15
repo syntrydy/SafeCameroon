@@ -180,6 +180,15 @@ pub async fn get_case(
     headers: HeaderMap,
 ) -> Result<Json<CaseResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    authorize(actor, Capability::ViewCase).map_err(|_| not_authorized(request_id))?;
+
     let case = state
         .cases
         .find_by_id(CaseId::from_uuid(case_id))

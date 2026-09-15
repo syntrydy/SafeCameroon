@@ -88,13 +88,14 @@ whether to open a case. Lists most recently received first
 
 `GET /v1/alerts` lists alerts, most recently created first
 (`alerts_status_created_at_idx`), optionally filtered by `status` and/or
-`visibility`. Unlike `GET /v1/alerts/{id}` and `GET /v1/cases/{id}` (which
-have no authorization gate at all — a pre-existing, unrelated gap), this
-listing endpoint requires `Capability::ViewCase` from the start: bulk
-enumeration is a materially larger exposure than single-record lookup by a
-random id, and `alert_fields` can carry non-public detail depending on an
-alert's policy/visibility (docs/ALERT_SAFETY.md). Same `limit`/`offset`
-convention as `GET /v1/audit-events`.
+`visibility` — `alert_fields` can carry non-public detail depending on an
+alert's policy/visibility (docs/ALERT_SAFETY.md), so like every other case-
+and alert-adjacent read this is gated by `Capability::ViewCase`. Same
+`limit`/`offset` convention as `GET /v1/audit-events`. `GET /v1/alerts/{id}`
+and `GET /v1/cases/{id}` carry the same gate — they briefly didn't, an
+oversight against docs/API.md's "authenticated authorized users only" for
+these endpoints, fixed once the listing endpoints above made the gap
+visible.
 
 `GET /v1/cases` lists cases, most recently updated first
 (`cases_status_updated_at_idx`), optionally narrowed by `status` and/or

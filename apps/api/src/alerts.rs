@@ -217,6 +217,20 @@ pub async fn get_alert(
     headers: HeaderMap,
 ) -> Result<Json<AlertResponse>, ApiError> {
     let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    authorize(actor, Capability::ViewCase).map_err(|_| ApiError {
+        status: StatusCode::FORBIDDEN,
+        code: "NOT_AUTHORIZED",
+        message: "Only an identified reviewer may view an alert.",
+        request_id,
+    })?;
+
     let alert = state
         .alerts
         .find_by_id(AlertId::from_uuid(alert_id))
