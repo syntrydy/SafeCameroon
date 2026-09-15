@@ -171,6 +171,10 @@ fn build_router(state: AppState) -> Router {
 
 #[tokio::main]
 async fn main() {
+    // Optional: a real deployment sets env vars directly and has no .env
+    // file, so a missing one is not an error (docs/DEPLOYMENT.md).
+    dotenvy::dotenv().ok();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

@@ -20,6 +20,10 @@ const RATE_LIMIT_CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 #[tokio::main]
 async fn main() {
+    // Optional: a real deployment sets env vars directly and has no .env
+    // file, so a missing one is not an error (docs/DEPLOYMENT.md).
+    dotenvy::dotenv().ok();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
