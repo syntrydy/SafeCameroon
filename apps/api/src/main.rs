@@ -3,6 +3,7 @@ mod attachments;
 mod audit_events;
 mod auth;
 mod cases;
+mod consumers;
 mod deliveries;
 mod error;
 mod health;
@@ -28,9 +29,9 @@ use safe_cameroon_domain::ChannelType;
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresAttachmentRepository, PostgresAuditEventRepository,
-    PostgresCaseRepository, PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository,
-    PostgresRateLimiter, PostgresReportRepository, PostgresReviewerRepository,
-    PostgresSubscriptionRepository,
+    PostgresCaseRepository, PostgresConsumerRepository, PostgresDeliveryPreferenceRepository,
+    PostgresDeliveryRepository, PostgresRateLimiter, PostgresReportRepository,
+    PostgresReviewerRepository, PostgresSubscriptionRepository,
 };
 use safe_cameroon_infrastructure::storage::HmacSignedAttachmentStorage;
 use safe_cameroon_infrastructure::webhook::{
@@ -80,6 +81,7 @@ fn build_state(
         deliveries: PostgresDeliveryRepository::new(pool.clone()),
         attachments: PostgresAttachmentRepository::new(pool.clone()),
         audit_events: PostgresAuditEventRepository::new(pool.clone()),
+        consumers: PostgresConsumerRepository::new(pool.clone()),
         subscriptions: PostgresSubscriptionRepository::new(pool.clone()),
         delivery_preferences: PostgresDeliveryPreferenceRepository::new(pool.clone()),
         reviewers: PostgresReviewerRepository::new(pool.clone()),
@@ -139,6 +141,8 @@ fn build_router(state: AppState) -> Router {
             "/v1/subscriptions/{id}",
             put(subscriptions::update_subscription),
         )
+        .route("/v1/consumers", post(consumers::register_consumer))
+        .route("/v1/consumers/{id}", get(consumers::get_consumer))
         .route(
             "/v1/consumers/{consumer_id}/subscriptions",
             get(subscriptions::list_subscriptions_for_consumer),
@@ -2574,6 +2578,124 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(json_body(response).await["case_id"], json!(case_id));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn registering_a_consumer_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/consumers")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"name": "Douala Police", "consumer_type": "ORGANIZATION"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_registers_and_reads_back_a_consumer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/consumers")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::from(
+                        json!({"name": "Douala Police", "consumer_type": "ORGANIZATION"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = json_body(response).await;
+        assert_eq!(body["name"], json!("Douala Police"));
+        assert_eq!(body["consumer_type"], json!("ORGANIZATION"));
+        let consumer_id = body["consumer_id"].as_str().unwrap().to_owned();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/consumers/{consumer_id}"))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["consumer_id"], json!(consumer_id));
+        assert_eq!(body["name"], json!("Douala Police"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn registering_a_consumer_with_a_blank_name_is_rejected() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/consumers")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::from(
+                        json!({"name": "   ", "consumer_type": "CITIZEN"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("INVALID_CONSUMER_NAME")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn getting_an_unknown_consumer_returns_not_found() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/consumers/{}", Uuid::new_v4()))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
