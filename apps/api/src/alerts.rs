@@ -16,11 +16,14 @@ use safe_cameroon_domain::{
     AlertCreationError, AlertField, AlertFieldValue, AlertId, AlertStatus, AlertTransitionError,
     AlertVisibility, CaseEventType, CaseId, IncidentType, Severity, TargetGeography,
 };
-use safe_cameroon_infrastructure::postgres::{AlertCancelOutcome, AlertFilter};
+use safe_cameroon_infrastructure::postgres::{
+    AlertCancelOutcome, AlertCreationOutcome, AlertFilter,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::idempotency::idempotency_key_from_headers;
 use crate::request_id::request_id_from_headers;
 use crate::reviewer::actor_from_headers;
 use crate::state::AppState;
@@ -117,6 +120,7 @@ pub async fn create_alert(
         request_id,
     )
     .await?;
+    let idempotency_key = idempotency_key_from_headers(&headers, request_id)?;
 
     let policy = resolve_policy(&request.policy_id).ok_or(ApiError {
         status: StatusCode::BAD_REQUEST,
@@ -160,6 +164,7 @@ pub async fn create_alert(
         fields,
         actor,
         request_id,
+        idempotency_key,
     )
     .map_err(|error| match error {
         AlertCreationUseCaseError::NotAuthorized(_) => ApiError {
@@ -202,13 +207,22 @@ pub async fn create_alert(
         }
     })?;
 
-    state
+    match state
         .alerts
         .create(&creation)
         .await
-        .map_err(|_| persistence_failed(request_id))?;
-
-    Ok((StatusCode::CREATED, Json(alert_response(&creation.alert))))
+        .map_err(|_| persistence_failed(request_id))?
+    {
+        AlertCreationOutcome::Created => {
+            Ok((StatusCode::CREATED, Json(alert_response(&creation.alert))))
+        }
+        AlertCreationOutcome::Duplicate { .. } => Err(ApiError {
+            status: StatusCode::CONFLICT,
+            code: "IDEMPOTENCY_KEY_REUSED",
+            message: "This Idempotency-Key was already used for an alert.",
+            request_id,
+        }),
+    }
 }
 
 pub async fn get_alert(

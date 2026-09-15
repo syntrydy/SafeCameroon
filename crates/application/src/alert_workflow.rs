@@ -9,6 +9,7 @@ use safe_cameroon_domain::{
     AlertVisibility, AuditEventId, Case, OutboxEventId, Severity, TargetGeography,
 };
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::case_workflow::Actor;
@@ -96,8 +97,15 @@ pub struct AlertCreation {
     pub audit_event_id: AuditEventId,
     pub outbox_event_id: OutboxEventId,
     pub request_id: Uuid,
+    /// Mirrors `AnonymousReportSubmission::idempotency_key_hash`: a retried
+    /// `POST /v1/cases/{id}/alerts` request must produce one alert, not two
+    /// (two alerts independently trigger subscription matching and produce
+    /// duplicate, non-deduplicated deliveries — `DeliveryIdempotencyKey` is
+    /// keyed on `alert_id`, so it cannot catch a duplicate *alert*).
+    pub idempotency_key_hash: Option<Vec<u8>>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_alert_from_case(
     case: &Case,
     policy: &AlertPolicy,
@@ -106,11 +114,13 @@ pub fn create_alert_from_case(
     fields: Vec<AlertFieldValue>,
     actor: Actor,
     request_id: Uuid,
+    idempotency_key: Option<&str>,
 ) -> Result<AlertCreation, AlertCreationUseCaseError> {
     authorize_alert_action(actor, policy.visibility())
         .map_err(AlertCreationUseCaseError::NotAuthorized)?;
     let (alert, event) = Alert::create_from_case(case, policy, severity, target_geography, fields)
         .map_err(AlertCreationUseCaseError::InvalidAlert)?;
+    let idempotency_key_hash = idempotency_key.map(|key| Sha256::digest(key.as_bytes()).to_vec());
     Ok(AlertCreation {
         alert,
         event,
@@ -118,6 +128,7 @@ pub fn create_alert_from_case(
         audit_event_id: AuditEventId::new(),
         outbox_event_id: OutboxEventId::new(),
         request_id,
+        idempotency_key_hash,
     })
 }
 
@@ -229,6 +240,7 @@ mod tests {
             safe_fields(),
             Actor::Automated,
             Uuid::new_v4(),
+            None,
         )
         .unwrap_err();
 
@@ -254,12 +266,58 @@ mod tests {
             safe_fields(),
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
+            None,
         )
         .unwrap();
 
         assert_eq!(creation.alert.visibility(), AlertVisibility::Community);
         let payload = alert_created_event_payload(&creation);
         assert_eq!(payload["policy_id"], json!("MISSING_CHILD_COMMUNITY"));
+    }
+
+    #[test]
+    fn an_idempotency_key_is_hashed_into_the_creation() {
+        let case = verified_case();
+        let policy = AlertPolicy::missing_child_community_v1();
+        let geography = TargetGeography::new("Douala").unwrap();
+
+        let creation = create_alert_from_case(
+            &case,
+            &policy,
+            Severity::High,
+            geography,
+            safe_fields(),
+            Actor::Reviewer(Uuid::new_v4()),
+            Uuid::new_v4(),
+            Some("client-retry-key-1"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            creation.idempotency_key_hash,
+            Some(Sha256::digest(b"client-retry-key-1").to_vec())
+        );
+    }
+
+    #[test]
+    fn no_idempotency_key_means_no_hash() {
+        let case = verified_case();
+        let policy = AlertPolicy::missing_child_community_v1();
+        let geography = TargetGeography::new("Douala").unwrap();
+
+        let creation = create_alert_from_case(
+            &case,
+            &policy,
+            Severity::High,
+            geography,
+            safe_fields(),
+            Actor::Reviewer(Uuid::new_v4()),
+            Uuid::new_v4(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(creation.idempotency_key_hash, None);
     }
 
     #[test]
@@ -284,6 +342,7 @@ mod tests {
             safe_fields(),
             Actor::Automated,
             Uuid::new_v4(),
+            None,
         )
         .unwrap();
         assert_eq!(creation.alert.visibility(), AlertVisibility::Internal);
@@ -310,6 +369,7 @@ mod tests {
             safe_fields(),
             Actor::Automated,
             Uuid::new_v4(),
+            None,
         )
         .unwrap();
         let mut alert = creation.alert;
@@ -336,6 +396,7 @@ mod tests {
             safe_fields(),
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
+            None,
         )
         .unwrap();
         let mut alert = creation.alert;

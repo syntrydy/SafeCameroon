@@ -6,6 +6,7 @@ mod cases;
 mod deliveries;
 mod error;
 mod health;
+mod idempotency;
 mod rate_limit;
 mod reports;
 mod request_id;
@@ -316,6 +317,7 @@ mod tests {
             }],
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
+            None,
         )
         .unwrap();
         alerts.create(&alert_creation).await.unwrap();
@@ -660,6 +662,132 @@ mod tests {
             json_body(response).await["alert_id"],
             json!(alert_id.as_uuid())
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn retrying_alert_creation_with_the_same_idempotency_key_returns_a_conflict() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool.clone()));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content": "A child has not returned from school."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let report_id = json_body(response).await["report_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/cases")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::from(
+                        json!({"report_id": report_id, "incident_type": "MISSING_CHILD"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let case_id = json_body(response).await["case_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/events"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::from(json!({"to": "UNDER_REVIEW"}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let verify_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/verify"))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(verify_response.status(), StatusCode::OK);
+
+        let alert_body = json!({
+            "policy_id": "MISSING_CHILD_COMMUNITY",
+            "severity": "HIGH",
+            "target_geography": "Douala - Bonamoussadi",
+            "fields": [
+                {"field": "INCIDENT_CATEGORY", "value": "MISSING_CHILD"}
+            ]
+        })
+        .to_string();
+
+        let first = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/alerts"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .header("Idempotency-Key", "alert-retry-key-1")
+                    .body(Body::from(alert_body.clone()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::CREATED);
+
+        let retry = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/alerts"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .header("Idempotency-Key", "alert-retry-key-1")
+                    .body(Body::from(alert_body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(retry.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            json_body(retry).await["error"]["code"],
+            json!("IDEMPOTENCY_KEY_REUSED")
+        );
+
+        let (alert_count,): (i64,) =
+            sqlx::query_as("SELECT count(*) FROM alerts WHERE case_id = $1")
+                .bind(Uuid::parse_str(&case_id).unwrap())
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(alert_count, 1, "the retried alert must not persist");
     }
 
     #[tokio::test]

@@ -105,6 +105,16 @@ oversight against docs/API.md's "authenticated authorized users only" for
 these endpoints, fixed once the listing endpoints above made the gap
 visible.
 
+`POST /v1/cases/{id}/alerts` supports the same optional `Idempotency-Key`
+header `POST /v1/reports` does (8-256 characters, hashed with SHA-256 before
+it reaches persistence, parsed by the shared `idempotency_key_from_headers`
+helper both endpoints share): a retried request with the same key returns
+`409 IDEMPOTENCY_KEY_REUSED` instead of creating a second alert. This
+matters more here than it might look — `DeliveryIdempotencyKey` is keyed on
+`alert_id`, so two distinct alerts from one retried request independently
+trigger subscription matching and produce two real, non-deduplicated
+deliveries to every matched consumer.
+
 `GET /v1/cases` lists cases, most recently updated first
 (`cases_status_updated_at_idx`), optionally narrowed by `status` and/or
 `incident_type` — the only way to find a case without already knowing its

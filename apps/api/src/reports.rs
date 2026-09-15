@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::idempotency::idempotency_key_from_headers;
 use crate::rate_limit::enforce_rate_limit;
 use crate::request_id::request_id_from_headers;
 use crate::reviewer::actor_from_headers;
@@ -44,21 +45,7 @@ pub async fn create_anonymous_report(
     )
     .await?;
 
-    let idempotency_key = headers
-        .get("Idempotency-Key")
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    if let Some(key) = idempotency_key {
-        if !(8..=256).contains(&key.len()) {
-            return Err(ApiError {
-                status: StatusCode::BAD_REQUEST,
-                code: "INVALID_IDEMPOTENCY_KEY",
-                message: "Idempotency-Key must be between 8 and 256 characters.",
-                request_id,
-            });
-        }
-    }
+    let idempotency_key = idempotency_key_from_headers(&headers, request_id)?;
     let submission = prepare_anonymous_report(request.content, request_id, idempotency_key)
         .map_err(|error| {
             let (code, message) = match error {
