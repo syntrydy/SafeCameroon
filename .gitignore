@@ -4,6 +4,8 @@ docs/
 # Build and local tooling output.
 target/
 node_modules/
+dist/
+*.tsbuildinfo
 .env
 .env.*
 !.env.example
