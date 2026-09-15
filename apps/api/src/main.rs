@@ -615,6 +615,55 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn getting_a_single_alert_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/alerts/{}", Uuid::new_v4()))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_gets_a_single_alert_by_id() {
+        let pool = test_pool().await;
+        let delivery_id = seeded_delivery(&pool).await;
+        let app = build_router(test_state(pool.clone()));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let deliveries = PostgresDeliveryRepository::new(pool.clone());
+        let delivery = deliveries.find_by_id(delivery_id).await.unwrap().unwrap();
+        let alert_id = delivery.alert_id();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/alerts/{}", alert_id.as_uuid()))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            json_body(response).await["alert_id"],
+            json!(alert_id.as_uuid())
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
     async fn a_reviewer_gets_a_deliverys_detail_including_its_attempt_history() {
         let pool = test_pool().await;
         let delivery_id = seeded_delivery(&pool).await;
@@ -2316,6 +2365,87 @@ mod tests {
         assert_eq!(filtered[0]["case_id"], json!(missing_child_case));
         assert_eq!(filtered[0]["incident_type"], json!("MISSING_CHILD"));
         assert_eq!(filtered[0]["status"], json!("REPORTED"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn getting_a_single_case_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/cases/{}", Uuid::new_v4()))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_gets_a_single_case_by_id() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content": "A child has not returned from school."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let report_id = json_body(response).await["report_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/cases")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::from(
+                        json!({"report_id": report_id, "incident_type": "MISSING_CHILD"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let case_id = json_body(response).await["case_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/cases/{case_id}"))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await["case_id"], json!(case_id));
     }
 
     #[tokio::test]
