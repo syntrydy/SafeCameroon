@@ -24,6 +24,7 @@ use axum::{
     Router,
     routing::{get, post, put},
 };
+use safe_cameroon_application::attachment_workflow::AttachmentStorage;
 use safe_cameroon_application::webhook::WebhookVerifierRegistry;
 use safe_cameroon_domain::ChannelType;
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
@@ -33,7 +34,7 @@ use safe_cameroon_infrastructure::postgres::{
     PostgresDeliveryRepository, PostgresRateLimiter, PostgresReportRepository,
     PostgresReviewerRepository, PostgresSubscriptionRepository,
 };
-use safe_cameroon_infrastructure::storage::HmacSignedAttachmentStorage;
+use safe_cameroon_infrastructure::storage::{HmacSignedAttachmentStorage, R2AttachmentStorage};
 use safe_cameroon_infrastructure::webhook::{
     HmacSignedWebhookVerifier, PostgresWebhookReplayGuard,
 };
@@ -56,11 +57,50 @@ const SANDBOX_WEBHOOK_PROVIDER: &str = "sandbox";
 /// every handler reads it back through.
 pub(crate) const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 
+/// Real R2 when all four `R2_*` vars are configured; otherwise the mock/
+/// sandbox adapter (docs/DEPLOYMENT.md: R2 is the intended real provider —
+/// this is what makes it actually real once credentials exist, while local
+/// dev and the test suite, which never set `R2_*`, keep working unchanged
+/// against the mock).
+fn attachment_storage_from_env() -> Arc<dyn AttachmentStorage> {
+    let r2_vars = [
+        std::env::var("R2_ACCOUNT_ID"),
+        std::env::var("R2_BUCKET_NAME"),
+        std::env::var("R2_ACCESS_KEY_ID"),
+        std::env::var("R2_SECRET_ACCESS_KEY"),
+    ];
+    if let [
+        Ok(account_id),
+        Ok(bucket),
+        Ok(access_key_id),
+        Ok(secret_access_key),
+    ] = r2_vars
+    {
+        tracing::info!("attachment storage: Cloudflare R2");
+        return Arc::new(R2AttachmentStorage::new(
+            account_id,
+            bucket,
+            access_key_id,
+            secret_access_key,
+        ));
+    }
+
+    tracing::info!("attachment storage: mock/sandbox (R2_* vars not fully configured)");
+    let attachment_storage_secret = std::env::var("ATTACHMENT_STORAGE_SECRET")
+        .expect("ATTACHMENT_STORAGE_SECRET must be configured when R2_* vars are not set")
+        .into_bytes();
+    let attachment_storage_base_url = std::env::var("ATTACHMENT_STORAGE_BASE_URL")
+        .unwrap_or_else(|_| "https://storage.sandbox.local".to_owned());
+    Arc::new(HmacSignedAttachmentStorage::new(
+        attachment_storage_base_url,
+        attachment_storage_secret,
+    ))
+}
+
 fn build_state(
     pool: PgPool,
     webhook_secret: Vec<u8>,
-    attachment_storage_secret: Vec<u8>,
-    attachment_storage_base_url: String,
+    attachment_storage: Arc<dyn AttachmentStorage>,
     reviewer_session_secret: Vec<u8>,
 ) -> AppState {
     let mut webhook_verifiers = WebhookVerifierRegistry::new();
@@ -87,10 +127,7 @@ fn build_state(
         reviewers: PostgresReviewerRepository::new(pool.clone()),
         reviewer_session_tokens: ReviewerSessionTokenIssuer::new(reviewer_session_secret),
         rate_limiter: Arc::new(PostgresRateLimiter::new(pool.clone())),
-        attachment_storage: Arc::new(HmacSignedAttachmentStorage::new(
-            attachment_storage_base_url,
-            attachment_storage_secret,
-        )),
+        attachment_storage,
         webhook_verifiers: Arc::new(webhook_verifiers),
         webhook_replay_guard: Arc::new(PostgresWebhookReplayGuard::new(pool)),
     }
@@ -186,11 +223,7 @@ async fn main() {
     let webhook_secret = std::env::var("WEBHOOK_SHARED_SECRET")
         .expect("WEBHOOK_SHARED_SECRET must be configured")
         .into_bytes();
-    let attachment_storage_secret = std::env::var("ATTACHMENT_STORAGE_SECRET")
-        .expect("ATTACHMENT_STORAGE_SECRET must be configured")
-        .into_bytes();
-    let attachment_storage_base_url = std::env::var("ATTACHMENT_STORAGE_BASE_URL")
-        .unwrap_or_else(|_| "https://storage.sandbox.local".to_owned());
+    let attachment_storage = attachment_storage_from_env();
     let reviewer_session_secret = std::env::var("REVIEWER_SESSION_SECRET")
         .expect("REVIEWER_SESSION_SECRET must be configured")
         .into_bytes();
@@ -203,8 +236,7 @@ async fn main() {
     let app = build_router(build_state(
         pool,
         webhook_secret,
-        attachment_storage_secret,
-        attachment_storage_base_url,
+        attachment_storage,
         reviewer_session_secret,
     ));
 
@@ -248,8 +280,10 @@ mod tests {
         build_state(
             pool,
             TEST_SECRET.to_vec(),
-            b"test-attachment-storage-secret".to_vec(),
-            "https://storage.example".to_owned(),
+            Arc::new(HmacSignedAttachmentStorage::new(
+                "https://storage.example",
+                b"test-attachment-storage-secret".to_vec(),
+            )),
             b"test-reviewer-session-secret".to_vec(),
         )
     }
