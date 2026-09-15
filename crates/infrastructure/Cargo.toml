@@ -7,7 +7,10 @@ license.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+aws-credential-types.workspace = true
+aws-sigv4.workspace = true
 hmac.workspace = true
+http.workspace = true
 safe-cameroon-application = { path = "../application" }
 safe-cameroon-domain = { path = "../domain" }
 serde_json.workspace = true

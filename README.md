@@ -45,12 +45,18 @@ still claimed rather than silently, permanently marked done, mirroring how
 intermediate `SENDING` status rather than a terminal one before it dispatches.
 
 Attachments (`POST /v1/reports/{report_id}/attachments`,
-`GET /v1/attachments/{id}/download-url`) work the same way: no real R2
-credentials exist yet, so `HmacSignedAttachmentStorage` issues short-lived,
-HMAC-SHA256-signed mock URLs over `ATTACHMENT_STORAGE_SECRET`
+`GET /v1/attachments/{id}/download-url`) use real Cloudflare R2 when
+`R2_ACCOUNT_ID`/`R2_BUCKET_NAME`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`
+are all configured — `R2AttachmentStorage` presigns PUT/GET URLs against
+R2's S3-compatible endpoint using `aws-sigv4` (the same signing crate the
+AWS SDKs use internally), since R2 is API-compatible with S3's SigV4
+scheme. Without those vars (local dev, the test suite), it falls back to
+`HmacSignedAttachmentStorage`, which issues short-lived, HMAC-SHA256-signed
+mock URLs over `ATTACHMENT_STORAGE_SECRET` instead
 (`ATTACHMENT_STORAGE_BASE_URL` optionally overrides the placeholder base
 URL). Uploading requires no actor (part of anonymous report submission);
-requesting a download URL requires an identified reviewer and is audited.
+requesting a download URL requires an identified reviewer and is audited —
+both true regardless of which storage backend is active.
 
 `GET /v1/reports/{report_id}/attachments` lists a report's attachments —
 metadata only (id, object key, content type, size, checksum), never the
