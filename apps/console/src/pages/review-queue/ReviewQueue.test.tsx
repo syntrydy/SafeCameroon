@@ -7,6 +7,14 @@ import { App } from "../../App";
 import type { ReportSummary } from "../../api/reports";
 import { AuthProvider } from "../../auth/AuthContext";
 
+vi.mock("../../auth/GoogleSignInButton", () => ({
+  GoogleSignInButton: ({ onCredential }: { onCredential: (idToken: string) => void }) => (
+    <button type="button" onClick={() => onCredential("fake-google-id-token")}>
+      Fake Google Sign-In
+    </button>
+  ),
+}));
+
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -37,7 +45,7 @@ function stubBackend() {
       const url = new URL(input, "http://localhost");
       const method = init?.method ?? "GET";
 
-      if (url.pathname === "/v1/auth/login") {
+      if (url.pathname === "/v1/auth/google") {
         return Promise.resolve(jsonResponse(200, LOGIN_RESPONSE));
       }
       if (url.pathname === "/v1/reports" && method === "GET") {
@@ -90,9 +98,7 @@ async function loginAndReachQueue() {
     </MemoryRouter>,
   );
 
-  await user.type(screen.getByLabelText("Email"), "reviewer@example.com");
-  await user.type(screen.getByLabelText("Password"), "correct horse battery staple");
-  await user.click(screen.getByRole("button", { name: "Sign in" }));
+  await user.click(screen.getByRole("button", { name: "Fake Google Sign-In" }));
   await screen.findByRole("heading", { name: "Review queue" });
   return user;
 }
@@ -155,7 +161,7 @@ describe("ReviewQueue", () => {
       vi.fn().mockImplementation((input: string, init?: RequestInit) => {
         const url = new URL(input, "http://localhost");
         const method = init?.method ?? "GET";
-        if (url.pathname === "/v1/auth/login") return Promise.resolve(jsonResponse(200, LOGIN_RESPONSE));
+        if (url.pathname === "/v1/auth/google") return Promise.resolve(jsonResponse(200, LOGIN_RESPONSE));
         if (url.pathname === "/v1/reports" && method === "GET") return Promise.resolve(jsonResponse(200, [REPORT]));
         if (url.pathname === "/v1/cases" && method === "POST") {
           return Promise.resolve(

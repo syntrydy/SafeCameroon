@@ -9,7 +9,7 @@ export interface Session {
 
 interface AuthContextValue {
   session: Session | null;
-  login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -22,8 +22,8 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await authApi.login(email, password);
+  const loginWithGoogle = useCallback(async (idToken: string) => {
+    const response = await authApi.loginWithGoogle(idToken);
     setSession({ reviewerId: response.reviewer_id, token: response.token });
   }, []);
 
@@ -37,7 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [session]);
 
-  const value = useMemo(() => ({ session, login, logout }), [session, login, logout]);
+  const value = useMemo(
+    () => ({ session, loginWithGoogle, logout }),
+    [session, loginWithGoogle, logout],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

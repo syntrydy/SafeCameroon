@@ -6,6 +6,17 @@ import { MemoryRouter } from "react-router-dom";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthContext";
 
+// The real component loads Google's own script and isn't meaningfully
+// testable in jsdom; stand in a plain button so tests can drive the same
+// onCredential callback the real widget would invoke.
+vi.mock("./auth/GoogleSignInButton", () => ({
+  GoogleSignInButton: ({ onCredential }: { onCredential: (idToken: string) => void }) => (
+    <button type="button" onClick={() => onCredential("fake-google-id-token")}>
+      Fake Google Sign-In
+    </button>
+  ),
+}));
+
 function renderApp(initialPath = "/") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
@@ -36,7 +47,7 @@ function stubBackend() {
     "fetch",
     vi.fn().mockImplementation((input: string, init?: RequestInit) => {
       const url = new URL(input, "http://localhost");
-      if (url.pathname === "/v1/auth/login") {
+      if (url.pathname === "/v1/auth/google") {
         return Promise.resolve(jsonResponse(200, LOGIN_RESPONSE));
       }
       if (url.pathname === "/v1/auth/logout") {
@@ -59,17 +70,15 @@ describe("console auth flow", () => {
     renderApp("/");
 
     expect(screen.getByRole("heading", { name: "SafeCameroon Console" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Fake Google Sign-In" })).toBeInTheDocument();
   });
 
-  it("logs in with valid credentials and reaches the review queue", async () => {
+  it("logs in with a verified Google credential and reaches the review queue", async () => {
     stubBackend();
     const user = userEvent.setup();
     renderApp("/login");
 
-    await user.type(screen.getByLabelText("Email"), "reviewer@example.com");
-    await user.type(screen.getByLabelText("Password"), "correct horse battery staple");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(screen.getByRole("button", { name: "Fake Google Sign-In" }));
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Review queue" })).toBeInTheDocument();
@@ -77,14 +86,14 @@ describe("console auth flow", () => {
     expect(screen.getByText(`Reviewer ${LOGIN_RESPONSE.reviewer_id}`)).toBeInTheDocument();
   });
 
-  it("shows the backend's error message and request id on invalid credentials", async () => {
+  it("shows the backend's error message and request id when the account isn't a registered reviewer", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        jsonResponse(401, {
+        jsonResponse(403, {
           error: {
-            code: "INVALID_CREDENTIALS",
-            message: "Invalid email or password.",
+            code: "REVIEWER_NOT_REGISTERED",
+            message: "This Google account is not registered as a reviewer.",
             request_id: "33333333-3333-3333-3333-333333333333",
           },
         }),
@@ -93,12 +102,10 @@ describe("console auth flow", () => {
     const user = userEvent.setup();
     renderApp("/login");
 
-    await user.type(screen.getByLabelText("Email"), "reviewer@example.com");
-    await user.type(screen.getByLabelText("Password"), "wrong-password");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(screen.getByRole("button", { name: "Fake Google Sign-In" }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Invalid email or password.");
+    expect(alert).toHaveTextContent("This Google account is not registered as a reviewer.");
     expect(alert).toHaveTextContent("33333333-3333-3333-3333-333333333333");
   });
 
@@ -107,15 +114,13 @@ describe("console auth flow", () => {
     const user = userEvent.setup();
     renderApp("/login");
 
-    await user.type(screen.getByLabelText("Email"), "reviewer@example.com");
-    await user.type(screen.getByLabelText("Password"), "correct horse battery staple");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(screen.getByRole("button", { name: "Fake Google Sign-In" }));
     await screen.findByRole("button", { name: "Sign out" });
 
     await user.click(screen.getByRole("button", { name: "Sign out" }));
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Email")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Fake Google Sign-In" })).toBeInTheDocument();
     });
   });
 });
