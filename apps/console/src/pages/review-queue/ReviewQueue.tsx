@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { createCase, linkReportToCase, type IncidentType } from "../../api/cases";
 import { ApiError } from "../../api/client";
@@ -24,7 +25,7 @@ export function ReviewQueue() {
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ text: string; caseId: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,14 +47,14 @@ export function ReviewQueue() {
   }, [load]);
 
   async function handleCreateCase(reportId: string, incidentType: IncidentType) {
-    await createCase(token, reportId, incidentType);
-    setActionMessage("Case created.");
+    const created = await createCase(token, reportId, incidentType);
+    setActionMessage({ text: "Case created.", caseId: created.case_id });
     await load();
   }
 
   async function handleLinkToCase(reportId: string, caseId: string) {
-    await linkReportToCase(token, caseId, reportId);
-    setActionMessage("Linked to case.");
+    const linked = await linkReportToCase(token, caseId, reportId);
+    setActionMessage({ text: "Linked to case.", caseId: linked.case_id });
     await load();
   }
 
@@ -82,7 +83,10 @@ export function ReviewQueue() {
 
       {actionMessage && (
         <p role="status" className="mb-4 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-          {actionMessage}
+          {actionMessage.text}{" "}
+          <Link to={`/cases/${actionMessage.caseId}`} className="underline">
+            View case
+          </Link>
         </p>
       )}
 
