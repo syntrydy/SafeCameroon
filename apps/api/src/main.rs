@@ -122,6 +122,7 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/cases/{id}/verify", post(cases::verify_case))
         .route("/v1/cases/{id}/resolve", post(cases::resolve_case))
         .route("/v1/cases/{id}/alerts", post(alerts::create_alert))
+        .route("/v1/alerts", get(alerts::list_alerts))
         .route("/v1/alerts/{id}", get(alerts::get_alert))
         .route("/v1/alerts/{id}/cancel", post(alerts::cancel))
         .route(
@@ -439,6 +440,177 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0]["delivery_id"], json!(delivery_id.as_uuid()));
         assert_eq!(listed[0]["channel"], json!("WHATSAPP"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn listing_alerts_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/alerts")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_lists_and_filters_alerts() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content": "A child has not returned from school."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let report_id = json_body(response).await["report_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/cases")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::from(
+                        json!({"report_id": report_id, "incident_type": "MISSING_CHILD"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let case_id = json_body(response).await["case_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        for target in ["UNDER_REVIEW"] {
+            app.clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(format!("/v1/cases/{case_id}/events"))
+                        .header("content-type", "application/json")
+                        .header("Authorization", format!("Bearer {reviewer}"))
+                        .body(Body::from(json!({"to": target}).to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+        }
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/verify"))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/alerts"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::from(
+                        json!({
+                            "policy_id": "MISSING_CHILD_COMMUNITY",
+                            "severity": "HIGH",
+                            "target_geography": "Douala - Bonamoussadi",
+                            "fields": [
+                                {"field": "INCIDENT_CATEGORY", "value": "MISSING_CHILD"}
+                            ]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let alert_id = json_body(response).await["alert_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/alerts")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let listed = json_body(response).await;
+        let listed = listed.as_array().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0]["alert_id"], json!(alert_id));
+        assert_eq!(listed[0]["visibility"], json!("COMMUNITY"));
+        assert_eq!(listed[0]["status"], json!("ACTIVE"));
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/alerts?visibility=COMMUNITY&status=ACTIVE")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await.as_array().unwrap().len(), 1);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/alerts?visibility=INTERNAL")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(json_body(response).await.as_array().unwrap().is_empty());
     }
 
     #[tokio::test]

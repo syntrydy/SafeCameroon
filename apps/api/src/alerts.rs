@@ -4,18 +4,19 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
 };
 use safe_cameroon_application::alert_workflow::{
     AlertCancellationError, AlertCreationUseCaseError, cancel_alert, create_alert_from_case,
     resolve_policy,
 };
+use safe_cameroon_application::authorization::{Capability, authorize};
 use safe_cameroon_domain::{
     AlertCreationError, AlertField, AlertFieldValue, AlertId, AlertStatus, AlertTransitionError,
     AlertVisibility, CaseEventType, CaseId, IncidentType, Severity, TargetGeography,
 };
-use safe_cameroon_infrastructure::postgres::AlertCancelOutcome;
+use safe_cameroon_infrastructure::postgres::{AlertCancelOutcome, AlertFilter};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -224,6 +225,61 @@ pub async fn get_alert(
         .ok_or_else(|| alert_not_found(request_id))?;
 
     Ok(Json(alert_response(&alert)))
+}
+
+const DEFAULT_LIMIT: u32 = 50;
+/// A hard ceiling regardless of what the caller asks for, so a single
+/// request can never force an unbounded scan/response.
+const MAX_LIMIT: u32 = 100;
+
+#[derive(Deserialize)]
+pub struct ListAlertsQuery {
+    status: Option<AlertStatus>,
+    visibility: Option<AlertVisibility>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+}
+
+/// Unlike `get_alert` and `GET /v1/cases/{id}` (which have no authorization
+/// gate at all — a pre-existing, unrelated gap), this listing endpoint
+/// requires `Capability::ViewCase` from the start: bulk enumeration is a
+/// materially larger exposure than single-record lookup by a random id, and
+/// `alert_fields` can carry non-public detail depending on the alert's
+/// policy/visibility (docs/ALERT_SAFETY.md).
+pub async fn list_alerts(
+    State(state): State<AppState>,
+    Query(query): Query<ListAlertsQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AlertResponse>>, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    authorize(actor, Capability::ViewCase).map_err(|_| ApiError {
+        status: StatusCode::FORBIDDEN,
+        code: "NOT_AUTHORIZED",
+        message: "Only an identified reviewer may list alerts.",
+        request_id,
+    })?;
+
+    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as i64;
+    let offset = query.offset.unwrap_or(0) as i64;
+    let filter = AlertFilter {
+        status: query.status,
+        visibility: query.visibility,
+    };
+
+    let alerts = state
+        .alerts
+        .list(&filter, limit, offset)
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+
+    Ok(Json(alerts.iter().map(alert_response).collect()))
 }
 
 pub async fn cancel(
