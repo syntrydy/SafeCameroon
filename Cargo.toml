@@ -17,6 +17,7 @@ license = "UNLICENSED"
 argon2 = "0.5"
 async-trait = "0.1"
 axum = "0.8"
+dotenvy = "0.15"
 hmac = "0.12"
 rand_core = { version = "0.6", features = ["getrandom"] }
 sha2 = "0.10"

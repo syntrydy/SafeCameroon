@@ -14,6 +14,12 @@ use case is missing children.
 
 ## Local checks
 
+Copy `.env.example` to `.env` and fill in real values, or prefix each
+command with the vars inline as shown below — both binaries load `.env` at
+startup via `dotenvy::dotenv()` if one is present, and otherwise read
+straight from the process environment (a real deployment sets vars
+directly and has no `.env` at all; a missing file is not an error).
+
 ```bash
 cargo test --workspace
 DATABASE_URL=postgres://... WEBHOOK_SHARED_SECRET=... ATTACHMENT_STORAGE_SECRET=... REVIEWER_SESSION_SECRET=... cargo run -p safe-cameroon-api

@@ -1196,6 +1196,7 @@ name = "safe-cameroon-api"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "dotenvy",
  "hmac",
  "safe-cameroon-application",
  "safe-cameroon-domain",
@@ -1254,6 +1255,7 @@ name = "safe-cameroon-worker"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "dotenvy",
  "safe-cameroon-application",
  "safe-cameroon-domain",
  "safe-cameroon-infrastructure",
