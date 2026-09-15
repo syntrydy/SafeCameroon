@@ -6,8 +6,9 @@ use safe_cameroon_application::webhook::{WebhookReplayGuard, WebhookVerifierRegi
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresAttachmentRepository, PostgresAuditEventRepository,
-    PostgresCaseRepository, PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository,
-    PostgresReportRepository, PostgresReviewerRepository, PostgresSubscriptionRepository,
+    PostgresCaseRepository, PostgresConsumerRepository, PostgresDeliveryPreferenceRepository,
+    PostgresDeliveryRepository, PostgresReportRepository, PostgresReviewerRepository,
+    PostgresSubscriptionRepository,
 };
 
 #[derive(Clone)]
@@ -18,6 +19,7 @@ pub struct AppState {
     pub deliveries: PostgresDeliveryRepository,
     pub attachments: PostgresAttachmentRepository,
     pub audit_events: PostgresAuditEventRepository,
+    pub consumers: PostgresConsumerRepository,
     pub subscriptions: PostgresSubscriptionRepository,
     pub delivery_preferences: PostgresDeliveryPreferenceRepository,
     pub reviewers: PostgresReviewerRepository,

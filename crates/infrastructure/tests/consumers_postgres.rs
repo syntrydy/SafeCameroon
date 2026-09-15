@@ -1,0 +1,77 @@
+use std::env;
+
+use safe_cameroon_domain::{Consumer, ConsumerId, ConsumerType};
+use safe_cameroon_infrastructure::postgres::PostgresConsumerRepository;
+use sqlx::{PgPool, postgres::PgPoolOptions};
+use uuid::Uuid;
+
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
+
+async fn test_pool() -> PgPool {
+    let database_url = env::var("TEST_DATABASE_URL")
+        .expect("TEST_DATABASE_URL must point to a dedicated PostgreSQL test database");
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&database_url)
+        .await
+        .expect("test database must be reachable");
+
+    let (database_name,): (String,) = sqlx::query_as("SELECT current_database()")
+        .fetch_one(&pool)
+        .await
+        .expect("test database name must be readable");
+    assert!(
+        database_name.to_ascii_lowercase().contains("test"),
+        "TEST_DATABASE_URL must target a database with 'test' in its name"
+    );
+
+    MIGRATOR.run(&pool).await.expect("migrations must apply");
+    sqlx::query("TRUNCATE consumers")
+        .execute(&pool)
+        .await
+        .expect("test tables must be reset");
+    pool
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn persists_and_reconstitutes_a_consumer() {
+    let pool = test_pool().await;
+    let repository = PostgresConsumerRepository::new(pool);
+    let consumer = Consumer::new("Douala Police", ConsumerType::Organization).unwrap();
+
+    repository.create(&consumer).await.unwrap();
+
+    let loaded = repository.find_by_id(consumer.id()).await.unwrap().unwrap();
+    assert_eq!(loaded.id(), consumer.id());
+    assert_eq!(loaded.name(), "Douala Police");
+    assert_eq!(loaded.consumer_type(), ConsumerType::Organization);
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn find_by_id_returns_none_for_an_unknown_consumer() {
+    let pool = test_pool().await;
+    let repository = PostgresConsumerRepository::new(pool);
+
+    assert!(
+        repository
+            .find_by_id(ConsumerId::from_uuid(Uuid::new_v4()))
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn a_citizen_consumer_round_trips_too() {
+    let pool = test_pool().await;
+    let repository = PostgresConsumerRepository::new(pool);
+    let consumer = Consumer::new("Amina N.", ConsumerType::Citizen).unwrap();
+
+    repository.create(&consumer).await.unwrap();
+
+    let loaded = repository.find_by_id(consumer.id()).await.unwrap().unwrap();
+    assert_eq!(loaded.consumer_type(), ConsumerType::Citizen);
+}

@@ -115,6 +115,15 @@ matters more here than it might look — `DeliveryIdempotencyKey` is keyed on
 trigger subscription matching and produce two real, non-deduplicated
 deliveries to every matched consumer.
 
+`POST /v1/consumers` and `GET /v1/consumers/{id}` register and read back a
+consumer — a receiver identity (organization or citizen) subscriptions and
+deliveries belong to (docs/DOMAIN_MODEL.md section 9). `ConsumerId` was
+previously just an opaque, unvalidated UUID any caller could invent when
+hitting the subscription/delivery-preference endpoints; there was no
+registration step or lookup at all. Reviewer-managed today (not yet citizen
+self-service — matches how `apps/api/src/subscriptions.rs` already treats
+subscription management), gated by the same `Capability::ManageSubscriptions`.
+
 `GET /v1/cases` lists cases, most recently updated first
 (`cases_status_updated_at_idx`), optionally narrowed by `status` and/or
 `incident_type` — the only way to find a case without already knowing its
@@ -162,6 +171,7 @@ TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --te
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test webhook_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test attachments_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test audit_events_postgres -- --ignored
+TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test consumers_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test subscription_persistence_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test outbox_postgres -- --ignored
 TEST_DATABASE_URL=postgres://... cargo test -p safe-cameroon-infrastructure --test reviewer_postgres -- --ignored

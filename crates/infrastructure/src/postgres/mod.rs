@@ -4,6 +4,7 @@ pub mod alerts;
 pub mod attachments;
 pub mod audit_events;
 pub mod cases;
+pub mod consumers;
 pub mod deliveries;
 pub mod delivery_preferences;
 pub mod outbox;
@@ -19,6 +20,7 @@ pub use cases::{
     CaseCreationOutcome, CaseEventRecord, CaseFilter, CaseLinkOutcome, CaseReviewOutcome,
     PostgresCaseRepository,
 };
+pub use consumers::PostgresConsumerRepository;
 pub use deliveries::{DeliveryTransitionOutcome, PostgresDeliveryRepository};
 pub use delivery_preferences::PostgresDeliveryPreferenceRepository;
 pub use outbox::{ClaimedOutboxEvent, PostgresOutboxRepository};

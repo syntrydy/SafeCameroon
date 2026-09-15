@@ -5,6 +5,7 @@
 pub mod alert;
 pub mod attachment;
 pub mod case;
+pub mod consumer;
 pub mod delivery;
 pub mod ids;
 pub mod report;
@@ -21,6 +22,7 @@ pub use attachment::{
 pub use case::{
     Case, CaseEvent, CaseEventType, CaseStatus, DuplicateReportLink, IncidentType, TransitionError,
 };
+pub use consumer::{Consumer, ConsumerType, EmptyConsumerName};
 pub use delivery::{
     ChannelEndpoint, ChannelType, Delivery, DeliveryAttempt, DeliveryAttemptOutcome, DeliveryEvent,
     DeliveryEventType, DeliveryIdempotencyKey, DeliveryPreference, DeliveryPreferenceError,
