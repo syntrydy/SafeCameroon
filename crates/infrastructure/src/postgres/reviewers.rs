@@ -1,9 +1,9 @@
-//! Persistence for reviewer accounts (migration 0011). Password hashing
-//! itself is `safe_cameroon_application::reviewer_auth`'s job — this
-//! repository only ever stores/reads the already-hashed string. Also
-//! implements `SessionRevocationStore` (migration 0015): the same table
-//! backs both concerns, so one repository type serves both roles rather
-//! than introducing a second one for a single column.
+//! Persistence for reviewer accounts (migration 0011; migration 0019 drops
+//! the password column now that reviewers authenticate via Google sign-in
+//! instead of a locally stored credential). Also implements
+//! `SessionRevocationStore` (migration 0015): the same table backs both
+//! concerns, so one repository type serves both roles rather than
+//! introducing a second one for a single column.
 
 use async_trait::async_trait;
 use safe_cameroon_application::case_workflow::Actor;
@@ -19,12 +19,6 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
         .as_database_error()
         .and_then(|error| error.code())
         .is_some_and(|code| code == UNIQUE_VIOLATION)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReviewerRecord {
-    pub id: Uuid,
-    pub password_hash: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,15 +53,12 @@ impl PostgresReviewerRepository {
         &self,
         id: Uuid,
         email: &str,
-        password_hash: &str,
     ) -> Result<CreateReviewerOutcome, sqlx::Error> {
-        let result =
-            sqlx::query("INSERT INTO reviewers (id, email, password_hash) VALUES ($1, $2, $3)")
-                .bind(id)
-                .bind(email)
-                .bind(password_hash)
-                .execute(&self.pool)
-                .await;
+        let result = sqlx::query("INSERT INTO reviewers (id, email) VALUES ($1, $2)")
+            .bind(id)
+            .bind(email)
+            .execute(&self.pool)
+            .await;
 
         match result {
             Ok(_) => Ok(CreateReviewerOutcome::Created),
@@ -78,14 +69,16 @@ impl PostgresReviewerRepository {
         }
     }
 
-    pub async fn find_by_email(&self, email: &str) -> Result<Option<ReviewerRecord>, sqlx::Error> {
-        let row: Option<(Uuid, String)> = sqlx::query_as(
-            "SELECT id, password_hash FROM reviewers WHERE lower(email) = lower($1)",
-        )
-        .bind(email)
-        .fetch_optional(&self.pool)
-        .await?;
-        Ok(row.map(|(id, password_hash)| ReviewerRecord { id, password_hash }))
+    /// The reviewer's id if `email` (matched case-insensitively) is a
+    /// registered reviewer — the only thing a caller needs once identity
+    /// itself is verified by Google sign-in rather than a local credential.
+    pub async fn find_by_email(&self, email: &str) -> Result<Option<Uuid>, sqlx::Error> {
+        let row: Option<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM reviewers WHERE lower(email) = lower($1)")
+                .bind(email)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.map(|(id,)| id))
     }
 
     /// Records an `audit_events` row for a sensitive auth action, separately

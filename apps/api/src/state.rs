@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use safe_cameroon_application::attachment_workflow::AttachmentStorage;
+use safe_cameroon_application::google_identity::GoogleIdentityVerifier;
 use safe_cameroon_application::rate_limit::RateLimiter;
 use safe_cameroon_application::webhook::{WebhookReplayGuard, WebhookVerifierRegistry};
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
@@ -24,6 +25,7 @@ pub struct AppState {
     pub delivery_preferences: PostgresDeliveryPreferenceRepository,
     pub reviewers: PostgresReviewerRepository,
     pub reviewer_session_tokens: ReviewerSessionTokenIssuer,
+    pub google_identity_verifier: Arc<dyn GoogleIdentityVerifier>,
     pub rate_limiter: Arc<dyn RateLimiter>,
     pub attachment_storage: Arc<dyn AttachmentStorage>,
     pub webhook_verifiers: Arc<WebhookVerifierRegistry>,

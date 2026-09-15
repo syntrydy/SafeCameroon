@@ -50,7 +50,7 @@ async fn count_starts_at_zero_and_reflects_created_reviewers() {
     assert_eq!(repository.count().await.unwrap(), 0);
 
     repository
-        .create(Uuid::new_v4(), "reviewer@example.test", "hash-1")
+        .create(Uuid::new_v4(), "reviewer@example.test")
         .await
         .unwrap();
     assert_eq!(repository.count().await.unwrap(), 1);
@@ -64,7 +64,7 @@ async fn a_created_reviewer_can_be_found_by_email_case_insensitively() {
     let id = Uuid::new_v4();
 
     let outcome = repository
-        .create(id, "Reviewer@Example.Test", "hashed-password")
+        .create(id, "Reviewer@Example.Test")
         .await
         .unwrap();
     assert_eq!(outcome, CreateReviewerOutcome::Created);
@@ -74,8 +74,7 @@ async fn a_created_reviewer_can_be_found_by_email_case_insensitively() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(found.id, id);
-    assert_eq!(found.password_hash, "hashed-password");
+    assert_eq!(found, id);
 }
 
 #[tokio::test]
@@ -85,11 +84,11 @@ async fn registering_the_same_email_twice_is_rejected() {
     let repository = PostgresReviewerRepository::new(pool);
 
     repository
-        .create(Uuid::new_v4(), "duplicate@example.test", "hash-1")
+        .create(Uuid::new_v4(), "duplicate@example.test")
         .await
         .unwrap();
     let outcome = repository
-        .create(Uuid::new_v4(), "Duplicate@Example.Test", "hash-2")
+        .create(Uuid::new_v4(), "Duplicate@Example.Test")
         .await
         .unwrap();
     assert_eq!(outcome, CreateReviewerOutcome::EmailAlreadyRegistered);
@@ -116,7 +115,7 @@ async fn a_reviewer_with_no_revocation_is_never_revoked() {
     let repository = PostgresReviewerRepository::new(pool);
     let reviewer_id = Uuid::new_v4();
     repository
-        .create(reviewer_id, "never-revoked@example.test", "hash-1")
+        .create(reviewer_id, "never-revoked@example.test")
         .await
         .unwrap();
 
@@ -135,7 +134,7 @@ async fn revoke_all_sessions_invalidates_tokens_issued_before_it_but_not_after()
     let repository = PostgresReviewerRepository::new(pool);
     let reviewer_id = Uuid::new_v4();
     repository
-        .create(reviewer_id, "revoked@example.test", "hash-1")
+        .create(reviewer_id, "revoked@example.test")
         .await
         .unwrap();
     let issued_before = now_epoch_seconds() - 10;

@@ -6,6 +6,7 @@ pub mod authorization;
 pub mod case_workflow;
 pub mod channel;
 pub mod delivery_workflow;
+pub mod google_identity;
 pub mod rate_limit;
 pub mod reviewer_auth;
 pub mod webhook;

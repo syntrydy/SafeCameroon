@@ -25,9 +25,11 @@ use axum::{
     routing::{get, post, put},
 };
 use safe_cameroon_application::attachment_workflow::AttachmentStorage;
+use safe_cameroon_application::google_identity::GoogleIdentityVerifier;
 use safe_cameroon_application::webhook::WebhookVerifierRegistry;
 use safe_cameroon_domain::ChannelType;
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
+use safe_cameroon_infrastructure::google_identity::GoogleTokenInfoVerifier;
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresAttachmentRepository, PostgresAuditEventRepository,
     PostgresCaseRepository, PostgresConsumerRepository, PostgresDeliveryPreferenceRepository,
@@ -102,6 +104,7 @@ fn build_state(
     webhook_secret: Vec<u8>,
     attachment_storage: Arc<dyn AttachmentStorage>,
     reviewer_session_secret: Vec<u8>,
+    google_identity_verifier: Arc<dyn GoogleIdentityVerifier>,
 ) -> AppState {
     let mut webhook_verifiers = WebhookVerifierRegistry::new();
     for channel in [ChannelType::WhatsApp, ChannelType::Sms, ChannelType::Email] {
@@ -126,6 +129,7 @@ fn build_state(
         delivery_preferences: PostgresDeliveryPreferenceRepository::new(pool.clone()),
         reviewers: PostgresReviewerRepository::new(pool.clone()),
         reviewer_session_tokens: ReviewerSessionTokenIssuer::new(reviewer_session_secret),
+        google_identity_verifier,
         rate_limiter: Arc::new(PostgresRateLimiter::new(pool.clone())),
         attachment_storage,
         webhook_verifiers: Arc::new(webhook_verifiers),
@@ -137,7 +141,7 @@ fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health::health))
         .route("/v1/auth/register", post(auth::register))
-        .route("/v1/auth/login", post(auth::login))
+        .route("/v1/auth/google", post(auth::google_login))
         .route("/v1/auth/logout", post(auth::logout))
         .route("/v1/audit-events", get(audit_events::list_audit_events))
         .route(
@@ -227,6 +231,8 @@ async fn main() {
     let reviewer_session_secret = std::env::var("REVIEWER_SESSION_SECRET")
         .expect("REVIEWER_SESSION_SECRET must be configured")
         .into_bytes();
+    let google_oauth_client_id =
+        std::env::var("GOOGLE_OAUTH_CLIENT_ID").expect("GOOGLE_OAUTH_CLIENT_ID must be configured");
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&database_url)
@@ -238,6 +244,7 @@ async fn main() {
         webhook_secret,
         attachment_storage,
         reviewer_session_secret,
+        Arc::new(GoogleTokenInfoVerifier::new(google_oauth_client_id)),
     ));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
@@ -260,6 +267,9 @@ mod tests {
     use safe_cameroon_application::case_workflow::{Actor, create_case_from_report, review_case};
     use safe_cameroon_application::channel::{Channel, build_outbound_message};
     use safe_cameroon_application::delivery_workflow::{plan_deliveries, start_delivery_attempt};
+    use safe_cameroon_application::google_identity::{
+        FakeGoogleIdentityVerifier, INVALID_GOOGLE_TOKEN,
+    };
     use safe_cameroon_application::prepare_anonymous_report;
     use safe_cameroon_domain::{
         AlertField, AlertFieldValue, AlertPolicy, CaseStatus, ChannelEndpoint, ConsumerId,
@@ -285,6 +295,7 @@ mod tests {
                 b"test-attachment-storage-secret".to_vec(),
             )),
             b"test-reviewer-session-secret".to_vec(),
+            Arc::new(FakeGoogleIdentityVerifier),
         )
     }
 
@@ -1302,14 +1313,14 @@ mod tests {
         serde_json::from_slice(&bytes).unwrap()
     }
 
-    /// Registers a fresh reviewer and logs in, returning a bearer session
-    /// token. Relies on the reviewers table being empty at the start of each
-    /// test (`test_pool`'s `TRUNCATE`), so registration is always the
-    /// deployment's bootstrapping first-reviewer case and needs no
-    /// authorization of its own.
+    /// Registers a fresh reviewer and signs in with `FakeGoogleIdentityVerifier`
+    /// (which treats the id token as the already-verified email), returning
+    /// a bearer session token. Relies on the reviewers table being empty at
+    /// the start of each test (`test_pool`'s `TRUNCATE`), so registration is
+    /// always the deployment's bootstrapping first-reviewer case and needs
+    /// no authorization of its own.
     async fn login_reviewer(app: Router) -> String {
         let email = format!("reviewer-{}@example.test", Uuid::new_v4());
-        let password = "correct-horse-battery-staple";
 
         let register_response = app
             .clone()
@@ -1318,9 +1329,7 @@ mod tests {
                     .method("POST")
                     .uri("/v1/auth/register")
                     .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"email": email, "password": password}).to_string(),
-                    ))
+                    .body(Body::from(json!({"email": email}).to_string()))
                     .unwrap(),
             )
             .await
@@ -1335,11 +1344,9 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/login")
+                    .uri("/v1/auth/google")
                     .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"email": email, "password": password}).to_string(),
-                    ))
+                    .body(Body::from(json!({"id_token": email}).to_string()))
                     .unwrap(),
             )
             .await
@@ -1370,8 +1377,7 @@ mod tests {
                     .uri("/v1/auth/register")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        json!({"email": "second@example.test", "password": "correct-horse-battery-staple"})
-                            .to_string(),
+                        json!({"email": "second@example.test"}).to_string(),
                     ))
                     .unwrap(),
             )
@@ -1395,8 +1401,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .header("Authorization", format!("Bearer {token}"))
                     .body(Body::from(
-                        json!({"email": "second@example.test", "password": "correct-horse-battery-staple"})
-                            .to_string(),
+                        json!({"email": "second@example.test"}).to_string(),
                     ))
                     .unwrap(),
             )
@@ -1422,10 +1427,7 @@ mod tests {
                     .uri("/v1/auth/register")
                     .header("content-type", "application/json")
                     .header("Authorization", format!("Bearer {token}"))
-                    .body(Body::from(
-                        json!({"email": email, "password": "correct-horse-battery-staple"})
-                            .to_string(),
-                    ))
+                    .body(Body::from(json!({"email": email}).to_string()))
                     .unwrap(),
             )
         };
@@ -1443,7 +1445,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
-    async fn registering_with_a_short_password_is_rejected() {
+    async fn google_login_rejects_a_token_google_does_not_verify() {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));
 
@@ -1451,84 +1453,45 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/register")
+                    .uri("/v1/auth/google")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        json!({"email": "short@example.test", "password": "short1"}).to_string(),
+                        json!({"id_token": INVALID_GOOGLE_TOKEN}).to_string(),
                     ))
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(
             json_body(response).await["error"]["code"],
-            json!("WEAK_PASSWORD")
+            json!("INVALID_GOOGLE_TOKEN")
         );
     }
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
-    async fn login_rejects_a_wrong_password_and_an_unknown_email_identically() {
+    async fn google_login_rejects_a_verified_email_that_is_not_a_registered_reviewer() {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));
-        let email = "reviewer@example.test";
 
-        let register = app
-            .clone()
+        let response = app
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/register")
+                    .uri("/v1/auth/google")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        json!({"email": email, "password": "correct-horse-battery-staple"})
-                            .to_string(),
+                        json!({"id_token": "nobody@example.test"}).to_string(),
                     ))
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(register.status(), StatusCode::CREATED);
-
-        let wrong_password = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/v1/auth/login")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"email": email, "password": "not the right password"}).to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(wrong_password.status(), StatusCode::UNAUTHORIZED);
-        let wrong_password_code = json_body(wrong_password).await["error"]["code"].clone();
-
-        let unknown_email = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/v1/auth/login")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"email": "nobody@example.test", "password": "whatever-password"})
-                            .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(unknown_email.status(), StatusCode::UNAUTHORIZED);
-        let unknown_email_code = json_body(unknown_email).await["error"]["code"].clone();
-
-        assert_eq!(wrong_password_code, json!("INVALID_CREDENTIALS"));
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
         assert_eq!(
-            wrong_password_code, unknown_email_code,
-            "the two failure cases must be indistinguishable to the caller"
+            json_body(response).await["error"]["code"],
+            json!("REVIEWER_NOT_REGISTERED")
         );
     }
 
@@ -1611,7 +1574,6 @@ mod tests {
         let pool = test_pool().await;
         let app = build_router(test_state(pool.clone()));
         let email = "audited@example.test";
-        let password = "correct-horse-battery-staple";
 
         let register_response = app
             .clone()
@@ -1620,9 +1582,7 @@ mod tests {
                     .method("POST")
                     .uri("/v1/auth/register")
                     .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"email": email, "password": password}).to_string(),
-                    ))
+                    .body(Body::from(json!({"email": email}).to_string()))
                     .unwrap(),
             )
             .await
@@ -1644,28 +1604,32 @@ mod tests {
         .unwrap();
         assert_eq!(register_audit_count, 1);
 
+        // A Google-verified identity that isn't a registered reviewer is the
+        // only way `google_login` fails after Google itself has vouched for
+        // the account, so this (not a "wrong password" for `email`) is what
+        // exercises REVIEWER_LOGIN_FAILED now.
+        let unregistered_email = "not-a-reviewer@example.test";
         let failed_login = app
             .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/login")
+                    .uri("/v1/auth/google")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        json!({"email": email, "password": "wrong password"}).to_string(),
+                        json!({"id_token": unregistered_email}).to_string(),
                     ))
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(failed_login.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(failed_login.status(), StatusCode::FORBIDDEN);
 
         let (login_failed_count,): (i64,) = sqlx::query_as(
             "SELECT count(*) FROM audit_events WHERE action = 'REVIEWER_LOGIN_FAILED' \
-             AND resource_id = $1 AND metadata->>'email' = $2",
+             AND resource_id IS NULL AND metadata->>'email' = $1",
         )
-        .bind(Uuid::parse_str(&reviewer_id).unwrap())
-        .bind(email)
+        .bind(unregistered_email)
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -1676,11 +1640,9 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/login")
+                    .uri("/v1/auth/google")
                     .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"email": email, "password": password}).to_string(),
-                    ))
+                    .body(Body::from(json!({"id_token": email}).to_string()))
                     .unwrap(),
             )
             .await
@@ -1788,8 +1750,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .header("Authorization", format!("Bearer {token}"))
                     .body(Body::from(
-                        json!({"email": "second@example.test", "password": "correct-horse-battery-staple"})
-                            .to_string(),
+                        json!({"email": "second@example.test"}).to_string(),
                     ))
                     .unwrap(),
             )
@@ -1848,15 +1809,17 @@ mod tests {
     async fn exceeding_the_login_rate_limit_returns_too_many_requests() {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));
-        let email = "throttle-target@example.test";
+        // Keyed by source IP (unset here, so every attempt shares the
+        // "unknown" bucket) rather than the attempted email: the rate limit
+        // has to apply before Google is ever asked to verify the token.
         let attempt = |app: Router| {
             app.oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v1/auth/login")
+                    .uri("/v1/auth/google")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        json!({"email": email, "password": "wrong password"}).to_string(),
+                        json!({"id_token": INVALID_GOOGLE_TOKEN}).to_string(),
                     ))
                     .unwrap(),
             )
