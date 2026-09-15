@@ -108,7 +108,7 @@ async fn verified_alert(pool: &PgPool) -> safe_cameroon_domain::Alert {
 
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
-async fn claims_an_unpublished_event_of_the_requested_type_and_marks_it_published() {
+async fn claiming_an_event_marks_it_claimed_but_not_yet_published() {
     let pool = test_pool().await;
     let alert = verified_alert(&pool).await;
     let outbox = PostgresOutboxRepository::new(pool.clone());
@@ -117,13 +117,34 @@ async fn claims_an_unpublished_event_of_the_requested_type_and_marks_it_publishe
     assert_eq!(claimed.len(), 1);
     assert_eq!(claimed[0].aggregate_id, alert.id().as_uuid());
 
+    // Claiming alone must never mark an event published -- that would mean
+    // an event that was handed to a worker but never actually processed
+    // (the worker crashed, or an earlier event in the same batch failed) is
+    // silently treated as done and never seen again.
+    let (claimed_at_set, published_at_set): (bool, bool) = sqlx::query_as(
+        "SELECT claimed_at IS NOT NULL, published_at IS NOT NULL FROM outbox_events WHERE id = $1",
+    )
+    .bind(claimed[0].id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(claimed_at_set, "claiming must set claimed_at");
+    assert!(
+        !published_at_set,
+        "claiming alone must not set published_at"
+    );
+
+    outbox.mark_published(claimed[0].id).await.unwrap();
     let (is_published,): (bool,) =
         sqlx::query_as("SELECT published_at IS NOT NULL FROM outbox_events WHERE id = $1")
             .bind(claimed[0].id)
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert!(is_published);
+    assert!(
+        is_published,
+        "mark_published must set published_at once processing succeeds"
+    );
 }
 
 #[tokio::test]
@@ -185,7 +206,7 @@ async fn two_concurrent_workers_never_claim_the_same_event() {
     claimed_ids.dedup();
 
     let (total,): (i64,) = sqlx::query_as(
-        "SELECT count(*) FROM outbox_events WHERE event_type = 'ALERT_CREATED' AND published_at IS NOT NULL",
+        "SELECT count(*) FROM outbox_events WHERE event_type = 'ALERT_CREATED' AND claimed_at IS NOT NULL",
     )
     .fetch_one(&pool)
     .await

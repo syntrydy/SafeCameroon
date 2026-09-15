@@ -28,13 +28,17 @@ impl PostgresOutboxRepository {
         Self { pool }
     }
 
-    /// Claims up to `limit` unpublished rows of `event_type`, marking them
-    /// published in the same transaction (mirrors
-    /// `PostgresDeliveryRepository::claim_next`'s `FOR UPDATE SKIP LOCKED`
-    /// pattern, so concurrent workers never double-claim the same row).
-    /// Claiming here means "handed to a consumer", not "delivered
-    /// externally" — there is no external publisher yet, only in-process
-    /// worker steps.
+    /// Claims up to `limit` unclaimed, unpublished rows of `event_type`,
+    /// marking them *claimed* — not published — in the same transaction
+    /// (mirrors `PostgresDeliveryRepository::claim_next`'s
+    /// `FOR UPDATE SKIP LOCKED` pattern, so concurrent workers never
+    /// double-claim the same row). The caller must call [`mark_published`]
+    /// on each event only once it has actually finished processing that
+    /// event; marking a whole batch published up front here would mean a
+    /// later event in the batch is silently treated as done the moment an
+    /// earlier one fails, even though it was never processed.
+    ///
+    /// [`mark_published`]: Self::mark_published
     pub async fn claim_unpublished(
         &self,
         event_type: &str,
@@ -45,7 +49,7 @@ impl PostgresOutboxRepository {
             r#"
             SELECT id, aggregate_id, payload
             FROM outbox_events
-            WHERE event_type = $1 AND published_at IS NULL
+            WHERE event_type = $1 AND published_at IS NULL AND claimed_at IS NULL
             ORDER BY created_at
             LIMIT $2
             FOR UPDATE SKIP LOCKED
@@ -56,7 +60,7 @@ impl PostgresOutboxRepository {
         .fetch_all(&mut *tx)
         .await?;
 
-        mark_published(&mut tx, rows.iter().map(|(id, _, _)| *id)).await?;
+        mark_claimed(&mut tx, rows.iter().map(|(id, _, _)| *id)).await?;
         tx.commit().await?;
 
         Ok(rows
@@ -68,9 +72,22 @@ impl PostgresOutboxRepository {
             })
             .collect())
     }
+
+    /// Marks one previously claimed event published — call this only after
+    /// its processing has actually succeeded. Claiming here means "handed
+    /// to a consumer"; published means "processed", not "delivered
+    /// externally" — there is no external publisher yet, only in-process
+    /// worker steps.
+    pub async fn mark_published(&self, id: Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE outbox_events SET published_at = now() WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
 }
 
-async fn mark_published(
+async fn mark_claimed(
     transaction: &mut Transaction<'_, Postgres>,
     ids: impl Iterator<Item = Uuid>,
 ) -> Result<(), sqlx::Error> {
@@ -78,7 +95,7 @@ async fn mark_published(
     if ids.is_empty() {
         return Ok(());
     }
-    sqlx::query("UPDATE outbox_events SET published_at = now() WHERE id = ANY($1)")
+    sqlx::query("UPDATE outbox_events SET claimed_at = now() WHERE id = ANY($1)")
         .bind(&ids)
         .execute(&mut **transaction)
         .await?;

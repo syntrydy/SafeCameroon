@@ -30,6 +30,14 @@ only registered provider is `sandbox`, verified with an HMAC-SHA256
 signature over `WEBHOOK_SHARED_SECRET` (matches every mock channel adapter's
 payload shape).
 
+The worker's other poll loop, subscription matching, claims unpublished
+`ALERT_CREATED` outbox events (`outbox_events.claimed_at`) and only marks an
+event `published_at` once its own matching against every subscription has
+actually succeeded — a failure partway through a batch leaves later events
+still claimed rather than silently, permanently marked done, mirroring how
+`PostgresDeliveryRepository::claim_next` moves a delivery into the
+intermediate `SENDING` status rather than a terminal one before it dispatches.
+
 Attachments (`POST /v1/reports/{report_id}/attachments`,
 `GET /v1/attachments/{id}/download-url`) work the same way: no real R2
 credentials exist yet, so `HmacSignedAttachmentStorage` issues short-lived,
