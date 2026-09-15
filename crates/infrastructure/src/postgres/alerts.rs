@@ -18,6 +18,12 @@ pub enum AlertCancelOutcome {
     Conflict,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AlertFilter {
+    pub status: Option<AlertStatus>,
+    pub visibility: Option<AlertVisibility>,
+}
+
 #[derive(Clone)]
 pub struct PostgresAlertRepository {
     pool: PgPool,
@@ -103,6 +109,117 @@ impl PostgresAlertRepository {
             fields,
             aggregate_version as u64,
         )))
+    }
+
+    /// Most recently created first (`alerts_status_created_at_idx`),
+    /// optionally narrowed by status and/or visibility. `limit`/`offset` are
+    /// taken as given — the API layer clamps `limit` to a sane maximum
+    /// before it ever reaches here.
+    pub async fn list(
+        &self,
+        filter: &AlertFilter,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Alert>, sqlx::Error> {
+        #[allow(clippy::type_complexity)]
+        let rows: Vec<(
+            Uuid,
+            Uuid,
+            String,
+            i16,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            i64,
+        )> = sqlx::query_as(
+            r#"
+            SELECT id, case_id, policy_id, policy_version, incident_type::text, severity::text,
+                   visibility::text, trigger::text, target_geography, status::text,
+                   aggregate_version
+            FROM alerts
+            WHERE ($1::alert_status IS NULL OR status = $1::alert_status)
+              AND ($2::alert_visibility IS NULL OR visibility = $2::alert_visibility)
+            ORDER BY created_at DESC
+            LIMIT $3 OFFSET $4
+            "#,
+        )
+        .bind(filter.status.map(AlertStatus::as_database_value))
+        .bind(filter.visibility.map(AlertVisibility::as_database_value))
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let alert_ids: Vec<Uuid> = rows.iter().map(|(id, ..)| *id).collect();
+        let field_rows: Vec<(Uuid, String, String)> = sqlx::query_as(
+            "SELECT alert_id, field::text, value FROM alert_fields WHERE alert_id = ANY($1)",
+        )
+        .bind(&alert_ids)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut fields_by_alert: std::collections::HashMap<Uuid, Vec<AlertFieldValue>> =
+            std::collections::HashMap::new();
+        for (alert_id, field, value) in field_rows {
+            fields_by_alert
+                .entry(alert_id)
+                .or_default()
+                .push(AlertFieldValue {
+                    field: AlertField::from_database_value(&field)
+                        .expect("alert_fields.field is constrained by the alert_field enum"),
+                    value,
+                });
+        }
+
+        Ok(rows
+            .into_iter()
+            .map(
+                |(
+                    id,
+                    case_id,
+                    policy_id,
+                    policy_version,
+                    incident_type,
+                    severity,
+                    visibility,
+                    trigger,
+                    target_geography,
+                    status,
+                    aggregate_version,
+                )| {
+                    Alert::reconstitute(
+                        AlertId::from_uuid(id),
+                        safe_cameroon_domain::CaseId::from_uuid(case_id),
+                        AlertPolicyId::new(policy_id),
+                        policy_version as u32,
+                        IncidentType::from_database_value(&incident_type).expect(
+                            "alerts.incident_type is constrained by the incident_type enum",
+                        ),
+                        Severity::from_database_value(&severity)
+                            .expect("alerts.severity is constrained by the severity_level enum"),
+                        AlertVisibility::from_database_value(&visibility).expect(
+                            "alerts.visibility is constrained by the alert_visibility enum",
+                        ),
+                        CaseEventType::from_database_value(&trigger)
+                            .expect("alerts.trigger is constrained by the case_event_type enum"),
+                        safe_cameroon_domain::TargetGeography::new(target_geography).expect(
+                            "a persisted target_geography was validated as non-blank on write",
+                        ),
+                        AlertStatus::from_database_value(&status)
+                            .expect("alerts.status is constrained by the alert_status enum"),
+                        fields_by_alert.remove(&id).unwrap_or_default(),
+                        aggregate_version as u64,
+                    )
+                },
+            )
+            .collect())
     }
 
     /// Persists the alert, its field values, the `ALERT_CREATED` event, the

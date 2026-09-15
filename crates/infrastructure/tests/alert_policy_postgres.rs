@@ -4,11 +4,12 @@ use safe_cameroon_application::alert_workflow::{cancel_alert, create_alert_from_
 use safe_cameroon_application::case_workflow::{Actor, create_case_from_report, review_case};
 use safe_cameroon_application::prepare_anonymous_report;
 use safe_cameroon_domain::{
-    AlertField, AlertFieldValue, AlertPolicy, AlertVisibility, CaseStatus, IncidentType, ReportId,
-    TargetGeography,
+    AlertField, AlertFieldValue, AlertPolicy, AlertStatus, AlertVisibility, CaseStatus,
+    IncidentType, ReportId, TargetGeography,
 };
 use safe_cameroon_infrastructure::postgres::{
-    AlertCancelOutcome, PostgresAlertRepository, PostgresCaseRepository, PostgresReportRepository,
+    AlertCancelOutcome, AlertFilter, PostgresAlertRepository, PostgresCaseRepository,
+    PostgresReportRepository,
 };
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use uuid::Uuid;
@@ -227,4 +228,128 @@ async fn cancels_an_alert_and_rejects_a_stale_retry() {
         reloaded.status(),
         safe_cameroon_domain::AlertStatus::Cancelled
     );
+}
+
+fn internal_policy() -> AlertPolicy {
+    AlertPolicy::new(
+        safe_cameroon_domain::AlertPolicyId::new("INTERNAL_TEST"),
+        1,
+        IncidentType::MissingChild,
+        AlertVisibility::Internal,
+        safe_cameroon_domain::CaseEventType::CaseVerified,
+        vec![AlertField::IncidentCategory],
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn list_filters_by_status_and_visibility_most_recently_created_first() {
+    let pool = test_pool().await;
+    let alert_repository = PostgresAlertRepository::new(pool.clone());
+
+    let (_repo, community_case) = verified_case(&pool).await;
+    let community_creation = create_alert_from_case(
+        &community_case,
+        &AlertPolicy::missing_child_community_v1(),
+        safe_cameroon_domain::Severity::High,
+        TargetGeography::new("Douala - Bonamoussadi").unwrap(),
+        safe_fields(),
+        Actor::Reviewer(Uuid::new_v4()),
+        Uuid::new_v4(),
+    )
+    .unwrap();
+    alert_repository.create(&community_creation).await.unwrap();
+
+    let (_repo, internal_case) = verified_case(&pool).await;
+    let internal_creation = create_alert_from_case(
+        &internal_case,
+        &internal_policy(),
+        safe_cameroon_domain::Severity::High,
+        TargetGeography::new("Douala - Akwa").unwrap(),
+        vec![AlertFieldValue {
+            field: AlertField::IncidentCategory,
+            value: "MISSING_CHILD".into(),
+        }],
+        Actor::Automated,
+        Uuid::new_v4(),
+    )
+    .unwrap();
+    alert_repository.create(&internal_creation).await.unwrap();
+
+    let all = alert_repository
+        .list(&AlertFilter::default(), 10, 0)
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 2);
+    // Most recently created first.
+    assert_eq!(all[0].id(), internal_creation.alert.id());
+    assert_eq!(all[1].id(), community_creation.alert.id());
+
+    let community_only = alert_repository
+        .list(
+            &AlertFilter {
+                status: None,
+                visibility: Some(AlertVisibility::Community),
+            },
+            10,
+            0,
+        )
+        .await
+        .unwrap();
+    assert_eq!(community_only.len(), 1);
+    assert_eq!(community_only[0].id(), community_creation.alert.id());
+    assert_eq!(
+        community_only[0].field_value(AlertField::ApproximateAge),
+        Some("8 years old")
+    );
+
+    let active_only = alert_repository
+        .list(
+            &AlertFilter {
+                status: Some(AlertStatus::Active),
+                visibility: None,
+            },
+            10,
+            0,
+        )
+        .await
+        .unwrap();
+    assert_eq!(active_only.len(), 2);
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn list_respects_limit_and_offset() {
+    let pool = test_pool().await;
+    let alert_repository = PostgresAlertRepository::new(pool.clone());
+
+    for _ in 0..5 {
+        let (_repo, case) = verified_case(&pool).await;
+        let creation = create_alert_from_case(
+            &case,
+            &AlertPolicy::missing_child_community_v1(),
+            safe_cameroon_domain::Severity::High,
+            TargetGeography::new("Douala - Bonamoussadi").unwrap(),
+            safe_fields(),
+            Actor::Reviewer(Uuid::new_v4()),
+            Uuid::new_v4(),
+        )
+        .unwrap();
+        alert_repository.create(&creation).await.unwrap();
+    }
+
+    let page1 = alert_repository
+        .list(&AlertFilter::default(), 2, 0)
+        .await
+        .unwrap();
+    let page2 = alert_repository
+        .list(&AlertFilter::default(), 2, 2)
+        .await
+        .unwrap();
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page2.len(), 2);
+    let page1_ids: Vec<Uuid> = page1.iter().map(|alert| alert.id().as_uuid()).collect();
+    let page2_ids: Vec<Uuid> = page2.iter().map(|alert| alert.id().as_uuid()).collect();
+    assert!(page1_ids.iter().all(|id| !page2_ids.contains(id)));
 }
