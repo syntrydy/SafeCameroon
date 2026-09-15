@@ -104,6 +104,7 @@ async fn verified_alert(pool: &PgPool) -> safe_cameroon_domain::Alert {
         }],
         Actor::Reviewer(Uuid::new_v4()),
         Uuid::new_v4(),
+        None,
     )
     .unwrap();
     alert_repository.create(&alert_creation).await.unwrap();

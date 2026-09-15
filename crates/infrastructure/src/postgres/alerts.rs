@@ -24,6 +24,16 @@ pub struct AlertFilter {
     pub visibility: Option<AlertVisibility>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlertCreationOutcome {
+    Created,
+    /// An alert with this `idempotency_key_hash` already exists (mirrors
+    /// `SubmissionResult::Duplicate` in `postgres/reports.rs`).
+    Duplicate {
+        alert_id: Uuid,
+    },
+}
+
 #[derive(Clone)]
 pub struct PostgresAlertRepository {
     pool: PgPool,
@@ -224,9 +234,21 @@ impl PostgresAlertRepository {
 
     /// Persists the alert, its field values, the `ALERT_CREATED` event, the
     /// audit record, and the outbox event in a single transaction.
-    pub async fn create(&self, creation: &AlertCreation) -> Result<(), sqlx::Error> {
+    pub async fn create(
+        &self,
+        creation: &AlertCreation,
+    ) -> Result<AlertCreationOutcome, sqlx::Error> {
         let mut transaction = self.pool.begin().await?;
-        insert_alert(&mut transaction, &creation.alert).await?;
+        if let Some(alert_id) = insert_alert(
+            &mut transaction,
+            &creation.alert,
+            creation.idempotency_key_hash.as_deref(),
+        )
+        .await?
+        {
+            transaction.rollback().await?;
+            return Ok(AlertCreationOutcome::Duplicate { alert_id });
+        }
         insert_alert_fields(
             &mut transaction,
             creation.alert.id(),
@@ -252,7 +274,7 @@ impl PostgresAlertRepository {
         )
         .await?;
         transaction.commit().await?;
-        Ok(())
+        Ok(AlertCreationOutcome::Created)
     }
 
     /// `alert` must be the aggregate *after* `cancel_alert` mutated it in
@@ -305,20 +327,25 @@ impl PostgresAlertRepository {
     }
 }
 
+/// Returns the id of an already-persisted alert when `idempotency_key_hash`
+/// collides with one (mirrors `postgres/reports.rs::insert_report`); `None`
+/// means this alert was newly inserted.
 async fn insert_alert(
     transaction: &mut Transaction<'_, Postgres>,
     alert: &Alert,
-) -> Result<(), sqlx::Error> {
+    idempotency_key_hash: Option<&[u8]>,
+) -> Result<Option<Uuid>, sqlx::Error> {
     sqlx::query(
         r#"
         INSERT INTO alerts (
             id, case_id, policy_id, policy_version, incident_type, severity, visibility,
-            trigger, target_geography, status, aggregate_version
+            trigger, target_geography, status, aggregate_version, idempotency_key_hash
         )
         VALUES (
             $1, $2, $3, $4, $5::incident_type, $6::severity_level, $7::alert_visibility,
-            $8::case_event_type, $9, $10::alert_status, $11
+            $8::case_event_type, $9, $10::alert_status, $11, $12
         )
+        ON CONFLICT (idempotency_key_hash) WHERE idempotency_key_hash IS NOT NULL DO NOTHING
         "#,
     )
     .bind(alert.id().as_uuid())
@@ -332,9 +359,21 @@ async fn insert_alert(
     .bind(alert.target_geography().as_str())
     .bind(alert.status().as_database_value())
     .bind(alert.version() as i64)
+    .bind(idempotency_key_hash)
     .execute(&mut **transaction)
     .await?;
-    Ok(())
+
+    if let Some(hash) = idempotency_key_hash {
+        let existing =
+            sqlx::query_scalar::<_, Uuid>("SELECT id FROM alerts WHERE idempotency_key_hash = $1")
+                .bind(hash)
+                .fetch_optional(&mut **transaction)
+                .await?;
+        if existing != Some(alert.id().as_uuid()) {
+            return Ok(existing);
+        }
+    }
+    Ok(None)
 }
 
 async fn insert_alert_fields(

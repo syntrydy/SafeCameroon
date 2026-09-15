@@ -8,8 +8,8 @@ use safe_cameroon_domain::{
     IncidentType, ReportId, TargetGeography,
 };
 use safe_cameroon_infrastructure::postgres::{
-    AlertCancelOutcome, AlertFilter, PostgresAlertRepository, PostgresCaseRepository,
-    PostgresReportRepository,
+    AlertCancelOutcome, AlertCreationOutcome, AlertFilter, PostgresAlertRepository,
+    PostgresCaseRepository, PostgresReportRepository,
 };
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use uuid::Uuid;
@@ -117,6 +117,7 @@ async fn creates_a_community_alert_from_a_verified_case() {
         safe_fields(),
         Actor::Reviewer(Uuid::new_v4()),
         Uuid::new_v4(),
+        None,
     )
     .unwrap();
     alert_repository.create(&creation).await.unwrap();
@@ -176,6 +177,7 @@ async fn cancels_an_alert_and_rejects_a_stale_retry() {
         safe_fields(),
         Actor::Reviewer(Uuid::new_v4()),
         Uuid::new_v4(),
+        None,
     )
     .unwrap();
     alert_repository.create(&creation).await.unwrap();
@@ -257,6 +259,7 @@ async fn list_filters_by_status_and_visibility_most_recently_created_first() {
         safe_fields(),
         Actor::Reviewer(Uuid::new_v4()),
         Uuid::new_v4(),
+        None,
     )
     .unwrap();
     alert_repository.create(&community_creation).await.unwrap();
@@ -273,6 +276,7 @@ async fn list_filters_by_status_and_visibility_most_recently_created_first() {
         }],
         Actor::Automated,
         Uuid::new_v4(),
+        None,
     )
     .unwrap();
     alert_repository.create(&internal_creation).await.unwrap();
@@ -334,6 +338,7 @@ async fn list_respects_limit_and_offset() {
             safe_fields(),
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
+            None,
         )
         .unwrap();
         alert_repository.create(&creation).await.unwrap();
@@ -352,4 +357,81 @@ async fn list_respects_limit_and_offset() {
     let page1_ids: Vec<Uuid> = page1.iter().map(|alert| alert.id().as_uuid()).collect();
     let page2_ids: Vec<Uuid> = page2.iter().map(|alert| alert.id().as_uuid()).collect();
     assert!(page1_ids.iter().all(|id| !page2_ids.contains(id)));
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn a_retried_alert_creation_with_the_same_idempotency_key_is_rejected_as_a_duplicate() {
+    let pool = test_pool().await;
+    let (_case_repository, case) = verified_case(&pool).await;
+    let alert_repository = PostgresAlertRepository::new(pool.clone());
+    let policy = AlertPolicy::missing_child_community_v1();
+
+    let first = create_alert_from_case(
+        &case,
+        &policy,
+        safe_cameroon_domain::Severity::High,
+        TargetGeography::new("Douala - Bonamoussadi").unwrap(),
+        safe_fields(),
+        Actor::Reviewer(Uuid::new_v4()),
+        Uuid::new_v4(),
+        Some("client-retry-key-1"),
+    )
+    .unwrap();
+    assert_eq!(
+        alert_repository.create(&first).await.unwrap(),
+        AlertCreationOutcome::Created
+    );
+
+    let retry = create_alert_from_case(
+        &case,
+        &policy,
+        safe_cameroon_domain::Severity::High,
+        TargetGeography::new("Douala - Bonamoussadi").unwrap(),
+        safe_fields(),
+        Actor::Reviewer(Uuid::new_v4()),
+        Uuid::new_v4(),
+        Some("client-retry-key-1"),
+    )
+    .unwrap();
+    assert_eq!(
+        alert_repository.create(&retry).await.unwrap(),
+        AlertCreationOutcome::Duplicate {
+            alert_id: first.alert.id().as_uuid()
+        }
+    );
+
+    let (alert_count,): (i64,) = sqlx::query_as("SELECT count(*) FROM alerts WHERE case_id = $1")
+        .bind(case.id().as_uuid())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(alert_count, 1, "the retried alert must not persist");
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn alert_creations_without_an_idempotency_key_are_never_treated_as_duplicates() {
+    let pool = test_pool().await;
+    let (_case_repository, case) = verified_case(&pool).await;
+    let alert_repository = PostgresAlertRepository::new(pool.clone());
+    let policy = AlertPolicy::missing_child_community_v1();
+
+    for _ in 0..2 {
+        let creation = create_alert_from_case(
+            &case,
+            &policy,
+            safe_cameroon_domain::Severity::High,
+            TargetGeography::new("Douala - Bonamoussadi").unwrap(),
+            safe_fields(),
+            Actor::Reviewer(Uuid::new_v4()),
+            Uuid::new_v4(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            alert_repository.create(&creation).await.unwrap(),
+            AlertCreationOutcome::Created
+        );
+    }
 }

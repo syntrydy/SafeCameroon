@@ -12,7 +12,7 @@ pub mod reports;
 pub mod reviewers;
 pub mod subscriptions;
 
-pub use alerts::{AlertCancelOutcome, AlertFilter, PostgresAlertRepository};
+pub use alerts::{AlertCancelOutcome, AlertCreationOutcome, AlertFilter, PostgresAlertRepository};
 pub use attachments::PostgresAttachmentRepository;
 pub use audit_events::{AuditEventFilter, AuditEventRecord, PostgresAuditEventRepository};
 pub use cases::{

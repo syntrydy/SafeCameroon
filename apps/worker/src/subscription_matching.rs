@@ -214,6 +214,7 @@ mod tests {
             }],
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
+            None,
         )
         .unwrap();
         alert_repository.create(&alert_creation).await.unwrap();
