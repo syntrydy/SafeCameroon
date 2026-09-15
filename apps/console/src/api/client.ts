@@ -23,6 +23,7 @@ interface RequestOptions {
   method?: "GET" | "POST" | "PUT";
   body?: unknown;
   token?: string | null;
+  headers?: Record<string, string>;
 }
 
 interface BackendErrorBody {
@@ -56,7 +57,7 @@ function safeParseJson(text: string): unknown {
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...options.headers };
   if (options.token) {
     headers.Authorization = `Bearer ${options.token}`;
   }
