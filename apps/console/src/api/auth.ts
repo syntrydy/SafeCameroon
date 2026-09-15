@@ -7,10 +7,10 @@ export interface LoginResponse {
   reviewer_id: string;
 }
 
-export function login(email: string, password: string): Promise<LoginResponse> {
-  return apiRequest<LoginResponse>("/v1/auth/login", {
+export function loginWithGoogle(idToken: string): Promise<LoginResponse> {
+  return apiRequest<LoginResponse>("/v1/auth/google", {
     method: "POST",
-    body: { email, password },
+    body: { id_token: idToken },
   });
 }
 
