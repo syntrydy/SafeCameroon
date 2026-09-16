@@ -78,12 +78,39 @@ short-lived URLs). Reviewers never have a locally stored password: `POST
 crates/infrastructure/src/google_identity.rs), and matches the verified
 email against the `reviewers` table — an email that verifies but isn't
 registered gets `403 REVIEWER_NOT_REGISTERED`. `POST /v1/auth/register` just
-allowlists an email; it's open, unauthenticated only to bootstrap a fresh
-deployment's very first reviewer, and every registration after that requires
-an authenticated reviewer. `POST /v1/auth/logout` revokes every session
+allowlists an email against a role/organization; it's open, unauthenticated
+only to bootstrap a fresh deployment's very first reviewer (who always
+becomes `PlatformAdmin`), and every registration after that requires an
+authenticated reviewer whose own role permits the grant being requested
+(see organizations, below). `POST /v1/auth/logout` revokes every session
 currently issued to the calling reviewer ("logout everywhere") — a
 compromised or offboarded reviewer no longer has to wait out a token's 12h
 expiry.
+
+Organizations and reviewer roles (`crates/domain/src/organization.rs`,
+`POST/GET /v1/organizations`, `PUT /v1/organizations/{id}/trust`, `GET
+/v1/organizations/{id}/members`) replace the flat "any identified reviewer
+holds every capability" model docs/OPEN_QUESTIONS.md flagged as unresolved.
+`PlatformAdmin` is org-independent and may register anyone into any
+organization, verify any case, and issue any alert; `OrgAdmin` may register
+only a `Member` into their own organization; a plain `Member` cannot
+register anyone. Two of that section's three open governance questions —
+"which authority can verify a case for each incident class" and "which
+organizations may issue community/public alerts" — are answered by making
+verification/alert-issuance authority an explicit trust grant on each real
+`Organization` record (`verified_incident_types`,
+`verified_alert_visibilities`), set by a `PlatformAdmin` when the
+organization is onboarded, rather than a policy this codebase bakes in:
+`POST /v1/cases/{id}/verify` and `POST /v1/cases/{id}/alerts` (for
+community/public visibility) both check the caller's organization against
+these grants, returning `403 ORGANIZATION_NOT_TRUSTED_FOR_INCIDENT_TYPE` /
+`403 ORGANIZATION_NOT_TRUSTED_FOR_ALERT_VISIBILITY` otherwise —
+`PlatformAdmin` bypasses both checks. The third open question, case
+ownership across multiple organizations, stays open: case visibility/review
+remains flat, any identified reviewer, since real multi-org case
+routing/locking is a separate, larger workflow feature. Every reviewer who
+existed before migration 0021 was grandfathered in as `PlatformAdmin`, so
+nobody already provisioned lost access when it applied.
 
 `POST /v1/reports` and `POST /v1/auth/google` are rate-limited
 (docs/SECURITY_PRIVACY.md section 8): a fixed-window counter in Postgres

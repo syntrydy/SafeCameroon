@@ -8,6 +8,7 @@ mod deliveries;
 mod error;
 mod health;
 mod idempotency;
+mod organizations;
 mod rate_limit;
 mod reports;
 mod request_id;
@@ -33,8 +34,8 @@ use safe_cameroon_infrastructure::google_identity::GoogleTokenInfoVerifier;
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresAttachmentRepository, PostgresAuditEventRepository,
     PostgresCaseRepository, PostgresConsumerRepository, PostgresDeliveryPreferenceRepository,
-    PostgresDeliveryRepository, PostgresRateLimiter, PostgresReportRepository,
-    PostgresReviewerRepository, PostgresSubscriptionRepository,
+    PostgresDeliveryRepository, PostgresOrganizationRepository, PostgresRateLimiter,
+    PostgresReportRepository, PostgresReviewerRepository, PostgresSubscriptionRepository,
 };
 use safe_cameroon_infrastructure::storage::{HmacSignedAttachmentStorage, R2AttachmentStorage};
 use safe_cameroon_infrastructure::webhook::{
@@ -127,6 +128,7 @@ fn build_state(
         consumers: PostgresConsumerRepository::new(pool.clone()),
         subscriptions: PostgresSubscriptionRepository::new(pool.clone()),
         delivery_preferences: PostgresDeliveryPreferenceRepository::new(pool.clone()),
+        organizations: PostgresOrganizationRepository::new(pool.clone()),
         reviewers: PostgresReviewerRepository::new(pool.clone()),
         reviewer_session_tokens: ReviewerSessionTokenIssuer::new(reviewer_session_secret),
         google_identity_verifier,
@@ -188,6 +190,22 @@ fn build_router(state: AppState) -> Router {
             get(consumers::list_consumers).post(consumers::register_consumer),
         )
         .route("/v1/consumers/{id}", get(consumers::get_consumer))
+        .route(
+            "/v1/organizations",
+            get(organizations::list_organizations).post(organizations::create_organization),
+        )
+        .route(
+            "/v1/organizations/{id}",
+            get(organizations::get_organization),
+        )
+        .route(
+            "/v1/organizations/{id}/trust",
+            put(organizations::set_trust_grants),
+        )
+        .route(
+            "/v1/organizations/{id}/members",
+            get(organizations::list_members),
+        )
         .route(
             "/v1/consumers/{consumer_id}/subscriptions",
             get(subscriptions::list_subscriptions_for_consumer),
@@ -327,7 +345,8 @@ mod tests {
             "TRUNCATE attachments, webhook_replay_events, delivery_events, delivery_attempts, \
              deliveries, alert_events, alert_fields, alerts, case_events, case_reports, cases, \
              outbox_events, audit_events, reports, reporters, consumer_delivery_preferences, \
-             subscriptions, consumers, reviewers, rate_limit_windows",
+             subscriptions, consumers, reviewer_organization_memberships, organizations, \
+             reviewers, rate_limit_windows",
         )
         .execute(&pool)
         .await
@@ -1366,6 +1385,83 @@ mod tests {
             .to_owned()
     }
 
+    /// Creates an organization as `granter_token` (must be a `PlatformAdmin`)
+    /// and returns its id.
+    async fn create_organization(app: Router, granter_token: &str, name: &str) -> String {
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/organizations")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {granter_token}"))
+                    .body(Body::from(json!({"name": name}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::CREATED,
+            "organization creation must succeed in test setup"
+        );
+        json_body(response).await["organization_id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    /// Registers a fresh reviewer with `role`/`organization_id` (as
+    /// `granter_token`) and logs them in, returning their session token.
+    async fn register_and_login(
+        app: Router,
+        granter_token: &str,
+        role: &str,
+        organization_id: Option<&str>,
+    ) -> String {
+        let email = format!("reviewer-{}@example.test", Uuid::new_v4());
+        let mut body = serde_json::json!({"email": email, "role": role});
+        if let Some(organization_id) = organization_id {
+            body["organization_id"] = json!(organization_id);
+        }
+
+        let register_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {granter_token}"))
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            register_response.status(),
+            StatusCode::CREATED,
+            "reviewer registration must succeed in test setup"
+        );
+
+        let login_response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/google")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"id_token": email}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(login_response.status(), StatusCode::OK);
+        json_body(login_response).await["token"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
     async fn a_second_reviewer_registration_without_authentication_is_forbidden() {
@@ -1381,7 +1477,8 @@ mod tests {
                     .uri("/v1/auth/register")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        json!({"email": "second@example.test"}).to_string(),
+                        json!({"email": "second@example.test", "role": "PLATFORM_ADMIN"})
+                            .to_string(),
                     ))
                     .unwrap(),
             )
@@ -1405,7 +1502,8 @@ mod tests {
                     .header("content-type", "application/json")
                     .header("Authorization", format!("Bearer {token}"))
                     .body(Body::from(
-                        json!({"email": "second@example.test"}).to_string(),
+                        json!({"email": "second@example.test", "role": "PLATFORM_ADMIN"})
+                            .to_string(),
                     ))
                     .unwrap(),
             )
@@ -1431,7 +1529,9 @@ mod tests {
                     .uri("/v1/auth/register")
                     .header("content-type", "application/json")
                     .header("Authorization", format!("Bearer {token}"))
-                    .body(Body::from(json!({"email": email}).to_string()))
+                    .body(Body::from(
+                        json!({"email": email, "role": "PLATFORM_ADMIN"}).to_string(),
+                    ))
                     .unwrap(),
             )
         };
@@ -1754,7 +1854,8 @@ mod tests {
                     .header("content-type", "application/json")
                     .header("Authorization", format!("Bearer {token}"))
                     .body(Body::from(
-                        json!({"email": "second@example.test"}).to_string(),
+                        json!({"email": "second@example.test", "role": "PLATFORM_ADMIN"})
+                            .to_string(),
                     ))
                     .unwrap(),
             )
@@ -2867,6 +2968,440 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn creating_an_organization_requires_a_platform_admin() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let org_id = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+        let member =
+            register_and_login(app.clone(), &platform_admin, "MEMBER", Some(&org_id)).await;
+
+        let unauthenticated = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/organizations")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"name": "Yaounde NGO"}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unauthenticated.status(), StatusCode::FORBIDDEN);
+
+        let as_member = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/organizations")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {member}"))
+                    .body(Body::from(json!({"name": "Yaounde NGO"}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(as_member.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_platform_admin_creates_an_organization_and_sets_its_trust_grants() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let org_id = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/organizations/{org_id}/trust"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(
+                        json!({
+                            "verified_incident_types": ["MISSING_CHILD"],
+                            "verified_alert_visibilities": ["COMMUNITY"]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["verified_incident_types"], json!(["MISSING_CHILD"]));
+        assert_eq!(body["verified_alert_visibilities"], json!(["COMMUNITY"]));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/organizations/{org_id}"))
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            json_body(response).await["verified_incident_types"],
+            json!(["MISSING_CHILD"])
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn an_org_admin_may_register_a_member_into_their_own_organization_but_no_further() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let org_id = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+        let other_org_id = create_organization(app.clone(), &platform_admin, "Yaounde NGO").await;
+        let org_admin =
+            register_and_login(app.clone(), &platform_admin, "ORG_ADMIN", Some(&org_id)).await;
+
+        // May register a Member into their own organization.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {org_admin}"))
+                    .body(Body::from(
+                        json!({"email": "member@example.test", "role": "MEMBER", "organization_id": org_id})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        // May not register a Member into a different organization.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {org_admin}"))
+                    .body(Body::from(
+                        json!({"email": "elsewhere@example.test", "role": "MEMBER", "organization_id": other_org_id})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        // May not register another OrgAdmin, even into their own organization.
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {org_admin}"))
+                    .body(Body::from(
+                        json!({"email": "co-admin@example.test", "role": "ORG_ADMIN", "organization_id": org_id})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn verifying_a_case_requires_the_organizations_incident_type_trust() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let org_id = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+        let member =
+            register_and_login(app.clone(), &platform_admin, "MEMBER", Some(&org_id)).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content": "My child has not returned from school."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let report_id = json_body(response).await["report_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/cases")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {member}"))
+                    .body(Body::from(
+                        json!({"report_id": report_id, "incident_type": "MISSING_CHILD"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let case_id = json_body(response).await["case_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/events"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {member}"))
+                    .body(Body::from(json!({"to": "UNDER_REVIEW"}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // The organization has not been trusted for MISSING_CHILD yet.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/verify"))
+                    .header("Authorization", format!("Bearer {member}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("ORGANIZATION_NOT_TRUSTED_FOR_INCIDENT_TYPE")
+        );
+
+        // Once the platform admin grants that trust, verification succeeds.
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/organizations/{org_id}/trust"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(
+                        json!({"verified_incident_types": ["MISSING_CHILD"], "verified_alert_visibilities": []})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/verify"))
+                    .header("Authorization", format!("Bearer {member}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await["status"], json!("VERIFIED"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn creating_a_community_alert_requires_the_organizations_visibility_trust() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let org_id = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/organizations/{org_id}/trust"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(
+                        json!({"verified_incident_types": ["MISSING_CHILD"], "verified_alert_visibilities": []})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let member =
+            register_and_login(app.clone(), &platform_admin, "MEMBER", Some(&org_id)).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content": "My child has not returned from school."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let report_id = json_body(response).await["report_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/cases")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {member}"))
+                    .body(Body::from(
+                        json!({"report_id": report_id, "incident_type": "MISSING_CHILD"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let case_id = json_body(response).await["case_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/events"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {member}"))
+                    .body(Body::from(json!({"to": "UNDER_REVIEW"}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/verify"))
+                    .header("Authorization", format!("Bearer {member}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let create_alert_request = || {
+            Request::builder()
+                .method("POST")
+                .uri(format!("/v1/cases/{case_id}/alerts"))
+                .header("content-type", "application/json")
+                .header("Authorization", format!("Bearer {member}"))
+                .body(Body::from(
+                    json!({
+                        "policy_id": "MISSING_CHILD_COMMUNITY",
+                        "severity": "HIGH",
+                        "target_geography": "Douala",
+                        "fields": []
+                    })
+                    .to_string(),
+                ))
+                .unwrap()
+        };
+
+        // The organization is trusted to verify MISSING_CHILD but not yet to
+        // issue COMMUNITY alerts.
+        let response = app.clone().oneshot(create_alert_request()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("ORGANIZATION_NOT_TRUSTED_FOR_ALERT_VISIBILITY")
+        );
+
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/organizations/{org_id}/trust"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(
+                        json!({"verified_incident_types": ["MISSING_CHILD"], "verified_alert_visibilities": ["COMMUNITY"]})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let response = app.oneshot(create_alert_request()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_platform_admin_lists_an_organizations_members() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let org_id = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+        register_and_login(app.clone(), &platform_admin, "MEMBER", Some(&org_id)).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/organizations/{org_id}/members"))
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let members = json_body(response).await;
+        let members = members.as_array().unwrap();
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0]["role"], json!("MEMBER"));
     }
 
     #[tokio::test]

@@ -11,10 +11,12 @@ use safe_cameroon_application::alert_workflow::{
     AlertCancellationError, AlertCreationUseCaseError, cancel_alert, create_alert_from_case,
     resolve_policy,
 };
-use safe_cameroon_application::authorization::{Capability, authorize};
+use safe_cameroon_application::authorization::{Capability, authorize, authorize_alert_issuance};
+use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_domain::{
     AlertCreationError, AlertField, AlertFieldValue, AlertId, AlertStatus, AlertTransitionError,
-    AlertVisibility, CaseEventType, CaseId, IncidentType, Severity, TargetGeography,
+    AlertVisibility, CaseEventType, CaseId, IncidentType, Membership, Role, Severity,
+    TargetGeography,
 };
 use safe_cameroon_infrastructure::postgres::{
     AlertCancelOutcome, AlertCreationOutcome, AlertFilter,
@@ -106,6 +108,51 @@ fn alert_response(alert: &safe_cameroon_domain::Alert) -> AlertResponse {
     }
 }
 
+/// Only meaningful for a visibility that already requires an identified
+/// reviewer (community/public); internal/partner alerts are unaffected
+/// (docs/OPEN_QUESTIONS.md: "which organizations may issue community/public
+/// alerts" — resolved per-organization by crates/domain/src/organization.rs
+/// rather than a policy baked in here).
+async fn authorize_issuance_by_organization(
+    state: &AppState,
+    actor: Actor,
+    visibility: AlertVisibility,
+    request_id: Uuid,
+) -> Result<(), ApiError> {
+    if visibility.admits_internal_only_fields() {
+        return Ok(());
+    }
+    let Actor::Reviewer(reviewer_id) = actor else {
+        return Ok(());
+    };
+    let membership = state
+        .organizations
+        .find_membership(reviewer_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .unwrap_or(Membership {
+            role: Role::Member,
+            organization_id: None,
+        });
+    let organization = match membership.organization_id {
+        Some(organization_id) => Some(
+            state
+                .organizations
+                .find_by_id(organization_id)
+                .await
+                .map_err(|_| persistence_failed(request_id))?
+                .expect("a reviewer's membership never references a deleted organization"),
+        ),
+        None => None,
+    };
+    authorize_alert_issuance(membership, organization.as_ref(), visibility).map_err(|_| ApiError {
+        status: StatusCode::FORBIDDEN,
+        code: "ORGANIZATION_NOT_TRUSTED_FOR_ALERT_VISIBILITY",
+        message: "Your organization is not trusted to issue alerts at this visibility.",
+        request_id,
+    })
+}
+
 pub async fn create_alert(
     State(state): State<AppState>,
     Path(case_id): Path<Uuid>,
@@ -155,6 +202,8 @@ pub async fn create_alert(
             message: "No case exists with the given id.",
             request_id,
         })?;
+
+    authorize_issuance_by_organization(&state, actor, policy.visibility(), request_id).await?;
 
     let creation = create_alert_from_case(
         &case,

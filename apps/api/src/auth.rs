@@ -1,22 +1,23 @@
 //! Reviewer account registration and Google sign-in (prompt 09). Reviewers
 //! authenticate via a verified Google ID token, never a locally stored
-//! password (crates/application/src/google_identity.rs); registration is
-//! open only to bootstrap the very first reviewer in a fresh deployment or
-//! to an already-authenticated reviewer with `ManageOrganization`
-//! (`authorize_reviewer_registration`) and just allowlists an email —
-//! login exchanges a Google-verified email matching that allowlist for a
-//! signed session token (`reviewer.rs` verifies it back on every subsequent
-//! request).
+//! password (crates/application/src/google_identity.rs); registration
+//! allowlists an email and grants it a role/organization membership
+//! (crates/domain/src/organization.rs) — login exchanges a Google-verified
+//! email matching that allowlist for a signed session token (`reviewer.rs`
+//! verifies it back on every subsequent request).
 
 use axum::{
     Json,
     extract::State,
     http::{HeaderMap, StatusCode},
 };
-use safe_cameroon_application::authorization::authorize_reviewer_registration;
+use safe_cameroon_application::authorization::{
+    authorize_membership_grant, validate_membership_shape,
+};
 use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_application::rate_limit::RateLimitScope;
 use safe_cameroon_application::reviewer_auth::SessionRevocationStore;
+use safe_cameroon_domain::{OrganizationId, Role};
 use safe_cameroon_infrastructure::postgres::CreateReviewerOutcome;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -37,15 +38,33 @@ fn persistence_failed(request_id: Uuid) -> ApiError {
     }
 }
 
+fn not_authorized(request_id: Uuid) -> ApiError {
+    ApiError {
+        status: StatusCode::FORBIDDEN,
+        code: "NOT_AUTHORIZED",
+        message: "You are not authorized to register a reviewer with this role/organization.",
+        request_id,
+    }
+}
+
+/// `role`/`organization_id` are ignored for the deployment's bootstrapping
+/// first reviewer, who always becomes `PlatformAdmin` with no organization
+/// — otherwise both are required, and must satisfy
+/// `validate_membership_shape` (`PlatformAdmin` has no organization;
+/// `OrgAdmin`/`Member` each require one).
 #[derive(Deserialize)]
 pub struct RegisterRequest {
     email: String,
+    role: Option<Role>,
+    organization_id: Option<Uuid>,
 }
 
 #[derive(Serialize)]
 pub struct RegisterResponse {
     reviewer_id: Uuid,
     email: String,
+    role: Role,
+    organization_id: Option<Uuid>,
 }
 
 pub async fn register(
@@ -67,12 +86,50 @@ pub async fn register(
         .count()
         .await
         .map_err(|_| persistence_failed(request_id))?;
-    authorize_reviewer_registration(actor, existing_reviewer_count).map_err(|_| ApiError {
-        status: StatusCode::FORBIDDEN,
-        code: "NOT_AUTHORIZED",
-        message: "Only an existing reviewer with ManageOrganization may register another reviewer.",
-        request_id,
-    })?;
+
+    let (role, organization_id) = if existing_reviewer_count == 0 {
+        (Role::PlatformAdmin, None)
+    } else {
+        let role = request.role.ok_or(ApiError {
+            status: StatusCode::BAD_REQUEST,
+            code: "MISSING_ROLE",
+            message: "role is required.",
+            request_id,
+        })?;
+        let organization_id = request.organization_id.map(OrganizationId::from_uuid);
+        validate_membership_shape(role, organization_id).map_err(|_| ApiError {
+            status: StatusCode::BAD_REQUEST,
+            code: "INVALID_MEMBERSHIP_SHAPE",
+            message: "PlatformAdmin must have no organization_id; OrgAdmin and Member must each have one.",
+            request_id,
+        })?;
+        (role, organization_id)
+    };
+
+    let granter = match actor {
+        Actor::Reviewer(reviewer_id) => state
+            .organizations
+            .find_membership(reviewer_id)
+            .await
+            .map_err(|_| persistence_failed(request_id))?,
+        Actor::Automated => None,
+    };
+    authorize_membership_grant(granter, existing_reviewer_count, role, organization_id)
+        .map_err(|_| not_authorized(request_id))?;
+
+    if let Some(organization_id) = organization_id {
+        state
+            .organizations
+            .find_by_id(organization_id)
+            .await
+            .map_err(|_| persistence_failed(request_id))?
+            .ok_or(ApiError {
+                status: StatusCode::BAD_REQUEST,
+                code: "ORGANIZATION_NOT_FOUND",
+                message: "No organization exists with the given id.",
+                request_id,
+            })?;
+    }
 
     let email = request.email.trim();
     if email.is_empty() || !email.contains('@') {
@@ -93,6 +150,11 @@ pub async fn register(
     {
         CreateReviewerOutcome::Created => {
             state
+                .organizations
+                .add_membership(reviewer_id, role, organization_id)
+                .await
+                .map_err(|_| persistence_failed(request_id))?;
+            state
                 .reviewers
                 .record_registration(reviewer_id, actor, request_id)
                 .await
@@ -102,6 +164,8 @@ pub async fn register(
                 Json(RegisterResponse {
                     reviewer_id,
                     email: email.to_owned(),
+                    role,
+                    organization_id: organization_id.map(OrganizationId::as_uuid),
                 }),
             ))
         }

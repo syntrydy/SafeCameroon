@@ -8,6 +8,7 @@ pub mod case;
 pub mod consumer;
 pub mod delivery;
 pub mod ids;
+pub mod organization;
 pub mod report;
 pub mod subscription;
 
@@ -31,8 +32,10 @@ pub use delivery::{
 };
 pub use ids::{
     AlertEventId, AlertId, AttachmentId, AuditEventId, CaseEventId, CaseId, ConsumerId,
-    DeliveryAttemptId, DeliveryEventId, DeliveryId, OutboxEventId, ReportId, SubscriptionId,
+    DeliveryAttemptId, DeliveryEventId, DeliveryId, OrganizationId, OutboxEventId, ReportId,
+    SubscriptionId,
 };
+pub use organization::{EmptyOrganizationName, Membership, Organization, Role};
 pub use report::{AnonymousReport, ReportSourceChannel, ReportStatus};
 pub use subscription::{
     Comparison, ConsumerMatch, EmptyGeoArea, EmptySubscriptionRules, GeoArea, MatchDecision,
