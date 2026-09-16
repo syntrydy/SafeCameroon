@@ -10,7 +10,8 @@ use case is missing children.
 - `crates/application`: use cases; infrastructure ports belong here as implementation begins.
 - `apps/api`: Axum HTTP API.
 - `apps/worker`: asynchronous worker that polls and dispatches deliveries.
-- `apps/console`: future TypeScript/React organization console scaffold.
+- `apps/console`: TypeScript/React organization console (reviewer/admin, Google-authenticated).
+- `apps/citizen`: public, offline-capable Preact app for anonymously reporting a missing child (no login).
 
 ## Local checks
 
