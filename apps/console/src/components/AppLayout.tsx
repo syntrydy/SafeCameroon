@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
+import { Footer } from "./Footer";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { session, logout } = useAuth();
@@ -35,6 +36,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="mx-auto max-w-5xl p-6">{children}</main>
+      <Footer />
     </div>
   );
 }

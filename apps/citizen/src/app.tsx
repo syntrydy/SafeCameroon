@@ -2,6 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 
 import { AlertsPanel } from "./components/AlertsPanel";
 import { ConfirmationCard } from "./components/ConfirmationCard";
+import { Footer } from "./components/Footer";
 import { ReceiptsList } from "./components/ReceiptsList";
 import { ReportForm, type ReportFormPhoto } from "./components/ReportForm";
 import { ShieldMark } from "./components/ShieldMark";
@@ -117,6 +118,8 @@ export function App() {
         </div>
 
         {tab === "report" && <ReceiptsList receipts={receipts} />}
+
+        <Footer />
       </div>
     </div>
   );
