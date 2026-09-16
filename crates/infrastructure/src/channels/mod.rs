@@ -5,17 +5,20 @@
 //! credentials are not available") — no vendor SDK or real network call yet,
 //! but endpoint validation and provider-error encapsulation are real and
 //! independently testable, so swapping in a real HTTP client later only
-//! touches `send`. `push` is the first real (non-mock) adapter, since Web
-//! Push needs no vendor account (docs/OPEN_QUESTIONS.md: unlike WhatsApp/SMS,
-//! no provider choice is pending).
+//! touches `send`. `push` and `resend` are real (non-mock) adapters: Web
+//! Push needs no vendor account at all (docs/OPEN_QUESTIONS.md: unlike
+//! WhatsApp/SMS, no provider choice was pending for it), and Resend was
+//! chosen for email specifically.
 
 pub mod email;
 pub mod push;
+pub mod resend;
 pub mod sms;
 pub mod whatsapp;
 
 pub use email::EmailChannel;
 pub use push::WebPushChannel;
+pub use resend::ResendEmailChannel;
 pub use sms::SmsChannel;
 pub use whatsapp::WhatsAppChannel;
 
@@ -29,4 +32,18 @@ fn looks_like_e164(address: &str) -> bool {
         None => return false,
     };
     (8..=15).contains(&digits.len()) && digits.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Shared shape check for the email-based channels (mock and Resend). Real
+/// deliverability/mailbox existence can only be confirmed by the provider.
+fn looks_like_email(address: &str) -> bool {
+    match address.split_once('@') {
+        Some((local, domain)) => {
+            !local.is_empty()
+                && !domain.is_empty()
+                && domain.contains('.')
+                && !address.contains(char::is_whitespace)
+        }
+        None => false,
+    }
 }
