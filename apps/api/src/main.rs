@@ -148,6 +148,7 @@ fn build_router(state: AppState) -> Router {
             "/v1/reports",
             get(reports::list_reports).post(reports::create_anonymous_report),
         )
+        .route("/v1/reports/{id}", get(reports::get_report))
         .route(
             "/v1/reports/{report_id}/attachments",
             get(attachments::list_attachments_for_report).post(attachments::create_attachment),
@@ -182,7 +183,10 @@ fn build_router(state: AppState) -> Router {
             "/v1/subscriptions/{id}",
             put(subscriptions::update_subscription),
         )
-        .route("/v1/consumers", post(consumers::register_consumer))
+        .route(
+            "/v1/consumers",
+            get(consumers::list_consumers).post(consumers::register_consumer),
+        )
         .route("/v1/consumers/{id}", get(consumers::get_consumer))
         .route(
             "/v1/consumers/{consumer_id}/subscriptions",
@@ -323,7 +327,7 @@ mod tests {
             "TRUNCATE attachments, webhook_replay_events, delivery_events, delivery_attempts, \
              deliveries, alert_events, alert_fields, alerts, case_events, case_reports, cases, \
              outbox_events, audit_events, reports, reporters, consumer_delivery_preferences, \
-             subscriptions, reviewers, rate_limit_windows",
+             subscriptions, consumers, reviewers, rate_limit_windows",
         )
         .execute(&pool)
         .await
@@ -1929,6 +1933,96 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_gets_a_single_report_by_id() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content": "My child has not returned from school."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let report_id = json_body(response).await["report_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/reports/{report_id}"))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["report_id"], json!(report_id));
+        assert_eq!(
+            body["raw_content"],
+            json!("My child has not returned from school.")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn getting_an_unknown_report_returns_not_found() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/reports/{}", Uuid::new_v4()))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("REPORT_NOT_FOUND")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn getting_a_report_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/reports/{}", Uuid::new_v4()))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
     async fn exceeding_the_anonymous_report_rate_limit_returns_too_many_requests() {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));
@@ -2697,6 +2791,82 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_lists_and_filters_consumers() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+        let register = |app: Router, name: &'static str, consumer_type: &'static str| {
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/consumers")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::from(
+                        json!({"name": name, "consumer_type": consumer_type}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+        };
+        register(app.clone(), "Douala Police", "ORGANIZATION")
+            .await
+            .unwrap();
+        register(app.clone(), "Amina N.", "CITIZEN").await.unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/consumers")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await.as_array().unwrap().len(), 2);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/consumers?consumer_type=CITIZEN")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let listed = json_body(response).await;
+        let listed = listed.as_array().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0]["name"], json!("Amina N."));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn listing_consumers_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/consumers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

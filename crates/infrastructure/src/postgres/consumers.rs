@@ -1,5 +1,6 @@
 use safe_cameroon_domain::{Consumer, ConsumerId, ConsumerType};
 use sqlx::PgPool;
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct PostgresConsumerRepository {
@@ -41,5 +42,43 @@ impl PostgresConsumerRepository {
                     .expect("consumers.consumer_type is constrained by the consumer_type enum"),
             )
         }))
+    }
+
+    /// Most recently registered first (`consumers_created_at_idx`),
+    /// optionally narrowed by type. Previously there was no way to find a
+    /// consumer without already knowing its id — a reviewer had to record
+    /// the id returned from `create` themselves.
+    pub async fn list(
+        &self,
+        consumer_type: Option<ConsumerType>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Consumer>, sqlx::Error> {
+        let rows: Vec<(Uuid, String, String)> = sqlx::query_as(
+            r#"
+            SELECT id, name, consumer_type::text
+            FROM consumers
+            WHERE ($1::consumer_type IS NULL OR consumer_type = $1::consumer_type)
+            ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
+            "#,
+        )
+        .bind(consumer_type.map(ConsumerType::as_database_value))
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(id, name, consumer_type)| {
+                Consumer::reconstitute(
+                    ConsumerId::from_uuid(id),
+                    name,
+                    ConsumerType::from_database_value(&consumer_type)
+                        .expect("consumers.consumer_type is constrained by the consumer_type enum"),
+                )
+            })
+            .collect())
     }
 }

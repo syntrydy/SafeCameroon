@@ -75,3 +75,54 @@ async fn a_citizen_consumer_round_trips_too() {
     let loaded = repository.find_by_id(consumer.id()).await.unwrap().unwrap();
     assert_eq!(loaded.consumer_type(), ConsumerType::Citizen);
 }
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn list_returns_every_consumer_most_recently_registered_first() {
+    let pool = test_pool().await;
+    let repository = PostgresConsumerRepository::new(pool);
+    let first = Consumer::new("Douala Police", ConsumerType::Organization).unwrap();
+    repository.create(&first).await.unwrap();
+    let second = Consumer::new("Amina N.", ConsumerType::Citizen).unwrap();
+    repository.create(&second).await.unwrap();
+
+    let listed = repository.list(None, 50, 0).await.unwrap();
+
+    assert_eq!(
+        listed.iter().map(Consumer::id).collect::<Vec<_>>(),
+        vec![second.id(), first.id()]
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn list_filters_by_consumer_type() {
+    let pool = test_pool().await;
+    let repository = PostgresConsumerRepository::new(pool);
+    let organization = Consumer::new("Douala Police", ConsumerType::Organization).unwrap();
+    repository.create(&organization).await.unwrap();
+    let citizen = Consumer::new("Amina N.", ConsumerType::Citizen).unwrap();
+    repository.create(&citizen).await.unwrap();
+
+    let listed = repository
+        .list(Some(ConsumerType::Citizen), 50, 0)
+        .await
+        .unwrap();
+
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id(), citizen.id());
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn list_respects_limit_and_offset() {
+    let pool = test_pool().await;
+    let repository = PostgresConsumerRepository::new(pool);
+    for name in ["Consumer A", "Consumer B", "Consumer C"] {
+        let consumer = Consumer::new(name, ConsumerType::Organization).unwrap();
+        repository.create(&consumer).await.unwrap();
+    }
+
+    let page = repository.list(None, 1, 1).await.unwrap();
+    assert_eq!(page.len(), 1);
+}
