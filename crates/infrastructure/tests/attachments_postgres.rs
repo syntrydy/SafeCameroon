@@ -47,7 +47,7 @@ async fn persists_and_reconstitutes_an_attachment() {
     let pool = test_pool().await;
     let reports = PostgresReportRepository::new(pool.clone());
     let submission =
-        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None, None).unwrap();
     reports.submit_anonymous(&submission).await.unwrap();
 
     let attachments = PostgresAttachmentRepository::new(pool.clone());
@@ -88,7 +88,7 @@ async fn records_an_audit_event_for_download_access() {
     let pool = test_pool().await;
     let reports = PostgresReportRepository::new(pool.clone());
     let submission =
-        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None, None).unwrap();
     reports.submit_anonymous(&submission).await.unwrap();
 
     let attachments = PostgresAttachmentRepository::new(pool.clone());
@@ -128,10 +128,10 @@ async fn find_by_report_id_returns_that_reports_attachments_in_upload_order() {
     let pool = test_pool().await;
     let reports = PostgresReportRepository::new(pool.clone());
     let submission =
-        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None, None).unwrap();
     reports.submit_anonymous(&submission).await.unwrap();
     let other_submission =
-        prepare_anonymous_report("Unrelated report.".into(), Uuid::new_v4(), None).unwrap();
+        prepare_anonymous_report("Unrelated report.".into(), Uuid::new_v4(), None, None).unwrap();
     reports.submit_anonymous(&other_submission).await.unwrap();
 
     let attachments = PostgresAttachmentRepository::new(pool.clone());
@@ -185,7 +185,7 @@ async fn find_by_report_id_returns_empty_for_a_report_with_no_attachments() {
     let pool = test_pool().await;
     let reports = PostgresReportRepository::new(pool.clone());
     let submission =
-        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None, None).unwrap();
     reports.submit_anonymous(&submission).await.unwrap();
 
     let attachments = PostgresAttachmentRepository::new(pool.clone());

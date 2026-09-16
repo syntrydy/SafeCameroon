@@ -1,15 +1,26 @@
 import { apiRequest } from "./client";
 
+// Matches crates/domain/src/case.rs `IncidentType` (SCREAMING_SNAKE_CASE on
+// the wire). A citizen's own guess, never authoritative -- a reviewer still
+// decides when creating a case (apps/api/src/reports.rs `CreateReportRequest`).
+export type IncidentType = "MISSING_CHILD" | "OTHER_PROTECTION_INCIDENT";
+
 export interface SubmitReportResult {
   report_id: string;
   reference_code: string;
   status: string;
 }
 
-export function submitReport(content: string, idempotencyKey: string): Promise<SubmitReportResult> {
+export function submitReport(
+  content: string,
+  idempotencyKey: string,
+  incidentType?: IncidentType,
+): Promise<SubmitReportResult> {
   return apiRequest<SubmitReportResult>("/v1/reports", {
     method: "POST",
-    body: JSON.stringify({ content }),
+    body: JSON.stringify(
+      incidentType ? { content, incident_type: incidentType } : { content },
+    ),
     idempotencyKey,
   });
 }

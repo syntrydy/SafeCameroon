@@ -16,7 +16,7 @@ pub mod webhook;
 use core::fmt;
 
 use safe_cameroon_domain::{
-    AnonymousReport, AuditEventId, OutboxEventId, ReportId, ReportSourceChannel,
+    AnonymousReport, AuditEventId, IncidentType, OutboxEventId, ReportId, ReportSourceChannel,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -58,6 +58,7 @@ pub fn prepare_anonymous_report(
     raw_content: String,
     request_id: Uuid,
     idempotency_key: Option<&str>,
+    reported_incident_type: Option<IncidentType>,
 ) -> Result<AnonymousReportSubmission, ReportValidationError> {
     let normalized_content = raw_content.trim().to_owned();
     if normalized_content.is_empty() {
@@ -77,6 +78,7 @@ pub fn prepare_anonymous_report(
             id: ReportId::new(),
             source_channel: ReportSourceChannel::Web,
             raw_content: normalized_content,
+            reported_incident_type,
         },
         reference_code,
         reference_code_hash,
@@ -104,6 +106,7 @@ mod tests {
             "  A child is missing.  ".into(),
             Uuid::new_v4(),
             Some("request-1"),
+            None,
         )
         .unwrap();
 
@@ -117,15 +120,32 @@ mod tests {
     }
 
     #[test]
+    fn carries_the_reporters_own_incident_type_guess_through_untouched() {
+        let submission = prepare_anonymous_report(
+            "Someone is being harassed.".into(),
+            Uuid::new_v4(),
+            None,
+            Some(IncidentType::OtherProtectionIncident),
+        )
+        .unwrap();
+
+        assert_eq!(
+            submission.report.reported_incident_type,
+            Some(IncidentType::OtherProtectionIncident)
+        );
+    }
+
+    #[test]
     fn rejects_blank_or_excessively_large_reports() {
         assert_eq!(
-            prepare_anonymous_report(" \n ".into(), Uuid::new_v4(), None).unwrap_err(),
+            prepare_anonymous_report(" \n ".into(), Uuid::new_v4(), None, None).unwrap_err(),
             ReportValidationError::EmptyContent
         );
         assert_eq!(
             prepare_anonymous_report(
                 "a".repeat(MAX_REPORT_CONTENT_CHARS + 1),
                 Uuid::new_v4(),
+                None,
                 None,
             )
             .unwrap_err(),

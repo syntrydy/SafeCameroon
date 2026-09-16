@@ -184,7 +184,8 @@ mod tests {
     async fn verified_alert(pool: &PgPool) -> Alert {
         let report_repository = PostgresReportRepository::new(pool.clone());
         let submission =
-            prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+            prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None, None)
+                .unwrap();
         report_repository
             .submit_anonymous(&submission)
             .await

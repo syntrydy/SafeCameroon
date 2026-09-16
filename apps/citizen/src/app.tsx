@@ -5,6 +5,7 @@ import { ConfirmationCard } from "./components/ConfirmationCard";
 import { Footer } from "./components/Footer";
 import { ReceiptsList } from "./components/ReceiptsList";
 import { ReportForm, type ReportFormPhoto } from "./components/ReportForm";
+import type { IncidentType } from "./api/reports";
 import { ShieldMark } from "./components/ShieldMark";
 import { StatusBanner } from "./components/StatusBanner";
 import { TabSwitcher, type Tab } from "./components/TabSwitcher";
@@ -42,12 +43,17 @@ export function App() {
     };
   }, []);
 
-  async function handleSubmit(content: string, photo?: ReportFormPhoto) {
+  async function handleSubmit(
+    content: string,
+    incidentType: IncidentType,
+    photo?: ReportFormPhoto,
+  ) {
     setSubmitting(true);
     setErrorMessage(null);
     try {
       const outcome = await submitOrQueue(
         content,
+        incidentType,
         photo ? { blob: photo.blob, contentType: photo.contentType } : undefined,
       );
       if (outcome.status === "sent") {
@@ -81,9 +87,7 @@ export function App() {
 
               {view.kind === "form" && (
                 <>
-                  <h1 className="text-xl font-semibold text-slate-900">
-                    Report a missing child
-                  </h1>
+                  <h1 className="text-xl font-semibold text-slate-900">Report an incident</h1>
                   <p className="mt-1 text-sm text-slate-500">
                     No account needed. Your identity is never recorded.
                   </p>
@@ -91,7 +95,9 @@ export function App() {
                     <ReportForm
                       submitting={submitting}
                       errorMessage={errorMessage}
-                      onSubmit={(content, photo) => void handleSubmit(content, photo)}
+                      onSubmit={(content, incidentType, photo) =>
+                        void handleSubmit(content, incidentType, photo)
+                      }
                     />
                   </div>
                 </>

@@ -6,7 +6,7 @@ use axum::{
 use safe_cameroon_application::authorization::{Capability, authorize};
 use safe_cameroon_application::rate_limit::RateLimitScope;
 use safe_cameroon_application::{ReportValidationError, prepare_anonymous_report};
-use safe_cameroon_domain::{ReportId, ReportSourceChannel, ReportStatus};
+use safe_cameroon_domain::{IncidentType, ReportId, ReportSourceChannel, ReportStatus};
 use safe_cameroon_infrastructure::postgres::{ReportSummary, SubmissionResult};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -22,6 +22,10 @@ use crate::state::AppState;
 #[derive(Deserialize)]
 pub struct CreateReportRequest {
     content: String,
+    /// The reporter's own guess at the incident type, if the intake UI asked.
+    /// Optional and never authoritative -- see `AnonymousReport::reported_incident_type`.
+    #[serde(default)]
+    incident_type: Option<IncidentType>,
 }
 
 #[derive(Serialize)]
@@ -46,23 +50,28 @@ pub async fn create_anonymous_report(
     .await?;
 
     let idempotency_key = idempotency_key_from_headers(&headers, request_id)?;
-    let submission = prepare_anonymous_report(request.content, request_id, idempotency_key)
-        .map_err(|error| {
-            let (code, message) = match error {
-                ReportValidationError::EmptyContent => {
-                    ("INVALID_REPORT_CONTENT", "Report content cannot be blank.")
-                }
-                ReportValidationError::ContentTooLong => {
-                    ("INVALID_REPORT_CONTENT", "Report content is too long.")
-                }
-            };
-            ApiError {
-                status: StatusCode::BAD_REQUEST,
-                code,
-                message,
-                request_id,
+    let submission = prepare_anonymous_report(
+        request.content,
+        request_id,
+        idempotency_key,
+        request.incident_type,
+    )
+    .map_err(|error| {
+        let (code, message) = match error {
+            ReportValidationError::EmptyContent => {
+                ("INVALID_REPORT_CONTENT", "Report content cannot be blank.")
             }
-        })?;
+            ReportValidationError::ContentTooLong => {
+                ("INVALID_REPORT_CONTENT", "Report content is too long.")
+            }
+        };
+        ApiError {
+            status: StatusCode::BAD_REQUEST,
+            code,
+            message,
+            request_id,
+        }
+    })?;
 
     let result = state
         .reports
@@ -113,6 +122,7 @@ pub struct ReportSummaryResponse {
     status: ReportStatus,
     raw_content: String,
     received_at: String,
+    reported_incident_type: Option<IncidentType>,
 }
 
 fn report_summary_response(report: &ReportSummary) -> ReportSummaryResponse {
@@ -122,6 +132,7 @@ fn report_summary_response(report: &ReportSummary) -> ReportSummaryResponse {
         status: report.status,
         raw_content: report.raw_content.clone(),
         received_at: report.received_at.clone(),
+        reported_incident_type: report.reported_incident_type,
     }
 }
 

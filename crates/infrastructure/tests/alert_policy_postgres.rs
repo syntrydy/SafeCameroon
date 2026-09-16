@@ -50,7 +50,7 @@ async fn test_pool() -> PgPool {
 async fn verified_case(pool: &PgPool) -> (PostgresCaseRepository, safe_cameroon_domain::Case) {
     let report_repository = PostgresReportRepository::new(pool.clone());
     let submission =
-        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None, None).unwrap();
     report_repository
         .submit_anonymous(&submission)
         .await

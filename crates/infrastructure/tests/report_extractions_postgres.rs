@@ -43,7 +43,7 @@ async fn test_pool() -> PgPool {
 
 async fn seeded_report(pool: &PgPool) -> ReportId {
     let submission =
-        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None, None).unwrap();
     let report_id = submission.report.id;
     assert_eq!(
         PostgresReportRepository::new(pool.clone())

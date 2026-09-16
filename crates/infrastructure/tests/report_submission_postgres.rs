@@ -1,7 +1,7 @@
 use std::env;
 
 use safe_cameroon_application::prepare_anonymous_report;
-use safe_cameroon_domain::ReportStatus;
+use safe_cameroon_domain::{IncidentType, ReportStatus};
 use safe_cameroon_infrastructure::postgres::{PostgresReportRepository, SubmissionResult};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use uuid::Uuid;
@@ -46,6 +46,7 @@ async fn submission_persists_report_audit_event_and_outbox_event_together() {
         "A child is missing.".into(),
         Uuid::new_v4(),
         Some("report-retry-1"),
+        None,
     )
     .unwrap();
 
@@ -93,11 +94,13 @@ async fn submission_persists_report_audit_event_and_outbox_event_together() {
 async fn audit_failure_rolls_back_the_report_insert() {
     let pool = test_pool().await;
     let repository = PostgresReportRepository::new(pool.clone());
-    let first = prepare_anonymous_report("Initial report.".into(), Uuid::new_v4(), None).unwrap();
+    let first =
+        prepare_anonymous_report("Initial report.".into(), Uuid::new_v4(), None, None).unwrap();
     repository.submit_anonymous(&first).await.unwrap();
 
     let mut conflicting =
-        prepare_anonymous_report("Must be rolled back.".into(), Uuid::new_v4(), None).unwrap();
+        prepare_anonymous_report("Must be rolled back.".into(), Uuid::new_v4(), None, None)
+            .unwrap();
     conflicting.audit_event_id = first.audit_event_id;
     let report_id = conflicting.report.id.as_uuid();
 
@@ -123,12 +126,14 @@ async fn idempotency_key_prevents_a_duplicate_report() {
         "First attempt.".into(),
         Uuid::new_v4(),
         Some("same-retry-key"),
+        None,
     )
     .unwrap();
     let second = prepare_anonymous_report(
         "Retry attempt.".into(),
         Uuid::new_v4(),
         Some("same-retry-key"),
+        None,
     )
     .unwrap();
 
@@ -150,9 +155,11 @@ async fn list_filters_by_status_most_recently_received_first() {
     let pool = test_pool().await;
     let repository = PostgresReportRepository::new(pool.clone());
 
-    let first = prepare_anonymous_report("First report.".into(), Uuid::new_v4(), None).unwrap();
+    let first =
+        prepare_anonymous_report("First report.".into(), Uuid::new_v4(), None, None).unwrap();
     repository.submit_anonymous(&first).await.unwrap();
-    let second = prepare_anonymous_report("Second report.".into(), Uuid::new_v4(), None).unwrap();
+    let second =
+        prepare_anonymous_report("Second report.".into(), Uuid::new_v4(), None, None).unwrap();
     repository.submit_anonymous(&second).await.unwrap();
 
     sqlx::query("UPDATE reports SET status = 'UNDER_REVIEW' WHERE id = $1")
@@ -187,7 +194,8 @@ async fn list_respects_limit_and_offset() {
 
     for index in 0..5 {
         let report =
-            prepare_anonymous_report(format!("Report {index}"), Uuid::new_v4(), None).unwrap();
+            prepare_anonymous_report(format!("Report {index}"), Uuid::new_v4(), None, None)
+                .unwrap();
         repository.submit_anonymous(&report).await.unwrap();
     }
 
@@ -206,7 +214,7 @@ async fn find_by_id_returns_the_matching_report() {
     let pool = test_pool().await;
     let repository = PostgresReportRepository::new(pool);
     let submission =
-        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None, None).unwrap();
     repository.submit_anonymous(&submission).await.unwrap();
 
     let found = repository
@@ -217,6 +225,42 @@ async fn find_by_id_returns_the_matching_report() {
     assert_eq!(found.id, submission.report.id.as_uuid());
     assert_eq!(found.raw_content, "A child is missing.");
     assert_eq!(found.status, ReportStatus::Received);
+    assert_eq!(found.reported_incident_type, None);
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn the_reporters_own_incident_type_guess_round_trips_through_postgres() {
+    let pool = test_pool().await;
+    let repository = PostgresReportRepository::new(pool);
+    let submission = prepare_anonymous_report(
+        "Someone is being harassed.".into(),
+        Uuid::new_v4(),
+        None,
+        Some(IncidentType::OtherProtectionIncident),
+    )
+    .unwrap();
+    repository.submit_anonymous(&submission).await.unwrap();
+
+    let found = repository
+        .find_by_id(submission.report.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        found.reported_incident_type,
+        Some(IncidentType::OtherProtectionIncident)
+    );
+
+    let listed = repository.list(None, 10, 0).await.unwrap();
+    let listed_report = listed
+        .iter()
+        .find(|report| report.id == submission.report.id.as_uuid())
+        .unwrap();
+    assert_eq!(
+        listed_report.reported_incident_type,
+        Some(IncidentType::OtherProtectionIncident)
+    );
 }
 
 #[tokio::test]

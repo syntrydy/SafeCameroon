@@ -34,6 +34,7 @@ const REPORT: ReportSummary = {
   status: "RECEIVED",
   raw_content: "My child has not returned from school since this afternoon.",
   received_at: "2026-09-15T12:00:00Z",
+  reported_incident_type: null,
 };
 
 let reports: ReportSummary[];
@@ -153,6 +154,24 @@ describe("ReviewQueue", () => {
 
     await screen.findByRole("status");
     expect(screen.getByRole("status")).toHaveTextContent("Linked to case.");
+  });
+
+  it("pre-fills the incident type from the reporter's own suggestion", async () => {
+    reports = [{ ...REPORT, reported_incident_type: "OTHER_PROTECTION_INCIDENT" }];
+    const user = await loginAndReachQueue();
+    const row = (await screen.findByText(/My child has not returned/)).closest("tr")!;
+
+    expect(within(row).getByText(/Reporter suggested:/)).toHaveTextContent(
+      "Reporter suggested: Other protection incident",
+    );
+    expect(
+      within(row).getByLabelText(`Incident type for report ${REPORT.report_id}`),
+    ).toHaveValue("OTHER_PROTECTION_INCIDENT");
+
+    await user.click(within(row).getByRole("button", { name: "Create case" }));
+
+    await screen.findByRole("status");
+    expect(screen.getByRole("status")).toHaveTextContent("Case created.");
   });
 
   it("surfaces a backend error without losing the row", async () => {

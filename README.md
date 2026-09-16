@@ -11,7 +11,7 @@ use case is missing children.
 - `apps/api`: Axum HTTP API.
 - `apps/worker`: asynchronous worker that polls and dispatches deliveries.
 - `apps/console`: TypeScript/React organization console (reviewer/admin, Google-authenticated).
-- `apps/citizen`: public, offline-capable Preact app for anonymously reporting a missing child and self-subscribing to alerts (no login).
+- `apps/citizen`: public, offline-capable Preact app for anonymously reporting an incident (missing child or another protection incident) and self-subscribing to alerts (no login).
 
 ## Pilot demo
 
@@ -172,6 +172,14 @@ whether to open a case. Lists most recently received first
 `limit`/`offset` convention as `GET /v1/audit-events`, gated by
 `Capability::ViewCase`; shares the `/v1/reports` path with the existing
 `POST` (submission) handler.
+
+`POST /v1/reports` accepts an optional `incident_type` from the reporter
+themselves (the citizen app's intake form asks "What kind of report is
+this?"). It is never authoritative -- a reviewer still explicitly chooses
+the case's `IncidentType` when creating a case from the report -- but it is
+surfaced back through `GET /v1/reports`/`GET /v1/reports/{id}` as
+`reported_incident_type` so the console can pre-fill that choice and show
+it as a hint (`crates/domain/src/report.rs`).
 
 `GET /v1/alerts` lists alerts, most recently created first
 (`alerts_status_created_at_idx`), optionally filtered by `status` and/or

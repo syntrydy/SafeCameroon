@@ -450,7 +450,8 @@ mod tests {
     async fn seeded_delivery(pool: &PgPool) -> safe_cameroon_domain::DeliveryId {
         let reports = PostgresReportRepository::new(pool.clone());
         let submission =
-            prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+            prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None, None)
+                .unwrap();
         reports.submit_anonymous(&submission).await.unwrap();
 
         let cases = PostgresCaseRepository::new(pool.clone());
@@ -1148,7 +1149,8 @@ mod tests {
     async fn seeded_report(pool: &PgPool) -> ReportId {
         let reports = PostgresReportRepository::new(pool.clone());
         let submission =
-            prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+            prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None, None)
+                .unwrap();
         reports.submit_anonymous(&submission).await.unwrap();
         submission.report.id
     }
@@ -2288,6 +2290,55 @@ mod tests {
         assert_eq!(
             body["raw_content"],
             json!("My child has not returned from school.")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reporters_incident_type_guess_is_stored_and_surfaced_to_reviewers() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "content": "Someone is being harassed near the market.",
+                            "incident_type": "OTHER_PROTECTION_INCIDENT",
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let report_id = json_body(response).await["report_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/reports/{report_id}"))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(
+            body["reported_incident_type"],
+            json!("OTHER_PROTECTION_INCIDENT")
         );
     }
 

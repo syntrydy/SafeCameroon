@@ -14,6 +14,9 @@ export interface ReportSummary {
   status: ReportStatus;
   raw_content: string;
   received_at: string;
+  // The reporter's own guess, if the intake UI asked. Never authoritative --
+  // a reviewer still explicitly chooses the incident type below.
+  reported_incident_type: "MISSING_CHILD" | "OTHER_PROTECTION_INCIDENT" | null;
 }
 
 export interface ListReportsParams {
