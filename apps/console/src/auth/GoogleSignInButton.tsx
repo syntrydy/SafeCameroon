@@ -14,19 +14,46 @@ export function GoogleSignInButton({ onCredential }: GoogleSignInButtonProps) {
 
   useEffect(() => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!window.google || !containerRef.current) {
-      return;
+    let cancelled = false;
+
+    // index.html loads Google's script with `async defer`, so it can still
+    // be in flight when this effect first runs; without polling for it, the
+    // button silently never appears whenever the script loses that race.
+    const tryRender = () => {
+      if (cancelled) {
+        return true;
+      }
+      if (!window.google || !containerRef.current) {
+        return false;
+      }
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: (response) => onCredential(response.credential),
+      });
+      window.google.accounts.id.renderButton(containerRef.current, {
+        type: "standard",
+        theme: "outline",
+        size: "large",
+        text: "signin_with",
+      });
+      return true;
+    };
+
+    if (!tryRender()) {
+      const intervalId = window.setInterval(() => {
+        if (tryRender()) {
+          window.clearInterval(intervalId);
+        }
+      }, 100);
+      return () => {
+        cancelled = true;
+        window.clearInterval(intervalId);
+      };
     }
-    window.google.accounts.id.initialize({
-      client_id: clientId,
-      callback: (response) => onCredential(response.credential),
-    });
-    window.google.accounts.id.renderButton(containerRef.current, {
-      type: "standard",
-      theme: "outline",
-      size: "large",
-      text: "signin_with",
-    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [onCredential]);
 
   return <div ref={containerRef} data-testid="google-signin-button" />;
