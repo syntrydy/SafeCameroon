@@ -20,6 +20,7 @@ pub enum RateLimitScope {
     AnonymousReportSubmission,
     ReviewerLoginAttempt,
     CitizenSubscriptionCreation,
+    AttachmentUploadRequest,
 }
 
 impl RateLimitScope {
@@ -28,6 +29,7 @@ impl RateLimitScope {
             Self::AnonymousReportSubmission => "ANONYMOUS_REPORT_SUBMISSION",
             Self::ReviewerLoginAttempt => "REVIEWER_LOGIN_ATTEMPT",
             Self::CitizenSubscriptionCreation => "CITIZEN_SUBSCRIPTION_CREATION",
+            Self::AttachmentUploadRequest => "ATTACHMENT_UPLOAD_REQUEST",
         }
     }
 
@@ -41,6 +43,11 @@ impl RateLimitScope {
             Self::AnonymousReportSubmission => 10,
             Self::ReviewerLoginAttempt => 5,
             Self::CitizenSubscriptionCreation => 10,
+            // A single report may legitimately attach several photos; this
+            // only needs to bound unlimited presigned-upload-URL minting
+            // (and the R2 storage cost it enables) against one report; a
+            // real report's attachment count won't come close to this.
+            Self::AttachmentUploadRequest => 30,
         }
     }
 
@@ -49,6 +56,7 @@ impl RateLimitScope {
             Self::AnonymousReportSubmission => Duration::from_secs(60 * 60),
             Self::ReviewerLoginAttempt => Duration::from_secs(15 * 60),
             Self::CitizenSubscriptionCreation => Duration::from_secs(60 * 60),
+            Self::AttachmentUploadRequest => Duration::from_secs(60 * 60),
         }
     }
 }

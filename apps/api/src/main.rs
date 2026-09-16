@@ -1148,6 +1148,43 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn exceeding_the_attachment_upload_rate_limit_returns_too_many_requests() {
+        let pool = test_pool().await;
+        let report_id = seeded_report(&pool).await;
+        let app = build_router(test_state(pool));
+        let request_upload = |app: Router| {
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/reports/{}/attachments", report_id.as_uuid()))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content_type": "image/jpeg", "size_bytes": 2048, "checksum": "deadbeef"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+        };
+
+        for attempt_number in 1..=30 {
+            let response = request_upload(app.clone()).await.unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::CREATED,
+                "attempt {attempt_number} should still be within the limit"
+            );
+        }
+
+        let throttled = request_upload(app).await.unwrap();
+        assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            json_body(throttled).await["error"]["code"],
+            json!("RATE_LIMIT_EXCEEDED")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
     async fn rejects_an_attachment_for_an_unknown_report() {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));
