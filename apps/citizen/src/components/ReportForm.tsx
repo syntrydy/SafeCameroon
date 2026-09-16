@@ -92,26 +92,29 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
 
   return (
     <form onSubmit={handleSubmit} noValidate>
-      <span className="block text-sm font-medium text-slate-700">What kind of report is this?</span>
-      <div className="mt-2 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+      <span className="block text-sm font-medium text-slate-300">What kind of report is this?</span>
+      <div className="mt-2.5 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.06] bg-white/[0.03] p-1">
         {INCIDENT_TYPE_OPTIONS.map((option) => (
           <button
             key={option.value}
             type="button"
             onClick={() => setIncidentType(option.value)}
             aria-pressed={incidentType === option.value}
-            className={`rounded-lg py-2 text-sm font-medium transition ${
+            className={`relative rounded-lg py-2.5 text-sm font-medium transition-all duration-300 ${
               incidentType === option.value
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
+                ? "border border-white/[0.08] bg-white/[0.08] text-white shadow-sm"
+                : "text-slate-400 hover:text-slate-300"
             }`}
           >
-            {option.label}
+            {incidentType === option.value && (
+              <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-emerald-500/10 to-emerald-500/5" />
+            )}
+            <span className="relative">{option.label}</span>
           </button>
         ))}
       </div>
 
-      <label htmlFor="report-content" className="mt-6 block text-sm font-medium text-slate-700">
+      <label htmlFor="report-content" className="mt-6 block text-sm font-medium text-slate-300">
         What is happening?
       </label>
       <p className="mt-1 text-sm text-slate-500">{guidance.helper}</p>
@@ -123,15 +126,15 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
         rows={7}
         autoFocus
         placeholder={guidance.placeholder}
-        className="mt-3 w-full rounded-xl border border-slate-300 px-4 py-3 text-base text-slate-900 shadow-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/30"
+        className="mt-3 w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-base text-white placeholder-slate-500 shadow-sm transition-all duration-300 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
       />
-      <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
+      <div className="mt-1.5 flex items-center justify-between text-xs text-slate-500">
         <span>
           {touched && validationError === "EMPTY" && (
-            <span className="text-red-600">Please describe the situation.</span>
+            <span className="text-red-400">Please describe the situation.</span>
           )}
           {touched && validationError === "TOO_LONG" && (
-            <span className="text-red-600">Please shorten this a little.</span>
+            <span className="text-red-400">Please shorten this a little.</span>
           )}
         </span>
         <span>
@@ -140,7 +143,7 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
       </div>
 
       <div className="mt-6">
-        <span className="block text-sm font-medium text-slate-700">Photo (optional)</span>
+        <span className="block text-sm font-medium text-slate-300">Photo (optional)</span>
         <p className="mt-1 text-sm text-slate-500">
           A recent photo helps a reviewer confirm the report. You can skip this if you don't have
           one.
@@ -156,7 +159,7 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
             <button
               type="button"
               onClick={removePhoto}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+              className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-sm text-slate-400 hover:bg-white/[0.05] hover:text-slate-300"
             >
               Remove photo
             </button>
@@ -165,7 +168,7 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="mt-3 rounded-lg border border-dashed border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-emerald-600 hover:text-emerald-700"
+            className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-white/[0.08] px-4 py-3 text-sm font-medium text-slate-400 transition-all duration-300 hover:border-emerald-500/30 hover:bg-emerald-500/5 hover:text-emerald-400"
           >
             Add a photo
           </button>
@@ -178,13 +181,13 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
           onChange={handlePhotoChange}
           className="hidden"
         />
-        {photoError && <p className="mt-2 text-sm text-red-600">{photoError}</p>}
+        {photoError && <p className="mt-2 text-sm text-red-400">{photoError}</p>}
       </div>
 
       {errorMessage && (
         <div
           role="alert"
-          className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          className="mt-6 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300"
         >
           {errorMessage}
         </div>
@@ -193,14 +196,16 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
       <button
         type="submit"
         disabled={submitting}
-        className="mt-6 w-full rounded-xl bg-emerald-700 px-4 py-3.5 text-base font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+        className="group relative mt-6 w-full overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-3.5 text-base font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:from-emerald-500 hover:to-emerald-600 hover:shadow-xl hover:shadow-emerald-500/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {submitting ? "Sending..." : "Send report"}
       </button>
 
-      <p className="mt-4 text-center text-xs text-slate-400">
-        This report is anonymous. No account or personal information is required.
-      </p>
+      <div className="mt-5 flex items-center justify-center gap-2 rounded-lg border border-emerald-500/10 bg-emerald-500/5 px-3 py-2.5">
+        <p className="text-xs text-slate-400">
+          This report is anonymous. No account or personal information is required.
+        </p>
+      </div>
     </form>
   );
 }

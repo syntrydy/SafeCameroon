@@ -7,7 +7,7 @@ interface TabSwitcherProps {
 
 export function TabSwitcher({ active, onChange }: TabSwitcherProps) {
   return (
-    <div className="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+    <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/[0.06] bg-white/[0.03] p-1 backdrop-blur-sm">
       {(
         [
           { tab: "report", label: "Report" },
@@ -19,13 +19,16 @@ export function TabSwitcher({ active, onChange }: TabSwitcherProps) {
           type="button"
           onClick={() => onChange(tab)}
           aria-pressed={active === tab}
-          className={`rounded-lg py-2 text-sm font-medium transition ${
+          className={`relative rounded-lg py-2.5 text-sm font-medium transition-all duration-300 ${
             active === tab
-              ? "bg-white text-slate-900 shadow-sm"
-              : "text-slate-500 hover:text-slate-700"
+              ? "border border-white/[0.08] bg-white/[0.08] text-white shadow-sm"
+              : "text-slate-400 hover:text-slate-300"
           }`}
         >
-          {label}
+          {active === tab && (
+            <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-emerald-500/10 to-blue-500/10" />
+          )}
+          <span className="relative">{label}</span>
         </button>
       ))}
     </div>

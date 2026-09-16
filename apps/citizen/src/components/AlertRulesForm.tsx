@@ -66,27 +66,30 @@ export function AlertRulesForm({
   return (
     <form onSubmit={handleSubmit} noValidate>
       <fieldset>
-        <legend className="text-sm font-medium text-slate-700">Alert type</legend>
-        <div className="mt-2 space-y-2">
+        <legend className="text-sm font-medium text-slate-300">Alert type</legend>
+        <div className="mt-2.5 space-y-2">
           {INCIDENT_TYPE_OPTIONS.map((option) => (
-            <label key={option.value} className="flex items-center gap-2 text-sm text-slate-700">
+            <label
+              key={option.value}
+              className="flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3.5 py-2.5 text-sm text-slate-300"
+            >
               <input
                 type="checkbox"
                 checked={incidentTypes.includes(option.value)}
                 onChange={() => toggleIncidentType(option.value)}
-                className="h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600"
+                className="h-4 w-4 rounded border-white/20 bg-white/[0.05] text-emerald-500 focus:ring-emerald-500/40 focus:ring-offset-0"
               />
               {option.label}
             </label>
           ))}
         </div>
         {touched && noIncidentTypes && (
-          <p className="mt-1 text-sm text-red-600">Choose at least one alert type.</p>
+          <p className="mt-1 text-sm text-red-400">Choose at least one alert type.</p>
         )}
       </fieldset>
 
       <div className="mt-5">
-        <label htmlFor="minimum-severity" className="block text-sm font-medium text-slate-700">
+        <label htmlFor="minimum-severity" className="block text-sm font-medium text-slate-300">
           Minimum severity
         </label>
         <select
@@ -95,10 +98,10 @@ export function AlertRulesForm({
           onChange={(event) =>
             setMinimumSeverity((event.target as HTMLSelectElement).value as Severity)
           }
-          className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/30"
+          className="mt-2.5 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-sm text-white transition-all duration-300 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
         >
           {SEVERITY_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
+            <option key={option.value} value={option.value} className="bg-slate-900 text-white">
               {option.label}
             </option>
           ))}
@@ -106,7 +109,7 @@ export function AlertRulesForm({
       </div>
 
       <div className="mt-5">
-        <label htmlFor="geography" className="block text-sm font-medium text-slate-700">
+        <label htmlFor="geography" className="block text-sm font-medium text-slate-300">
           Area
         </label>
         <p className="mt-1 text-sm text-slate-500">
@@ -120,7 +123,7 @@ export function AlertRulesForm({
           onInput={(event) => setGeography((event.target as HTMLInputElement).value)}
           onBlur={() => setTouched(true)}
           placeholder="Douala"
-          className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/30"
+          className="mt-2.5 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-sm text-white placeholder-slate-500 transition-all duration-300 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
         />
         <datalist id="cameroon-towns">
           {CAMEROON_TOWNS.map((town) => (
@@ -128,14 +131,14 @@ export function AlertRulesForm({
           ))}
         </datalist>
         {touched && geographyIsBlank && (
-          <p className="mt-1 text-sm text-red-600">Please enter an area.</p>
+          <p className="mt-1 text-sm text-red-400">Please enter an area.</p>
         )}
       </div>
 
       <button
         type="submit"
         disabled={submitting}
-        className="mt-6 w-full rounded-xl bg-emerald-700 px-4 py-3.5 text-base font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+        className="group relative mt-6 w-full overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-3.5 text-base font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:from-emerald-500 hover:to-emerald-600 hover:shadow-xl hover:shadow-emerald-500/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {submitting ? "Saving..." : submitLabel}
       </button>

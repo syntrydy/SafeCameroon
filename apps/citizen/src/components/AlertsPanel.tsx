@@ -106,22 +106,22 @@ export function AlertsPanel() {
   }
 
   if (view.kind === "loading") {
-    return <p className="text-sm text-slate-500">Checking your alert settings...</p>;
+    return <p className="text-sm text-slate-400">Checking your alert settings...</p>;
   }
 
   if (view.kind === "off") {
     return (
       <div className="text-center">
-        <p className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+        <p className="text-sm font-semibold uppercase tracking-wider text-slate-400">
           Alerts turned off
         </p>
-        <p className="mt-3 text-sm text-slate-600">
+        <p className="mt-3 text-sm text-slate-500">
           You will no longer receive alerts on this device.
         </p>
         <button
           type="button"
           onClick={() => setView({ kind: "signup" })}
-          className="mt-6 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="mt-6 rounded-xl border border-white/[0.08] px-4 py-2.5 text-sm font-medium text-slate-300 hover:bg-white/[0.05]"
         >
           Turn alerts back on
         </button>
@@ -132,7 +132,7 @@ export function AlertsPanel() {
   if (view.kind === "subscribed") {
     return (
       <div>
-        <div className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+        <div className="mb-6 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-300">
           Alerts are on for this device.
         </div>
         <AlertRulesForm
@@ -142,7 +142,7 @@ export function AlertsPanel() {
           onSubmit={(rules) => void handleUpdate(view.stored, rules)}
         />
         {errorMessage && (
-          <p role="alert" className="mt-4 text-sm text-red-600">
+          <p role="alert" className="mt-4 text-sm text-red-400">
             {errorMessage}
           </p>
         )}
@@ -150,7 +150,7 @@ export function AlertsPanel() {
           type="button"
           disabled={submitting}
           onClick={() => void handleTurnOff(view.stored)}
-          className="mt-4 w-full rounded-xl border border-red-200 px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-4 w-full rounded-xl border border-red-500/20 px-4 py-2.5 text-sm font-medium text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Turn off alerts
         </button>
@@ -160,8 +160,8 @@ export function AlertsPanel() {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold text-slate-900">Get missing-child alerts</h2>
-      <p className="mt-1 text-sm text-slate-500">
+      <h2 className="text-xl font-bold text-white">Get missing-child alerts</h2>
+      <p className="mt-1 text-sm text-slate-400">
         Choose what you want to hear about. You can change this anytime.
       </p>
       <div className="mt-6">
@@ -172,11 +172,11 @@ export function AlertsPanel() {
         />
       </div>
       {errorMessage && (
-        <p role="alert" className="mt-4 text-sm text-red-600">
+        <p role="alert" className="mt-4 text-sm text-red-400">
           {errorMessage}
         </p>
       )}
-      <p className="mt-4 text-center text-xs text-slate-400">
+      <p className="mt-4 text-center text-xs text-slate-500">
         Your browser will ask permission to send notifications. No account or personal
         information is required.
       </p>

@@ -21,11 +21,11 @@ export function ReceiptsList({ receipts }: { receipts: Receipt[] }) {
   }
 
   return (
-    <div className="mt-8 border-t border-slate-200 pt-4">
+    <div className="mt-8 border-t border-white/[0.08] pt-4">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
-        className="text-sm font-medium text-slate-500 hover:text-slate-700"
+        className="text-sm font-medium text-slate-500 hover:text-slate-300"
       >
         {expanded ? "Hide" : "Show"} reports sent from this device ({receipts.length})
       </button>
@@ -34,10 +34,10 @@ export function ReceiptsList({ receipts }: { receipts: Receipt[] }) {
           {receipts.map((receipt) => (
             <li
               key={receipt.referenceCode}
-              className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"
+              className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-sm"
             >
-              <span className="font-mono text-slate-700">{receipt.referenceCode}</span>
-              <span className="text-slate-400">{timeAgo(receipt.sentAt)}</span>
+              <span className="font-mono text-slate-300">{receipt.referenceCode}</span>
+              <span className="text-slate-500">{timeAgo(receipt.sentAt)}</span>
             </li>
           ))}
         </ul>
