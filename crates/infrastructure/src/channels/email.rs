@@ -5,6 +5,8 @@ use safe_cameroon_application::channel::{
 use safe_cameroon_domain::ChannelType;
 use uuid::Uuid;
 
+use super::looks_like_email;
+
 /// Mock/sandbox email adapter.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EmailChannel;
@@ -29,16 +31,7 @@ impl From<EmailProviderError> for ChannelError {
 /// deliverable (no `@`, an empty local/domain part, or no `.` in the
 /// domain). Real mailbox existence can only be confirmed by the provider.
 fn validate(address: &str) -> Result<(), EndpointValidationError> {
-    let is_valid = match address.split_once('@') {
-        Some((local, domain)) => {
-            !local.is_empty()
-                && !domain.is_empty()
-                && domain.contains('.')
-                && !address.contains(char::is_whitespace)
-        }
-        None => false,
-    };
-    if is_valid {
+    if looks_like_email(address) {
         Ok(())
     } else {
         Err(EndpointValidationError {

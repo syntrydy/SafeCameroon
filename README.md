@@ -56,12 +56,14 @@ refusing to boot), since what data may go to an external AI provider is
 itself an open question (docs/OPEN_QUESTIONS.md).
 
 The worker polls for `QUEUED`/`RETRYING` deliveries and dispatches them
-through mock/sandbox `WhatsAppChannel`/`SmsChannel`/`EmailChannel` adapters
-(prompt 08; stdout only, no vendor SDK) until real provider credentials
-exist, plus a real `WebPushChannel` (VAPID) -- the only channel a citizen
-can self-subscribe to via `apps/citizen`, since a browser's own push
+through mock/sandbox `WhatsAppChannel`/`SmsChannel` adapters (prompt 08;
+stdout only, no vendor SDK) until real provider credentials exist, plus two
+real channels: `WebPushChannel` (VAPID) -- the only channel a citizen can
+self-subscribe to via `apps/citizen`, since a browser's own push
 subscription is itself proof of ownership, unlike a phone number
-(docs/OPEN_QUESTIONS.md). The API exposes `POST /v1/webhooks/{channel}/{provider}`
+(docs/OPEN_QUESTIONS.md) -- and `ResendEmailChannel`, used automatically
+once `RESEND_API_KEY`/`RESEND_FROM_ADDRESS` are set (falls back to the
+mock/sandbox `EmailChannel` otherwise). The API exposes `POST /v1/webhooks/{channel}/{provider}`
 (docs/API.md section 7) for provider delivery-status callbacks; today the
 only registered provider is `sandbox`, verified with an HMAC-SHA256
 signature over `WEBHOOK_SHARED_SECRET` (matches every mock channel adapter's

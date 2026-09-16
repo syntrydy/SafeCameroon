@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use safe_cameroon_application::channel::ChannelRegistry;
+use safe_cameroon_application::channel::{Channel, ChannelRegistry};
 use safe_cameroon_infrastructure::channels::{
-    EmailChannel, SmsChannel, WebPushChannel, WhatsAppChannel,
+    EmailChannel, ResendEmailChannel, SmsChannel, WebPushChannel, WhatsAppChannel,
 };
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository,
@@ -33,6 +33,29 @@ fn vapid_private_key_pem() -> Vec<u8> {
     BASE64
         .decode(encoded.trim())
         .expect("VAPID_PRIVATE_KEY_BASE64 must be valid base64")
+}
+
+/// Real Resend when both vars are configured; otherwise the mock/sandbox
+/// adapter, mirroring `attachment_storage_from_env` in apps/api/src/main.rs
+/// -- unlike Web Push, a real email provider was always going to need a
+/// deliberate vendor choice (docs/OPEN_QUESTIONS.md), so this stays
+/// optional rather than required.
+fn email_channel_from_env() -> Arc<dyn Channel> {
+    match (
+        std::env::var("RESEND_API_KEY"),
+        std::env::var("RESEND_FROM_ADDRESS"),
+    ) {
+        (Ok(api_key), Ok(from_address)) => {
+            tracing::info!("email channel: Resend");
+            Arc::new(ResendEmailChannel::new(api_key, from_address))
+        }
+        _ => {
+            tracing::info!(
+                "email channel: mock/sandbox (RESEND_API_KEY/RESEND_FROM_ADDRESS not fully configured)"
+            );
+            Arc::new(EmailChannel)
+        }
+    }
 }
 
 #[tokio::main]
@@ -62,15 +85,14 @@ async fn main() {
     let delivery_preferences = PostgresDeliveryPreferenceRepository::new(pool.clone());
     let rate_limiter = PostgresRateLimiter::new(pool);
 
-    // WhatsApp/SMS/Email are mock/sandbox adapters: real vendor credentials
+    // WhatsApp/SMS are still mock/sandbox adapters: real vendor credentials
     // are not available yet (prompt 08). Endpoint validation and
     // provider-error mapping are real; only the actual network call is
-    // simulated. Push is real (docs/OPEN_QUESTIONS.md: unlike those three,
-    // no provider choice is pending for Web Push).
+    // simulated. Push and (optionally) Email are real.
     let mut registry = ChannelRegistry::new();
     registry.register(Arc::new(WhatsAppChannel));
     registry.register(Arc::new(SmsChannel));
-    registry.register(Arc::new(EmailChannel));
+    registry.register(email_channel_from_env());
     registry.register(Arc::new(WebPushChannel::new(
         vapid_private_key_pem(),
         std::env::var("VAPID_SUBJECT").expect("VAPID_SUBJECT must be configured"),
