@@ -5,7 +5,7 @@ interface FooterProps {
 export function Footer({ variant = "light" }: FooterProps) {
   if (variant === "dark") {
     return (
-      <footer className="text-center text-xs text-slate-600">
+      <footer className="text-center text-xs text-slate-500">
         <p>SafeCameroon &middot; Privacy-first civic-protection platform</p>
         <p className="mt-1">&copy; {new Date().getFullYear()} SafeCameroon</p>
       </footer>
