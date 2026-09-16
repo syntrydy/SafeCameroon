@@ -1,81 +1,26 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { GoogleSignInButton } from "../auth/GoogleSignInButton";
 import { Footer } from "../components/Footer";
+import { ShieldIcon } from "../components/icons/ShieldIcon";
+import { NetworkIllustration } from "../components/NetworkIllustration";
 
 interface LocationState {
   from?: { pathname: string };
-}
-
-function ShieldMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
-      <path
-        d="M12 2.5l7.5 3v5.2c0 4.86-3.2 9.24-7.5 10.8-4.3-1.56-7.5-5.94-7.5-10.8V5.5l7.5-3z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-        fill="currentColor"
-        fillOpacity="0.08"
-      />
-      <path
-        d="M8.5 12.2l2.4 2.4 4.6-5.1"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-// Abstract "protection network" motif -- reports flowing in from a
-// community, met by a verified, central response. Deliberately not
-// photographic: this platform handles reports about at-risk people, so no
-// stock imagery of children or victims belongs on the sign-in screen.
-function ProtectionNetworkIllustration({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 200 140" fill="none" aria-hidden="true" className={className}>
-      <line x1="100" y1="70" x2="28" y2="18" stroke="currentColor" strokeWidth="1" strokeOpacity="0.35" />
-      <line x1="100" y1="70" x2="172" y2="18" stroke="currentColor" strokeWidth="1" strokeOpacity="0.35" />
-      <line x1="100" y1="70" x2="18" y2="102" stroke="currentColor" strokeWidth="1" strokeOpacity="0.35" />
-      <line x1="100" y1="70" x2="182" y2="102" stroke="currentColor" strokeWidth="1" strokeOpacity="0.35" />
-      <line x1="100" y1="70" x2="100" y2="132" stroke="currentColor" strokeWidth="1" strokeOpacity="0.35" />
-
-      <circle cx="28" cy="18" r="4" fill="currentColor" fillOpacity="0.55" />
-      <circle cx="172" cy="18" r="4" fill="currentColor" fillOpacity="0.55" />
-      <circle cx="18" cy="102" r="4" fill="currentColor" fillOpacity="0.55" />
-      <circle cx="182" cy="102" r="4" fill="currentColor" fillOpacity="0.55" />
-      <circle cx="100" cy="132" r="4" fill="currentColor" fillOpacity="0.55" />
-
-      <g transform="translate(78, 38) scale(1.8)">
-        <path
-          d="M12 2.5l7.5 3v5.2c0 4.86-3.2 9.24-7.5 10.8-4.3-1.56-7.5-5.94-7.5-10.8V5.5l7.5-3z"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-          fill="currentColor"
-          fillOpacity="0.18"
-        />
-        <path
-          d="M8.5 12.2l2.4 2.4 4.6-5.1"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </g>
-    </svg>
-  );
 }
 
 export function Login() {
   const { session, loginWithGoogle } = useAuth();
   const location = useLocation();
   const [error, setError] = useState<{ message: string; requestId: string | null } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleCredential = useCallback(
     async (idToken: string) => {
@@ -99,80 +44,183 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
-      <div className="flex flex-1">
-      <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950 to-emerald-900 p-12 text-white lg:flex">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -top-24 -right-24 h-80 w-80 rounded-full bg-emerald-500/20 blur-3xl"
-        />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-blue-500/20 blur-3xl"
-        />
+    <div className="flex min-h-screen flex-col overflow-hidden bg-slate-950">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(16,185,129,0.08)_0%,transparent_50%)]"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(59,130,246,0.06)_0%,transparent_50%)]"
+      />
 
-        <div className="relative flex items-center gap-3">
-          <ShieldMark className="h-8 w-8 text-emerald-400" />
-          <span className="text-xl font-semibold tracking-tight">SafeCameroon</span>
-        </div>
+      <div className="relative flex flex-1">
+        <div className="relative hidden w-[55%] flex-col justify-between overflow-hidden p-12 lg:flex xl:p-16">
+          <div
+            aria-hidden="true"
+            className="absolute -top-32 -right-32 h-[500px] w-[500px] animate-pulse-slow rounded-full bg-emerald-500/10 blur-[100px]"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute -bottom-40 -left-20 h-[600px] w-[600px] animate-pulse-slower rounded-full bg-blue-600/8 blur-[120px]"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute top-1/2 left-1/3 h-[300px] w-[300px] animate-float rounded-full bg-emerald-400/5 blur-[80px]"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 opacity-[0.03]"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)",
+              backgroundSize: "60px 60px",
+            }}
+          />
 
-        <ProtectionNetworkIllustration className="relative h-36 w-full text-emerald-300/80" />
-
-        <div className="relative max-w-md">
-          <h2 className="text-3xl font-semibold leading-tight text-white">
-            Coordinated response for every reported incident.
-          </h2>
-          <p className="mt-4 text-base leading-relaxed text-blue-100/80">
-            Verified reviewers triage reports, confirm cases, and issue alerts through a
-            single accountable console&mdash;built for privacy, speed, and oversight.
-          </p>
-        </div>
-
-        <p className="relative text-xs tracking-wide text-blue-200/60">
-          Privacy-first civic-protection platform
-        </p>
-      </div>
-
-      <div className="flex w-full flex-1 items-center justify-center px-6 py-12 lg:w-1/2">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <ShieldMark className="h-7 w-7 text-emerald-700" />
-            <span className="text-lg font-semibold text-slate-900">SafeCameroon</span>
+          <div
+            className={`relative z-10 flex items-center gap-3 transition-all duration-700 ${
+              mounted ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0"
+            }`}
+          >
+            <div className="relative">
+              <div className="absolute inset-0 rounded-xl bg-emerald-400/20 blur-lg" />
+              <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-lg shadow-emerald-500/25">
+                <ShieldIcon className="h-6 w-6 text-white" />
+              </div>
+            </div>
+            <div>
+              <span className="text-xl font-bold tracking-tight text-white">SafeCameroon</span>
+              <span className="ml-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wider text-emerald-400 uppercase">
+                Console
+              </span>
+            </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-900/5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">
-              Organization console
-            </p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900">SafeCameroon Console</h1>
-            <p className="mt-2 text-sm text-slate-500">
-              Sign in with your registered Google account to continue.
-            </p>
+          <div
+            className={`relative z-10 flex flex-1 items-center justify-center transition-all delay-300 duration-1000 ${
+              mounted ? "scale-100 opacity-100" : "scale-95 opacity-0"
+            }`}
+          >
+            <NetworkIllustration />
+          </div>
 
-            <div className="mt-8 flex justify-center">
-              <GoogleSignInButton onCredential={(idToken) => void handleCredential(idToken)} />
+          <div
+            className={`relative z-10 max-w-lg transition-all delay-500 duration-700 ${
+              mounted ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+            }`}
+          >
+            <h2 className="text-3xl leading-tight font-semibold text-white xl:text-4xl">
+              Coordinated response for{" "}
+              <span className="bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">
+                every reported incident
+              </span>
+            </h2>
+            <p className="mt-4 text-base leading-relaxed text-slate-400">
+              Verified reviewers triage reports, confirm cases, and issue alerts through a
+              single accountable console&mdash;built for privacy, speed, and oversight.
+            </p>
+            <div className="mt-8 flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+                <span className="text-xs text-slate-500">Full audit trail</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-2 w-2 animate-pulse rounded-full bg-blue-400" />
+                <span className="text-xs text-slate-500">Privacy-first architecture</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="relative flex w-full flex-1 items-center justify-center px-6 py-12 lg:w-[45%]">
+          <div
+            aria-hidden="true"
+            className="absolute top-1/4 bottom-1/4 left-0 hidden w-px bg-gradient-to-b from-transparent via-emerald-500/20 to-transparent lg:block"
+          />
+
+          <div
+            className={`w-full max-w-[400px] transition-all delay-200 duration-700 ${
+              mounted ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
+            }`}
+          >
+            <div className="mb-10 flex items-center gap-3 lg:hidden">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-lg shadow-emerald-500/25">
+                <ShieldIcon className="h-5 w-5 text-white" />
+              </div>
+              <span className="text-lg font-bold text-white">SafeCameroon</span>
             </div>
 
-            {error && (
+            <div className="relative">
               <div
-                role="alert"
-                className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-              >
-                <p>{error.message}</p>
-                {error.requestId && (
-                  <p className="mt-1 text-xs text-red-500">reference: {error.requestId}</p>
+                aria-hidden="true"
+                className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-emerald-500/10 via-blue-500/10 to-emerald-500/10 opacity-50 blur-xl"
+              />
+
+              <div className="relative rounded-2xl border border-white/[0.08] bg-slate-900/80 p-8 shadow-2xl shadow-black/20 backdrop-blur-xl">
+                <div className="mb-8">
+                  <p className="text-xs font-semibold tracking-wider text-emerald-400 uppercase">
+                    Organization console
+                  </p>
+                  <h1 className="mt-2 text-2xl font-bold text-white">Welcome back</h1>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                    Sign in with your registered Google account to access the console.
+                  </p>
+                </div>
+
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-white/[0.06]" />
+                  </div>
+                </div>
+
+                <div className="flex justify-center">
+                  <GoogleSignInButton onCredential={(idToken) => void handleCredential(idToken)} />
+                </div>
+
+                <div className="mt-6 flex items-center justify-center gap-2 rounded-lg border border-emerald-500/10 bg-emerald-500/5 px-3 py-2.5">
+                  <svg
+                    className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                    />
+                  </svg>
+                  <p className="text-xs text-slate-400">
+                    Secured with OAuth 2.0 &middot; Your credentials are never stored
+                  </p>
+                </div>
+
+                {error && (
+                  <div
+                    role="alert"
+                    className="mt-6 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+                  >
+                    <p>{error.message}</p>
+                    {error.requestId && (
+                      <p className="mt-1 text-xs text-red-400/80">reference: {error.requestId}</p>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
+            </div>
 
-          <p className="mt-6 text-center text-xs text-slate-400">
-            Access is limited to reviewers added by an administrator.
-          </p>
+            <div className="mt-8 space-y-3 text-center">
+              <p className="text-xs text-slate-500">
+                Access is limited to reviewers added by an administrator.
+              </p>
+              <Footer variant="dark" />
+            </div>
+          </div>
         </div>
       </div>
-      </div>
-      <Footer />
     </div>
   );
 }

@@ -69,7 +69,7 @@ describe("console auth flow", () => {
   it("redirects an unauthenticated visitor to /login", () => {
     renderApp("/");
 
-    expect(screen.getByRole("heading", { name: "SafeCameroon Console" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Fake Google Sign-In" })).toBeInTheDocument();
   });
 
