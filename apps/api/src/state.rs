@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use safe_cameroon_application::ai_extraction::ReportExtractor;
 use safe_cameroon_application::attachment_workflow::AttachmentStorage;
 use safe_cameroon_application::google_identity::GoogleIdentityVerifier;
 use safe_cameroon_application::rate_limit::RateLimiter;
@@ -8,8 +9,8 @@ use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresAttachmentRepository, PostgresAuditEventRepository,
     PostgresCaseRepository, PostgresConsumerRepository, PostgresDeliveryPreferenceRepository,
-    PostgresDeliveryRepository, PostgresOrganizationRepository, PostgresReportRepository,
-    PostgresReviewerRepository, PostgresSubscriptionRepository,
+    PostgresDeliveryRepository, PostgresOrganizationRepository, PostgresReportExtractionRepository,
+    PostgresReportRepository, PostgresReviewerRepository, PostgresSubscriptionRepository,
 };
 
 #[derive(Clone)]
@@ -31,4 +32,6 @@ pub struct AppState {
     pub attachment_storage: Arc<dyn AttachmentStorage>,
     pub webhook_verifiers: Arc<WebhookVerifierRegistry>,
     pub webhook_replay_guard: Arc<dyn WebhookReplayGuard>,
+    pub extractions: PostgresReportExtractionRepository,
+    pub report_extractor: Arc<dyn ReportExtractor>,
 }

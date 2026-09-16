@@ -7,6 +7,7 @@ mod citizen_subscriptions;
 mod consumers;
 mod deliveries;
 mod error;
+mod extractions;
 mod health;
 mod idempotency;
 mod organizations;
@@ -26,17 +27,20 @@ use axum::{
     Router,
     routing::{get, post, put},
 };
+use safe_cameroon_application::ai_extraction::ReportExtractor;
 use safe_cameroon_application::attachment_workflow::AttachmentStorage;
 use safe_cameroon_application::google_identity::GoogleIdentityVerifier;
 use safe_cameroon_application::webhook::WebhookVerifierRegistry;
 use safe_cameroon_domain::ChannelType;
+use safe_cameroon_infrastructure::ai::{DisabledExtractor, OpenRouterExtractor};
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::google_identity::GoogleTokenInfoVerifier;
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresAttachmentRepository, PostgresAuditEventRepository,
     PostgresCaseRepository, PostgresConsumerRepository, PostgresDeliveryPreferenceRepository,
     PostgresDeliveryRepository, PostgresOrganizationRepository, PostgresRateLimiter,
-    PostgresReportRepository, PostgresReviewerRepository, PostgresSubscriptionRepository,
+    PostgresReportExtractionRepository, PostgresReportRepository, PostgresReviewerRepository,
+    PostgresSubscriptionRepository,
 };
 use safe_cameroon_infrastructure::storage::{HmacSignedAttachmentStorage, R2AttachmentStorage};
 use safe_cameroon_infrastructure::webhook::{
@@ -102,12 +106,34 @@ fn attachment_storage_from_env() -> Arc<dyn AttachmentStorage> {
     ))
 }
 
+/// A real [`OpenRouterExtractor`] when `OPENROUTER_API_KEY` is configured;
+/// otherwise a [`DisabledExtractor`] that fails clearly on use rather than
+/// refusing to boot -- AI extraction is an optional feature a deployment
+/// may not have set up yet (docs/OPEN_QUESTIONS.md: what data may go to an
+/// external AI provider is itself an open question), unlike the secrets
+/// this API always requires.
+fn report_extractor_from_env() -> Arc<dyn ReportExtractor> {
+    match std::env::var("OPENROUTER_API_KEY") {
+        Ok(api_key) => {
+            let model = std::env::var("OPENROUTER_MODEL")
+                .unwrap_or_else(|_| "openai/gpt-4o-mini".to_owned());
+            tracing::info!(model, "AI report extraction: OpenRouter");
+            Arc::new(OpenRouterExtractor::new(api_key, model))
+        }
+        Err(_) => {
+            tracing::info!("AI report extraction: disabled (OPENROUTER_API_KEY not configured)");
+            Arc::new(DisabledExtractor)
+        }
+    }
+}
+
 fn build_state(
     pool: PgPool,
     webhook_secret: Vec<u8>,
     attachment_storage: Arc<dyn AttachmentStorage>,
     reviewer_session_secret: Vec<u8>,
     google_identity_verifier: Arc<dyn GoogleIdentityVerifier>,
+    report_extractor: Arc<dyn ReportExtractor>,
 ) -> AppState {
     let mut webhook_verifiers = WebhookVerifierRegistry::new();
     for channel in [ChannelType::WhatsApp, ChannelType::Sms, ChannelType::Email] {
@@ -137,7 +163,9 @@ fn build_state(
         rate_limiter: Arc::new(PostgresRateLimiter::new(pool.clone())),
         attachment_storage,
         webhook_verifiers: Arc::new(webhook_verifiers),
-        webhook_replay_guard: Arc::new(PostgresWebhookReplayGuard::new(pool)),
+        webhook_replay_guard: Arc::new(PostgresWebhookReplayGuard::new(pool.clone())),
+        extractions: PostgresReportExtractionRepository::new(pool),
+        report_extractor,
     }
 }
 
@@ -190,6 +218,10 @@ fn build_router(state: AppState) -> Router {
         .route(
             "/v1/attachments/{id}/download-url",
             get(attachments::create_download_url),
+        )
+        .route(
+            "/v1/reports/{id}/extractions",
+            get(extractions::list_extractions).post(extractions::create_extraction),
         )
         .route("/v1/cases", get(cases::list_cases).post(cases::create_case))
         .route("/v1/cases/{id}", get(cases::get_case))
@@ -315,6 +347,7 @@ async fn main() {
         attachment_storage,
         reviewer_session_secret,
         Arc::new(GoogleTokenInfoVerifier::new(google_oauth_client_id)),
+        report_extractor_from_env(),
     ));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
@@ -333,6 +366,7 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use hmac::{Hmac, Mac};
+    use safe_cameroon_application::ai_extraction::FakeReportExtractor;
     use safe_cameroon_application::alert_workflow::create_alert_from_case;
     use safe_cameroon_application::case_workflow::{Actor, create_case_from_report, review_case};
     use safe_cameroon_application::channel::{Channel, build_outbound_message};
@@ -343,9 +377,9 @@ mod tests {
     use safe_cameroon_application::prepare_anonymous_report;
     use safe_cameroon_domain::{
         AlertField, AlertFieldValue, AlertPolicy, CaseStatus, ChannelEndpoint, ConsumerId,
-        ConsumerMatch, DeliveryPreference, DeliveryStatus, DeliveryStrategy, IncidentType,
-        MatchedSubscription, ReportId, RetryPolicy, Severity, SubscriptionId, TargetGeography,
-        deduplicate_by_consumer, evaluate_subscriptions,
+        ConsumerMatch, DeliveryPreference, DeliveryStatus, DeliveryStrategy, ExtractedReportFields,
+        IncidentType, MatchedSubscription, ReportId, RetryPolicy, Severity, SubscriptionId,
+        TargetGeography, deduplicate_by_consumer, evaluate_subscriptions,
     };
     use safe_cameroon_infrastructure::channels::WhatsAppChannel;
     use serde_json::json;
@@ -366,6 +400,17 @@ mod tests {
             )),
             b"test-reviewer-session-secret".to_vec(),
             Arc::new(FakeGoogleIdentityVerifier),
+            Arc::new(FakeReportExtractor {
+                result: Ok(ExtractedReportFields::new(
+                    Some("a young girl in a blue school uniform".into()),
+                    Some("about 8 years old".into()),
+                    None,
+                    Some("Douala".into()),
+                    None,
+                    None,
+                    None,
+                )),
+            }),
         )
     }
 
@@ -390,7 +435,7 @@ mod tests {
         static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
         MIGRATOR.run(&pool).await.expect("migrations must apply");
         sqlx::query(
-            "TRUNCATE attachments, webhook_replay_events, delivery_events, delivery_attempts, \
+            "TRUNCATE report_extractions, attachments, webhook_replay_events, delivery_events, delivery_attempts, \
              deliveries, alert_events, alert_fields, alerts, case_events, case_reports, cases, \
              outbox_events, audit_events, reports, reporters, consumer_delivery_preferences, \
              subscriptions, consumers, reviewer_organization_memberships, organizations, \
@@ -1144,6 +1189,89 @@ mod tests {
                 .unwrap()
                 .contains(json["object_key"].as_str().unwrap())
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_requests_and_lists_a_reports_extraction() {
+        let pool = test_pool().await;
+        let report_id = seeded_report(&pool).await;
+        let app = build_router(test_state(pool));
+        let token = login_reviewer(app.clone()).await;
+
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/reports/{}/extractions", report_id.as_uuid()))
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(create_response.status(), StatusCode::CREATED);
+        let created = json_body(create_response).await;
+        assert_eq!(created["provider"], json!("FAKE"));
+        assert_eq!(created["fields"]["place"], json!("Douala"));
+
+        let list_response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/reports/{}/extractions", report_id.as_uuid()))
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(list_response.status(), StatusCode::OK);
+        let listed = json_body(list_response).await;
+        assert_eq!(listed.as_array().unwrap().len(), 1);
+        assert_eq!(listed[0]["fields"]["place"], json!("Douala"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn requesting_an_extraction_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let report_id = seeded_report(&pool).await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/reports/{}/extractions", report_id.as_uuid()))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn requesting_an_extraction_for_an_unknown_report_returns_not_found() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let token = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/reports/{}/extractions", Uuid::new_v4()))
+                    .header("Authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ApiError } from "../../api/client";
 import type { IncidentType } from "../../api/cases";
 import type { ReportSummary } from "../../api/reports";
+import { ExtractionPanel } from "./ExtractionPanel";
 
 const INCIDENT_TYPES: { value: IncidentType; label: string }[] = [
   { value: "MISSING_CHILD", label: "Missing child" },
@@ -18,11 +19,12 @@ const STATUS_STYLES: Record<ReportSummary["status"], string> = {
 
 interface ReportRowProps {
   report: ReportSummary;
+  token: string;
   onCreateCase: (reportId: string, incidentType: IncidentType) => Promise<void>;
   onLinkToCase: (reportId: string, caseId: string) => Promise<void>;
 }
 
-export function ReportRow({ report, onCreateCase, onLinkToCase }: ReportRowProps) {
+export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [incidentType, setIncidentType] = useState<IncidentType>("MISSING_CHILD");
   const [caseId, setCaseId] = useState("");
@@ -70,6 +72,8 @@ export function ReportRow({ report, onCreateCase, onLinkToCase }: ReportRowProps
             {expanded ? "Show less" : "Show more"}
           </button>
         )}
+
+        <ExtractionPanel token={token} reportId={report.report_id} />
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <select

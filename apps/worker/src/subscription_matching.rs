@@ -151,7 +151,7 @@ mod tests {
 
         MIGRATOR.run(&pool).await.expect("migrations must apply");
         sqlx::query(
-            "TRUNCATE attachments, webhook_replay_events, delivery_events, delivery_attempts, \
+            "TRUNCATE report_extractions, attachments, webhook_replay_events, delivery_events, delivery_attempts, \
              deliveries, alert_events, alert_fields, alerts, case_events, case_reports, cases, \
              outbox_events, audit_events, reports, reporters, consumer_delivery_preferences, \
              subscriptions",
