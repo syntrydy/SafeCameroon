@@ -10,12 +10,15 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
 };
-use safe_cameroon_application::authorization::{Capability, authorize};
+use safe_cameroon_application::authorization::{
+    Capability, authorize, authorize_case_verification,
+};
 use safe_cameroon_application::case_workflow::{
     Actor, CaseReviewError, create_case_from_report, link_report_to_case, review_case,
 };
 use safe_cameroon_domain::{
-    Case, CaseEventType, CaseId, CaseStatus, DuplicateReportLink, IncidentType, ReportId,
+    Case, CaseEventType, CaseId, CaseStatus, DuplicateReportLink, IncidentType, Membership,
+    ReportId, Role,
 };
 use safe_cameroon_infrastructure::postgres::{
     CaseCreationOutcome, CaseEventRecord, CaseFilter, CaseLinkOutcome, CaseReviewOutcome,
@@ -342,6 +345,52 @@ pub async fn create_case_event(
     transition_case(state, case_id, actor, request.to, request_id).await
 }
 
+/// Whether `actor` may verify a case of `incident_type`, per each real
+/// organization's own trust grants (docs/OPEN_QUESTIONS.md: "which
+/// authority can verify a case for each incident class" —
+/// crates/domain/src/organization.rs resolves this per-organization rather
+/// than baking in a policy here). `Actor::Automated` never reaches this
+/// check: `authorize_case_transition` already rejects it for any
+/// non-`UnderReview` transition.
+async fn authorize_verification_by_organization(
+    state: &AppState,
+    actor: Actor,
+    incident_type: IncidentType,
+    request_id: Uuid,
+) -> Result<(), ApiError> {
+    let Actor::Reviewer(reviewer_id) = actor else {
+        return Ok(());
+    };
+    let membership = state
+        .organizations
+        .find_membership(reviewer_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .unwrap_or(Membership {
+            role: Role::Member,
+            organization_id: None,
+        });
+    let organization = match membership.organization_id {
+        Some(organization_id) => Some(
+            state
+                .organizations
+                .find_by_id(organization_id)
+                .await
+                .map_err(|_| persistence_failed(request_id))?
+                .expect("a reviewer's membership never references a deleted organization"),
+        ),
+        None => None,
+    };
+    authorize_case_verification(membership, organization.as_ref(), incident_type).map_err(|_| {
+        ApiError {
+            status: StatusCode::FORBIDDEN,
+            code: "ORGANIZATION_NOT_TRUSTED_FOR_INCIDENT_TYPE",
+            message: "Your organization is not trusted to verify this incident type.",
+            request_id,
+        }
+    })
+}
+
 pub async fn verify_case(
     State(state): State<AppState>,
     Path(case_id): Path<Uuid>,
@@ -355,6 +404,15 @@ pub async fn verify_case(
         request_id,
     )
     .await?;
+
+    let case = state
+        .cases
+        .find_by_id(CaseId::from_uuid(case_id))
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .ok_or_else(|| case_not_found(request_id))?;
+    authorize_verification_by_organization(&state, actor, case.incident_type(), request_id).await?;
+
     transition_case(state, case_id, actor, CaseStatus::Verified, request_id).await
 }
 

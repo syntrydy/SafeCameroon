@@ -8,8 +8,8 @@ use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresAttachmentRepository, PostgresAuditEventRepository,
     PostgresCaseRepository, PostgresConsumerRepository, PostgresDeliveryPreferenceRepository,
-    PostgresDeliveryRepository, PostgresReportRepository, PostgresReviewerRepository,
-    PostgresSubscriptionRepository,
+    PostgresDeliveryRepository, PostgresOrganizationRepository, PostgresReportRepository,
+    PostgresReviewerRepository, PostgresSubscriptionRepository,
 };
 
 #[derive(Clone)]
@@ -23,6 +23,7 @@ pub struct AppState {
     pub consumers: PostgresConsumerRepository,
     pub subscriptions: PostgresSubscriptionRepository,
     pub delivery_preferences: PostgresDeliveryPreferenceRepository,
+    pub organizations: PostgresOrganizationRepository,
     pub reviewers: PostgresReviewerRepository,
     pub reviewer_session_tokens: ReviewerSessionTokenIssuer,
     pub google_identity_verifier: Arc<dyn GoogleIdentityVerifier>,

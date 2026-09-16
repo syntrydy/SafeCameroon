@@ -35,7 +35,7 @@ async fn test_pool() -> PgPool {
     );
 
     MIGRATOR.run(&pool).await.expect("migrations must apply");
-    sqlx::query("TRUNCATE reviewers, audit_events")
+    sqlx::query("TRUNCATE reviewer_organization_memberships, reviewers, audit_events")
         .execute(&pool)
         .await
         .expect("test tables must be reset");
