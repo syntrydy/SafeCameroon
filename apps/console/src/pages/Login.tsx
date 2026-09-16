@@ -76,7 +76,7 @@ export function Login() {
 
         <div className="relative max-w-md">
           <h2 className="text-3xl font-semibold leading-tight text-white">
-            Coordinated protection for every reported child.
+            Coordinated response for every reported incident.
           </h2>
           <p className="mt-4 text-base leading-relaxed text-blue-100/80">
             Verified reviewers triage reports, confirm cases, and issue alerts through a
