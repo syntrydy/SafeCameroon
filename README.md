@@ -22,10 +22,15 @@ directly and has no `.env` at all; a missing file is not an error).
 
 ```bash
 cargo test --workspace
-DATABASE_URL=postgres://... WEBHOOK_SHARED_SECRET=... ATTACHMENT_STORAGE_SECRET=... REVIEWER_SESSION_SECRET=... GOOGLE_OAUTH_CLIENT_ID=... cargo run -p safe-cameroon-api
+DATABASE_URL=postgres://... WEBHOOK_SHARED_SECRET=... ATTACHMENT_STORAGE_SECRET=... REVIEWER_SESSION_SECRET=... GOOGLE_OAUTH_CLIENT_ID=... CORS_ALLOWED_ORIGINS=http://localhost:5173 cargo run -p safe-cameroon-api
 curl http://localhost:3000/health
 DATABASE_URL=postgres://... cargo run -p safe-cameroon-worker
 ```
+
+`CORS_ALLOWED_ORIGINS` is a comma-separated allow-list of exact browser
+origins (e.g. the deployed console's URL) permitted to call the API from a
+browser; unset or empty allows none, since the API and console are always
+served from different origins (docs/DEPLOYMENT.md).
 
 The worker polls for `QUEUED`/`RETRYING` deliveries and dispatches them
 through mock/sandbox `WhatsAppChannel`/`SmsChannel`/`EmailChannel` adapters

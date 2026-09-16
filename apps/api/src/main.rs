@@ -20,7 +20,7 @@ mod webhooks;
 
 use std::sync::Arc;
 
-use axum::http::HeaderName;
+use axum::http::{HeaderName, HeaderValue, Method};
 use axum::{
     Router,
     routing::{get, post, put},
@@ -43,6 +43,7 @@ use safe_cameroon_infrastructure::webhook::{
 };
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tracing::Level;
@@ -139,6 +140,35 @@ fn build_state(
     }
 }
 
+/// The console runs on a different origin than the API in every deployed
+/// environment (docs/DEPLOYMENT.md), so browsers enforce CORS on every
+/// request between them. `CORS_ALLOWED_ORIGINS` is a comma-separated
+/// allow-list of exact origins (e.g. `https://console.example.com`); unset
+/// or empty means no browser origin is allowed, which is safe by default
+/// but must be configured explicitly per environment.
+fn cors_layer() -> CorsLayer {
+    let origins: Vec<HeaderValue> = std::env::var("CORS_ALLOWED_ORIGINS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .map(|origin| {
+            origin.parse().unwrap_or_else(|_| {
+                panic!("CORS_ALLOWED_ORIGINS contains an invalid origin: {origin}")
+            })
+        })
+        .collect();
+
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::OPTIONS])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+            HeaderName::from_static("idempotency-key"),
+        ])
+}
+
 fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health::health))
@@ -222,7 +252,10 @@ fn build_router(state: AppState) -> Router {
         // Runs outermost-to-innermost on the request, innermost-to-outermost
         // on the response, so listing SetRequestId last means it sees the
         // request first: the id is already on the request's headers by the
-        // time TraceLayer builds its span or any handler runs.
+        // time TraceLayer builds its span or any handler runs. CORS is
+        // listed first so it wraps everything else, including preflight
+        // OPTIONS requests that never reach a route handler.
+        .layer(cors_layer())
         .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER))
         .layer(
             TraceLayer::new_for_http()
