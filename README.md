@@ -13,6 +13,18 @@ use case is missing children.
 - `apps/console`: TypeScript/React organization console (reviewer/admin, Google-authenticated).
 - `apps/citizen`: public, offline-capable Preact app for anonymously reporting a missing child and self-subscribing to alerts (no login).
 
+## Pilot demo
+
+`cargo run -p safe-cameroon-api --bin demo` (needs `DATABASE_URL`; `OPENROUTER_API_KEY`
+optional) runs a real, narrated, end-to-end scenario against a real database and the
+real mock/sandbox channel adapters (prompts/15_PILOT_DEMO.md): an anonymous report, AI
+extraction, case review/verification, a community alert, four differently-configured
+consumers (police/NGO/association/citizen) matching that alert differently, dispatch
+across WhatsApp/SMS/email/push including a real provider validation failure, case
+resolution with a follow-up alert, and the resulting audit trail. It calls the same
+application-layer functions the HTTP handlers call, not mocks -- safe to run repeatedly
+against a scratch/demo database (not idempotent; each run adds fresh rows).
+
 ## Local checks
 
 Copy `.env.example` to `.env` and fill in real values, or prefix each
