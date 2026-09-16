@@ -78,6 +78,62 @@ async fn a_citizen_consumer_round_trips_too() {
 
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn a_self_service_consumers_management_token_hash_round_trips() {
+    let pool = test_pool().await;
+    let repository = PostgresConsumerRepository::new(pool);
+    let consumer = Consumer::new("Citizen (self-subscribed)", ConsumerType::Citizen).unwrap();
+    let hash = b"a-fake-32-byte-sha256-digest-1234".to_vec();
+
+    repository
+        .create_with_management_token(&consumer, &hash)
+        .await
+        .unwrap();
+
+    let loaded = repository.find_by_id(consumer.id()).await.unwrap().unwrap();
+    assert_eq!(loaded.id(), consumer.id());
+    assert_eq!(
+        repository
+            .management_token_hash(consumer.id())
+            .await
+            .unwrap(),
+        Some(hash)
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn management_token_hash_is_none_for_a_reviewer_managed_consumer() {
+    let pool = test_pool().await;
+    let repository = PostgresConsumerRepository::new(pool);
+    let consumer = Consumer::new("Douala Police", ConsumerType::Organization).unwrap();
+    repository.create(&consumer).await.unwrap();
+
+    assert_eq!(
+        repository
+            .management_token_hash(consumer.id())
+            .await
+            .unwrap(),
+        None
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn management_token_hash_is_none_for_an_unknown_consumer() {
+    let pool = test_pool().await;
+    let repository = PostgresConsumerRepository::new(pool);
+
+    assert_eq!(
+        repository
+            .management_token_hash(ConsumerId::from_uuid(Uuid::new_v4()))
+            .await
+            .unwrap(),
+        None
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
 async fn list_returns_every_consumer_most_recently_registered_first() {
     let pool = test_pool().await;
     let repository = PostgresConsumerRepository::new(pool);

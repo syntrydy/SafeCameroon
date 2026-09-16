@@ -3,6 +3,7 @@ mod attachments;
 mod audit_events;
 mod auth;
 mod cases;
+mod citizen_subscriptions;
 mod consumers;
 mod deliveries;
 mod error;
@@ -166,6 +167,7 @@ fn cors_layer() -> CorsLayer {
             axum::http::header::AUTHORIZATION,
             axum::http::header::CONTENT_TYPE,
             HeaderName::from_static("idempotency-key"),
+            HeaderName::from_static("management-token"),
         ])
 }
 
@@ -214,6 +216,19 @@ fn build_router(state: AppState) -> Router {
         .route(
             "/v1/subscriptions/{id}",
             put(subscriptions::update_subscription),
+        )
+        .route(
+            "/v1/citizen-subscriptions",
+            post(citizen_subscriptions::create_citizen_subscription),
+        )
+        .route(
+            "/v1/citizen-subscriptions/{id}",
+            get(citizen_subscriptions::get_citizen_subscription)
+                .put(citizen_subscriptions::update_citizen_subscription),
+        )
+        .route(
+            "/v1/citizen-subscriptions/{id}/cancel",
+            post(citizen_subscriptions::cancel_citizen_subscription),
         )
         .route(
             "/v1/consumers",
@@ -3542,6 +3557,261 @@ mod tests {
         assert_eq!(
             json_body(response).await["error"]["code"],
             json!("EMPTY_SUBSCRIPTION_RULES")
+        );
+    }
+
+    fn push_subscription_json(endpoint: &str) -> serde_json::Value {
+        json!({
+            "endpoint": endpoint,
+            "keys": {"p256dh": "test-p256dh-key", "auth": "test-auth-secret"}
+        })
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_citizen_creates_reads_updates_and_cancels_a_push_subscription() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/citizen-subscriptions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "incident_types": ["MISSING_CHILD"],
+                            "minimum_severity": "HIGH",
+                            "geography": "Douala",
+                            "push_subscription": push_subscription_json("https://push.example/a"),
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(create_response.status(), StatusCode::CREATED);
+        let created = json_body(create_response).await;
+        let subscription_id = created["subscription_id"].as_str().unwrap().to_owned();
+        let token = created["management_token"].as_str().unwrap().to_owned();
+
+        // No token at all is rejected the same way as a wrong one.
+        let unauthorized = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/citizen-subscriptions/{subscription_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unauthorized.status(), StatusCode::NOT_FOUND);
+
+        let get_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/citizen-subscriptions/{subscription_id}"))
+                    .header("Management-Token", token.clone())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(get_response.status(), StatusCode::OK);
+        let fetched = json_body(get_response).await;
+        assert_eq!(fetched["incident_types"], json!(["MISSING_CHILD"]));
+        assert_eq!(fetched["minimum_severity"], json!("HIGH"));
+        assert_eq!(fetched["geography"], json!("Douala"));
+
+        let update_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/citizen-subscriptions/{subscription_id}"))
+                    .header("content-type", "application/json")
+                    .header("Management-Token", token.clone())
+                    .body(Body::from(
+                        json!({
+                            "incident_types": ["MISSING_CHILD", "OTHER_PROTECTION_INCIDENT"],
+                            "minimum_severity": "CRITICAL",
+                            "geography": "Yaounde",
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(update_response.status(), StatusCode::OK);
+        let updated = json_body(update_response).await;
+        assert_eq!(updated["minimum_severity"], json!("CRITICAL"));
+        assert_eq!(updated["geography"], json!("Yaounde"));
+
+        let cancel_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/v1/citizen-subscriptions/{subscription_id}/cancel"
+                    ))
+                    .header("Management-Token", token.clone())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(cancel_response.status(), StatusCode::NO_CONTENT);
+
+        // Cancelled -- even the right token no longer finds it.
+        let after_cancel = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/citizen-subscriptions/{subscription_id}"))
+                    .header("Management-Token", token)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(after_cancel.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_wrong_management_token_is_rejected_the_same_way_as_no_such_subscription() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/citizen-subscriptions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "incident_types": ["MISSING_CHILD"],
+                            "minimum_severity": "HIGH",
+                            "geography": "Douala",
+                            "push_subscription": push_subscription_json("https://push.example/b"),
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let subscription_id = json_body(create_response).await["subscription_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let wrong_token_response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/citizen-subscriptions/{subscription_id}"))
+                    .header("Management-Token", "not-the-real-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(wrong_token_response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            json_body(wrong_token_response).await["error"]["code"],
+            json!("CITIZEN_SUBSCRIPTION_NOT_FOUND")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn creating_a_citizen_subscription_with_no_incident_types_is_rejected() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/citizen-subscriptions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "incident_types": [],
+                            "minimum_severity": "HIGH",
+                            "geography": "Douala",
+                            "push_subscription": push_subscription_json("https://push.example/c"),
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("EMPTY_INCIDENT_TYPES")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn exceeding_the_citizen_subscription_rate_limit_returns_too_many_requests() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let submit = |app: Router, endpoint: String| {
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/citizen-subscriptions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "incident_types": ["MISSING_CHILD"],
+                            "minimum_severity": "HIGH",
+                            "geography": "Douala",
+                            "push_subscription": push_subscription_json(&endpoint),
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+        };
+
+        for attempt_number in 1..=10 {
+            let response = submit(
+                app.clone(),
+                format!("https://push.example/limit-{attempt_number}"),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::CREATED,
+                "attempt {attempt_number} should still be within the limit"
+            );
+        }
+
+        let throttled = submit(app, "https://push.example/limit-11".into())
+            .await
+            .unwrap();
+        assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            json_body(throttled).await["error"]["code"],
+            json!("RATE_LIMIT_EXCEEDED")
         );
     }
 

@@ -4,8 +4,12 @@ mod subscription_matching;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use safe_cameroon_application::channel::ChannelRegistry;
-use safe_cameroon_infrastructure::channels::{EmailChannel, SmsChannel, WhatsAppChannel};
+use safe_cameroon_infrastructure::channels::{
+    EmailChannel, SmsChannel, WebPushChannel, WhatsAppChannel,
+};
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository,
     PostgresOutboxRepository, PostgresRateLimiter, PostgresSubscriptionRepository,
@@ -17,6 +21,19 @@ const POLL_INTERVAL: Duration = Duration::from_secs(5);
 /// Rate-limit window cleanup is maintenance, not backlog processing — it
 /// runs on its own much coarser interval rather than every poll cycle.
 const RATE_LIMIT_CLEANUP_INTERVAL: Duration = Duration::from_secs(60 * 60);
+
+/// Base64-encoded so the raw multi-line PEM never has to survive a shell/
+/// `.env`/deployment-variable round trip verbatim -- this session already
+/// lost a `DATABASE_URL` to an unescaped `&` being interpreted as a shell
+/// background-job operator once; a single-line, alphanumeric encoding has
+/// no such metacharacters to mangle.
+fn vapid_private_key_pem() -> Vec<u8> {
+    let encoded = std::env::var("VAPID_PRIVATE_KEY_BASE64")
+        .expect("VAPID_PRIVATE_KEY_BASE64 must be configured");
+    BASE64
+        .decode(encoded.trim())
+        .expect("VAPID_PRIVATE_KEY_BASE64 must be valid base64")
+}
 
 #[tokio::main]
 async fn main() {
@@ -45,13 +62,19 @@ async fn main() {
     let delivery_preferences = PostgresDeliveryPreferenceRepository::new(pool.clone());
     let rate_limiter = PostgresRateLimiter::new(pool);
 
-    // Mock/sandbox adapters: real vendor credentials are not available yet
-    // (prompt 08). Endpoint validation and provider-error mapping are real;
-    // only the actual network call is simulated.
+    // WhatsApp/SMS/Email are mock/sandbox adapters: real vendor credentials
+    // are not available yet (prompt 08). Endpoint validation and
+    // provider-error mapping are real; only the actual network call is
+    // simulated. Push is real (docs/OPEN_QUESTIONS.md: unlike those three,
+    // no provider choice is pending for Web Push).
     let mut registry = ChannelRegistry::new();
     registry.register(Arc::new(WhatsAppChannel));
     registry.register(Arc::new(SmsChannel));
     registry.register(Arc::new(EmailChannel));
+    registry.register(Arc::new(WebPushChannel::new(
+        vapid_private_key_pem(),
+        std::env::var("VAPID_SUBJECT").expect("VAPID_SUBJECT must be configured"),
+    )));
 
     // Runs the first cleanup pass immediately on startup rather than waiting
     // a full interval, matching how the poll loop below does its first

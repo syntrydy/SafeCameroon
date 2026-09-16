@@ -16,6 +16,7 @@ license = "UNLICENSED"
 [workspace.dependencies]
 async-trait = "0.1"
 aws-credential-types = "1"
+base64 = "0.22"
 # Pinned exactly: 1.4+ raises its own MSRV above this workspace's
 # rust-version (1.85); 1.3.6 is the newest release that still satisfies it.
 aws-sigv4 = "=1.3.6"
@@ -34,3 +35,8 @@ tower-http = { version = "0.6", features = ["trace", "request-id", "cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+# default-features = false: skip the bundled isahc/hyper HTTP clients (the
+# crate's `clients::request_builder` module is designed to be consumed by
+# any client) so Web Push sends reuse this workspace's existing reqwest
+# client instead of adding a second HTTP stack.
+web-push = { version = "0.11", default-features = false }

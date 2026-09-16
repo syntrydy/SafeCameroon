@@ -7,7 +7,8 @@
 use core::fmt;
 
 use crate::{
-    Alert, CaseEventType, ConsumerId, IncidentType, Severity, SubscriptionId, TargetGeography,
+    Alert, AlertVisibility, CaseEventType, ConsumerId, IncidentType, Severity, SubscriptionId,
+    TargetGeography,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -118,6 +119,13 @@ pub enum SubscriptionRule {
     },
     EventType(Vec<CaseEventType>),
     Geography(GeoArea),
+    /// Restricts a subscription to alerts issued at one of these
+    /// visibilities. Added specifically so a self-service consumer (e.g. an
+    /// anonymous citizen subscription) can be scoped to broad-audience
+    /// alerts only, server-side and non-negotiable by the caller -- never
+    /// as a reviewer-facing option today, though nothing stops one being
+    /// added later.
+    Visibility(Vec<AlertVisibility>),
 }
 
 /// One rule's contribution to a [`MatchDecision`], carrying enough detail to
@@ -152,6 +160,9 @@ impl fmt::Display for MatchReason {
                     "geography: target intersects {} - {verdict}",
                     area.as_str()
                 )
+            }
+            SubscriptionRule::Visibility(values) => {
+                write!(f, "visibility: expected one of {values:?} - {verdict}")
             }
         }
     }
@@ -253,6 +264,7 @@ fn evaluate_rule(rule: &SubscriptionRule, alert: &Alert) -> MatchReason {
         }
         SubscriptionRule::EventType(values) => values.contains(&alert.trigger()),
         SubscriptionRule::Geography(area) => area.matches_target(alert.target_geography()),
+        SubscriptionRule::Visibility(values) => values.contains(&alert.visibility()),
     };
     MatchReason {
         rule: rule.clone(),
@@ -491,6 +503,29 @@ mod tests {
             let subscription = subscription(vec![SubscriptionRule::Geography(
                 GeoArea::new(area).unwrap(),
             )]);
+            assert_eq!(
+                evaluate_subscription(&subscription, &alert).matched,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn decision_table_visibility_rule() {
+        let alert = community_alert(IncidentType::MissingChild, Severity::High, "Douala");
+        for (values, expected) in [
+            (vec![AlertVisibility::Community], true),
+            (
+                vec![AlertVisibility::Community, AlertVisibility::Public],
+                true,
+            ),
+            (vec![AlertVisibility::Public], false),
+            (
+                vec![AlertVisibility::Internal, AlertVisibility::Partner],
+                false,
+            ),
+        ] {
+            let subscription = subscription(vec![SubscriptionRule::Visibility(values)]);
             assert_eq!(
                 evaluate_subscription(&subscription, &alert).matched,
                 expected
