@@ -1,5 +1,5 @@
 import { isPermanentFailure } from "../api/client";
-import { submitReport, uploadPhoto, type PhotoContentType } from "../api/reports";
+import { submitReport, uploadPhoto, type IncidentType, type PhotoContentType } from "../api/reports";
 import { deletePendingReport, listPendingReports, putPendingReport, type PendingReport } from "./db";
 import { addReceipt } from "./receipts";
 
@@ -27,7 +27,7 @@ async function toPendingPhoto(
 }
 
 async function send(report: PendingReport): Promise<string> {
-  const result = await submitReport(report.content, report.id);
+  const result = await submitReport(report.content, report.id, report.incidentType);
   if (report.photo) {
     try {
       const blob = new Blob([report.photo.data], { type: report.photo.contentType });
@@ -48,11 +48,13 @@ async function send(report: PendingReport): Promise<string> {
  * retrying identical content can never succeed. */
 export async function submitOrQueue(
   content: string,
+  incidentType?: IncidentType,
   photo?: NewReportPhoto,
 ): Promise<SubmitOutcome> {
   const pending: PendingReport = {
     id: generateId(),
     content,
+    incidentType,
     photo: await toPendingPhoto(photo),
     createdAt: Date.now(),
     attempts: 0,

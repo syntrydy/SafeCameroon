@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ReportId;
+use crate::{IncidentType, ReportId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -40,6 +40,13 @@ pub struct AnonymousReport {
     pub id: ReportId,
     pub source_channel: ReportSourceChannel,
     pub raw_content: String,
+    /// The reporter's own guess at what kind of incident this is, if the
+    /// intake UI asked. Never authoritative: a reviewer still explicitly
+    /// chooses the `IncidentType` when creating a case from this report
+    /// (`case_workflow::create_case_from_report`), same as an AI extraction
+    /// suggestion (CLAUDE.md "AI integration" -- untrusted until an
+    /// application-layer decision confirms it).
+    pub reported_incident_type: Option<IncidentType>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

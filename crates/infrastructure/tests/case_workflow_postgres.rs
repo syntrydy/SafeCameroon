@@ -48,7 +48,7 @@ async fn test_pool() -> PgPool {
 async fn seed_report(pool: &PgPool) -> Uuid {
     let repository = PostgresReportRepository::new(pool.clone());
     let submission =
-        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None, None).unwrap();
     repository.submit_anonymous(&submission).await.unwrap();
     submission.report.id.as_uuid()
 }

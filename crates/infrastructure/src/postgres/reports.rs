@@ -1,5 +1,5 @@
 use safe_cameroon_application::{AnonymousReportSubmission, report_submitted_event_payload};
-use safe_cameroon_domain::{ReportId, ReportSourceChannel, ReportStatus};
+use safe_cameroon_domain::{IncidentType, ReportId, ReportSourceChannel, ReportStatus};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -18,6 +18,7 @@ pub struct ReportSummary {
     /// See `AuditEventRecord::occurred_at` (`postgres/audit_events.rs`) for
     /// why this stays a plain `String` rather than a decoded date/time type.
     pub received_at: String,
+    pub reported_incident_type: Option<IncidentType>,
 }
 
 #[derive(Clone)]
@@ -64,9 +65,9 @@ impl PostgresReportRepository {
         report_id: ReportId,
     ) -> Result<Option<ReportSummary>, sqlx::Error> {
         #[allow(clippy::type_complexity)]
-        let row: Option<(Uuid, String, String, String, String)> = sqlx::query_as(
+        let row: Option<(Uuid, String, String, String, String, Option<String>)> = sqlx::query_as(
             r#"
-            SELECT id, source_channel::text, status::text, raw_content, received_at::text
+            SELECT id, source_channel::text, status::text, raw_content, received_at::text, reported_incident_type::text
             FROM reports
             WHERE id = $1
             "#,
@@ -76,15 +77,24 @@ impl PostgresReportRepository {
         .await?;
 
         Ok(row.map(
-            |(id, source_channel, status, raw_content, received_at)| ReportSummary {
-                id,
-                source_channel: ReportSourceChannel::from_database_value(&source_channel).expect(
-                    "reports.source_channel is constrained by the report_source_channel enum",
-                ),
-                status: ReportStatus::from_database_value(&status)
-                    .expect("reports.status is constrained by the report_status enum"),
-                raw_content,
-                received_at,
+            |(id, source_channel, status, raw_content, received_at, reported_incident_type)| {
+                ReportSummary {
+                    id,
+                    source_channel: ReportSourceChannel::from_database_value(&source_channel)
+                        .expect(
+                            "reports.source_channel is constrained by the report_source_channel enum",
+                        ),
+                    status: ReportStatus::from_database_value(&status)
+                        .expect("reports.status is constrained by the report_status enum"),
+                    raw_content,
+                    received_at,
+                    reported_incident_type: reported_incident_type
+                        .as_deref()
+                        .map(|value| {
+                            IncidentType::from_database_value(value)
+                                .expect("reports.reported_incident_type is constrained by the incident_type enum")
+                        }),
+                }
             },
         ))
     }
@@ -100,9 +110,9 @@ impl PostgresReportRepository {
         offset: i64,
     ) -> Result<Vec<ReportSummary>, sqlx::Error> {
         #[allow(clippy::type_complexity)]
-        let rows: Vec<(Uuid, String, String, String, String)> = sqlx::query_as(
+        let rows: Vec<(Uuid, String, String, String, String, Option<String>)> = sqlx::query_as(
             r#"
-            SELECT id, source_channel::text, status::text, raw_content, received_at::text
+            SELECT id, source_channel::text, status::text, raw_content, received_at::text, reported_incident_type::text
             FROM reports
             WHERE ($1::report_status IS NULL OR status = $1::report_status)
             ORDER BY received_at DESC
@@ -118,16 +128,24 @@ impl PostgresReportRepository {
         Ok(rows
             .into_iter()
             .map(
-                |(id, source_channel, status, raw_content, received_at)| ReportSummary {
-                    id,
-                    source_channel: ReportSourceChannel::from_database_value(&source_channel)
-                        .expect(
-                            "reports.source_channel is constrained by the report_source_channel enum",
-                        ),
-                    status: ReportStatus::from_database_value(&status)
-                        .expect("reports.status is constrained by the report_status enum"),
-                    raw_content,
-                    received_at,
+                |(id, source_channel, status, raw_content, received_at, reported_incident_type)| {
+                    ReportSummary {
+                        id,
+                        source_channel: ReportSourceChannel::from_database_value(&source_channel)
+                            .expect(
+                                "reports.source_channel is constrained by the report_source_channel enum",
+                            ),
+                        status: ReportStatus::from_database_value(&status)
+                            .expect("reports.status is constrained by the report_status enum"),
+                        raw_content,
+                        received_at,
+                        reported_incident_type: reported_incident_type
+                            .as_deref()
+                            .map(|value| {
+                                IncidentType::from_database_value(value)
+                                    .expect("reports.reported_incident_type is constrained by the incident_type enum")
+                            }),
+                    }
                 },
             )
             .collect())
@@ -140,8 +158,8 @@ async fn insert_report(
 ) -> Result<Option<Uuid>, sqlx::Error> {
     sqlx::query(
         r#"
-        INSERT INTO reports (id, source_channel, raw_content, follow_up_token_hash, idempotency_key_hash)
-        VALUES ($1, $2::report_source_channel, $3, $4, $5)
+        INSERT INTO reports (id, source_channel, raw_content, follow_up_token_hash, idempotency_key_hash, reported_incident_type)
+        VALUES ($1, $2::report_source_channel, $3, $4, $5, $6::incident_type)
         ON CONFLICT (idempotency_key_hash) WHERE idempotency_key_hash IS NOT NULL DO NOTHING
         "#,
     )
@@ -150,6 +168,12 @@ async fn insert_report(
     .bind(&submission.report.raw_content)
     .bind(&submission.reference_code_hash)
     .bind(&submission.idempotency_key_hash)
+    .bind(
+        submission
+            .report
+            .reported_incident_type
+            .map(IncidentType::as_database_value),
+    )
     .execute(&mut **transaction)
     .await?;
     if submission.idempotency_key_hash.is_some() {

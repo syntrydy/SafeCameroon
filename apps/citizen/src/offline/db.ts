@@ -1,4 +1,4 @@
-import type { PhotoContentType } from "../api/reports";
+import type { IncidentType, PhotoContentType } from "../api/reports";
 
 const DB_NAME = "safecameroon-citizen";
 const DB_VERSION = 1;
@@ -10,6 +10,7 @@ export interface PendingReport {
    * flaky connection) is never created twice. */
   id: string;
   content: string;
+  incidentType?: IncidentType;
   // Stored as raw bytes rather than a Blob: broadly structured-clone-safe
   // across IndexedDB implementations (including fake-indexeddb in tests),
   // where native Blob support is less consistent.

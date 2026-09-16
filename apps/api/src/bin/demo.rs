@@ -84,6 +84,7 @@ async fn main() {
         report_content.to_owned(),
         Uuid::new_v4(),
         None,
+        Some(IncidentType::MissingChild),
     )
     .expect("report content is valid");
     let report_id = submission.report.id;

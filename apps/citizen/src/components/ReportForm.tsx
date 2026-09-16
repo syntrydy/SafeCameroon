@@ -1,12 +1,32 @@
 import { useMemo, useRef, useState } from "preact/hooks";
 
-import type { PhotoContentType } from "../api/reports";
+import type { IncidentType, PhotoContentType } from "../api/reports";
 import { MAX_REPORT_CONTENT_CHARS, validateReportContent } from "../domain/reportValidation";
 
 const ACCEPTED_PHOTO_TYPES: Record<string, PhotoContentType> = {
   "image/jpeg": "image/jpeg",
   "image/png": "image/png",
   "image/webp": "image/webp",
+};
+
+const INCIDENT_TYPE_OPTIONS: { value: IncidentType; label: string }[] = [
+  { value: "MISSING_CHILD", label: "Missing child" },
+  { value: "OTHER_PROTECTION_INCIDENT", label: "Other incident" },
+];
+
+const CONTENT_GUIDANCE: Record<IncidentType, { helper: string; placeholder: string }> = {
+  MISSING_CHILD: {
+    helper:
+      "Describe the child and the situation: name, age, what they look like, where and when they were last seen. Every detail helps.",
+    placeholder:
+      "Example: My 8-year-old daughter Amina has not returned from school. She was last seen near Carrefour Bonamoussadi around 3pm today, wearing a blue school uniform...",
+  },
+  OTHER_PROTECTION_INCIDENT: {
+    helper:
+      "Describe what happened: who is involved, what you saw, and where and when it happened. Every detail helps.",
+    placeholder:
+      "Example: I saw a child being physically abused near the Bonamoussadi market around 5pm today...",
+  },
 };
 
 export interface ReportFormPhoto {
@@ -18,10 +38,11 @@ export interface ReportFormPhoto {
 interface ReportFormProps {
   submitting: boolean;
   errorMessage: string | null;
-  onSubmit: (content: string, photo?: ReportFormPhoto) => void;
+  onSubmit: (content: string, incidentType: IncidentType, photo?: ReportFormPhoto) => void;
 }
 
 export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormProps) {
+  const [incidentType, setIncidentType] = useState<IncidentType>("MISSING_CHILD");
   const [content, setContent] = useState("");
   const [photo, setPhoto] = useState<ReportFormPhoto | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -30,6 +51,7 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
 
   const validationError = useMemo(() => validateReportContent(content), [content]);
   const charCount = [...content.trim()].length;
+  const guidance = CONTENT_GUIDANCE[incidentType];
 
   function handlePhotoChange(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
@@ -65,18 +87,34 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
     if (validationError) {
       return;
     }
-    onSubmit(content.trim(), photo ?? undefined);
+    onSubmit(content.trim(), incidentType, photo ?? undefined);
   }
 
   return (
     <form onSubmit={handleSubmit} noValidate>
-      <label htmlFor="report-content" className="block text-sm font-medium text-slate-700">
+      <span className="block text-sm font-medium text-slate-700">What kind of report is this?</span>
+      <div className="mt-2 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+        {INCIDENT_TYPE_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setIncidentType(option.value)}
+            aria-pressed={incidentType === option.value}
+            className={`rounded-lg py-2 text-sm font-medium transition ${
+              incidentType === option.value
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      <label htmlFor="report-content" className="mt-6 block text-sm font-medium text-slate-700">
         What is happening?
       </label>
-      <p className="mt-1 text-sm text-slate-500">
-        Describe the child and the situation: name, age, what they look like, where and when
-        they were last seen. Every detail helps.
-      </p>
+      <p className="mt-1 text-sm text-slate-500">{guidance.helper}</p>
       <textarea
         id="report-content"
         value={content}
@@ -84,7 +122,7 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
         onBlur={() => setTouched(true)}
         rows={7}
         autoFocus
-        placeholder="Example: My 8-year-old daughter Amina has not returned from school. She was last seen near Carrefour Bonamoussadi around 3pm today, wearing a blue school uniform..."
+        placeholder={guidance.placeholder}
         className="mt-3 w-full rounded-xl border border-slate-300 px-4 py-3 text-base text-slate-900 shadow-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/30"
       />
       <div className="mt-1 flex items-center justify-between text-xs text-slate-400">

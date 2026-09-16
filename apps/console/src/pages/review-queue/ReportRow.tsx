@@ -26,7 +26,9 @@ interface ReportRowProps {
 
 export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportRowProps) {
   const [expanded, setExpanded] = useState(false);
-  const [incidentType, setIncidentType] = useState<IncidentType>("MISSING_CHILD");
+  const [incidentType, setIncidentType] = useState<IncidentType>(
+    report.reported_incident_type ?? "MISSING_CHILD",
+  );
   const [caseId, setCaseId] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +76,14 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
         )}
 
         <ExtractionPanel token={token} reportId={report.report_id} />
+
+        {report.reported_incident_type && (
+          <p className="mt-2 text-xs text-slate-400">
+            Reporter suggested:{" "}
+            {INCIDENT_TYPES.find((option) => option.value === report.reported_incident_type)
+              ?.label ?? report.reported_incident_type}
+          </p>
+        )}
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <select
