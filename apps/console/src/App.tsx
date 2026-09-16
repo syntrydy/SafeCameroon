@@ -7,6 +7,7 @@ import { AlertPreview } from "./pages/alerts/AlertPreview";
 import { CaseDetail } from "./pages/case-detail/CaseDetail";
 import { Login } from "./pages/Login";
 import { ReviewQueue } from "./pages/review-queue/ReviewQueue";
+import { Subscriptions } from "./pages/subscriptions/Subscriptions";
 
 function ProtectedLayout() {
   return (
@@ -27,6 +28,7 @@ export function App() {
         <Route path="/cases/:id" element={<CaseDetail />} />
         <Route path="/alerts" element={<AlertList />} />
         <Route path="/alerts/:id" element={<AlertPreview />} />
+        <Route path="/subscriptions" element={<Subscriptions />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
