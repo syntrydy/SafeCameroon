@@ -41,3 +41,4 @@ strong_id!(DeliveryEventId);
 strong_id!(DeliveryAttemptId);
 strong_id!(AttachmentId);
 strong_id!(OrganizationId);
+strong_id!(ReportExtractionId);

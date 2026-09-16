@@ -33,6 +33,16 @@ origins (e.g. the deployed console's URL) permitted to call the API from a
 browser; unset or empty allows none, since the API and console are always
 served from different origins (docs/DEPLOYMENT.md).
 
+`POST /v1/reports/{id}/extractions` (reviewer-only) asks an AI provider
+(OpenRouter, `crates/infrastructure/src/ai/openrouter.rs`) to suggest
+structured candidate fields (description, age, time, place, ...) from a
+report's raw text -- always an unverified suggestion a reviewer reads in
+the console, never applied to a report or case automatically (docs/AI.md,
+CLAUDE.md "AI integration"). Optional: leave `OPENROUTER_API_KEY` unset to
+disable the feature (the endpoint then fails clearly rather than the API
+refusing to boot), since what data may go to an external AI provider is
+itself an open question (docs/OPEN_QUESTIONS.md).
+
 The worker polls for `QUEUED`/`RETRYING` deliveries and dispatches them
 through mock/sandbox `WhatsAppChannel`/`SmsChannel`/`EmailChannel` adapters
 (prompt 08; stdout only, no vendor SDK) until real provider credentials

@@ -7,6 +7,7 @@ pub mod cases;
 pub mod consumers;
 pub mod deliveries;
 pub mod delivery_preferences;
+pub mod extractions;
 pub mod organizations;
 pub mod outbox;
 pub mod rate_limits;
@@ -24,6 +25,7 @@ pub use cases::{
 pub use consumers::PostgresConsumerRepository;
 pub use deliveries::{DeliveryTransitionOutcome, PostgresDeliveryRepository};
 pub use delivery_preferences::PostgresDeliveryPreferenceRepository;
+pub use extractions::PostgresReportExtractionRepository;
 pub use organizations::{MembershipRecord, PostgresOrganizationRepository};
 pub use outbox::{ClaimedOutboxEvent, PostgresOutboxRepository};
 pub use rate_limits::PostgresRateLimiter;

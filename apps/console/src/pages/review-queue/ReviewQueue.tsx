@@ -116,6 +116,7 @@ export function ReviewQueue() {
               <ReportRow
                 key={report.report_id}
                 report={report}
+                token={token}
                 onCreateCase={handleCreateCase}
                 onLinkToCase={handleLinkToCase}
               />
