@@ -32,9 +32,10 @@ export function GoogleSignInButton({ onCredential }: GoogleSignInButtonProps) {
       });
       window.google.accounts.id.renderButton(containerRef.current, {
         type: "standard",
-        theme: "outline",
+        theme: "filled_black",
         size: "large",
         text: "signin_with",
+        shape: "pill",
       });
       return true;
     };
