@@ -8,8 +8,8 @@
 
 use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_domain::{
-    CaseEventType, Comparison, ConsumerId, GeoArea, IncidentType, Severity, Subscription,
-    SubscriptionId, SubscriptionRule,
+    AlertVisibility, CaseEventType, Comparison, ConsumerId, GeoArea, IncidentType, Severity,
+    Subscription, SubscriptionId, SubscriptionRule,
 };
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -33,6 +33,10 @@ fn rule_to_json(rule: &SubscriptionRule) -> Value {
         SubscriptionRule::Geography(area) => json!({
             "rule": "GEOGRAPHY",
             "area": area.as_str(),
+        }),
+        SubscriptionRule::Visibility(values) => json!({
+            "rule": "VISIBILITY",
+            "values": values,
         }),
     }
 }
@@ -73,6 +77,10 @@ fn rule_from_json(value: &Value) -> SubscriptionRule {
                     .expect("subscriptions.rules GEOGRAPHY entries carry an \"area\" string"),
             )
             .expect("subscriptions.rules GEOGRAPHY area is written non-blank by this repository"),
+        ),
+        "VISIBILITY" => SubscriptionRule::Visibility(
+            serde_json::from_value::<Vec<AlertVisibility>>(value["values"].clone())
+                .expect("subscriptions.rules VISIBILITY values are written by this repository"),
         ),
         other => panic!("unknown subscription rule tag {other:?} in subscriptions.rules"),
     }
@@ -220,5 +228,18 @@ impl PostgresSubscriptionRepository {
 
         transaction.commit().await?;
         Ok(SubscriptionUpdateOutcome::Updated)
+    }
+
+    /// Used only by self-service cancellation today
+    /// (`apps/api/src/citizen_subscriptions.rs`) -- reviewer-managed
+    /// subscriptions have no cancel/delete endpoint yet, matching
+    /// `create`'s own "not yet audited" precedent rather than adding an
+    /// audit event to a method no caller needs one from.
+    pub async fn delete(&self, id: SubscriptionId) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM subscriptions WHERE id = $1")
+            .bind(id.as_uuid())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 }

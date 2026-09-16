@@ -27,6 +27,13 @@ pub enum ChannelType {
     WhatsApp,
     Sms,
     Email,
+    /// Web Push (VAPID) to a browser's own push subscription -- the only
+    /// channel with a real (non-mock) adapter and the only one a citizen can
+    /// self-subscribe to, since ownership is inherent to the subscription
+    /// itself (docs/OPEN_QUESTIONS.md: WhatsApp/SMS providers, and the
+    /// verification step a real phone/WhatsApp number would need, are still
+    /// undecided).
+    Push,
 }
 
 impl ChannelType {
@@ -35,6 +42,7 @@ impl ChannelType {
             Self::WhatsApp => "WHATSAPP",
             Self::Sms => "SMS",
             Self::Email => "EMAIL",
+            Self::Push => "PUSH",
         }
     }
 
@@ -43,6 +51,7 @@ impl ChannelType {
             "WHATSAPP" => Some(Self::WhatsApp),
             "SMS" => Some(Self::Sms),
             "EMAIL" => Some(Self::Email),
+            "PUSH" => Some(Self::Push),
             _ => None,
         }
     }

@@ -19,6 +19,7 @@ use async_trait::async_trait;
 pub enum RateLimitScope {
     AnonymousReportSubmission,
     ReviewerLoginAttempt,
+    CitizenSubscriptionCreation,
 }
 
 impl RateLimitScope {
@@ -26,6 +27,7 @@ impl RateLimitScope {
         match self {
             Self::AnonymousReportSubmission => "ANONYMOUS_REPORT_SUBMISSION",
             Self::ReviewerLoginAttempt => "REVIEWER_LOGIN_ATTEMPT",
+            Self::CitizenSubscriptionCreation => "CITIZEN_SUBSCRIPTION_CREATION",
         }
     }
 
@@ -38,6 +40,7 @@ impl RateLimitScope {
         match self {
             Self::AnonymousReportSubmission => 10,
             Self::ReviewerLoginAttempt => 5,
+            Self::CitizenSubscriptionCreation => 10,
         }
     }
 
@@ -45,6 +48,7 @@ impl RateLimitScope {
         match self {
             Self::AnonymousReportSubmission => Duration::from_secs(60 * 60),
             Self::ReviewerLoginAttempt => Duration::from_secs(15 * 60),
+            Self::CitizenSubscriptionCreation => Duration::from_secs(60 * 60),
         }
     }
 }

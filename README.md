@@ -11,7 +11,7 @@ use case is missing children.
 - `apps/api`: Axum HTTP API.
 - `apps/worker`: asynchronous worker that polls and dispatches deliveries.
 - `apps/console`: TypeScript/React organization console (reviewer/admin, Google-authenticated).
-- `apps/citizen`: public, offline-capable Preact app for anonymously reporting a missing child (no login).
+- `apps/citizen`: public, offline-capable Preact app for anonymously reporting a missing child and self-subscribing to alerts (no login).
 
 ## Local checks
 
@@ -25,7 +25,7 @@ directly and has no `.env` at all; a missing file is not an error).
 cargo test --workspace
 DATABASE_URL=postgres://... WEBHOOK_SHARED_SECRET=... ATTACHMENT_STORAGE_SECRET=... REVIEWER_SESSION_SECRET=... GOOGLE_OAUTH_CLIENT_ID=... CORS_ALLOWED_ORIGINS=http://localhost:5173 cargo run -p safe-cameroon-api
 curl http://localhost:3000/health
-DATABASE_URL=postgres://... cargo run -p safe-cameroon-worker
+DATABASE_URL=postgres://... VAPID_PRIVATE_KEY_BASE64=... VAPID_SUBJECT=mailto:you@example.com cargo run -p safe-cameroon-worker
 ```
 
 `CORS_ALLOWED_ORIGINS` is a comma-separated allow-list of exact browser
@@ -36,7 +36,10 @@ served from different origins (docs/DEPLOYMENT.md).
 The worker polls for `QUEUED`/`RETRYING` deliveries and dispatches them
 through mock/sandbox `WhatsAppChannel`/`SmsChannel`/`EmailChannel` adapters
 (prompt 08; stdout only, no vendor SDK) until real provider credentials
-exist. The API exposes `POST /v1/webhooks/{channel}/{provider}`
+exist, plus a real `WebPushChannel` (VAPID) -- the only channel a citizen
+can self-subscribe to via `apps/citizen`, since a browser's own push
+subscription is itself proof of ownership, unlike a phone number
+(docs/OPEN_QUESTIONS.md). The API exposes `POST /v1/webhooks/{channel}/{provider}`
 (docs/API.md section 7) for provider delivery-status callbacks; today the
 only registered provider is `sandbox`, verified with an HMAC-SHA256
 signature over `WEBHOOK_SHARED_SECRET` (matches every mock channel adapter's

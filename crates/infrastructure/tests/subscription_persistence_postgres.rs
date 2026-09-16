@@ -2,8 +2,9 @@ use std::env;
 
 use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_domain::{
-    ChannelEndpoint, ChannelType, Comparison, ConsumerId, DeliveryPreference, DeliveryStrategy,
-    GeoArea, IncidentType, Severity, Subscription, SubscriptionId, SubscriptionRule,
+    AlertVisibility, ChannelEndpoint, ChannelType, Comparison, ConsumerId, DeliveryPreference,
+    DeliveryStrategy, GeoArea, IncidentType, Severity, Subscription, SubscriptionId,
+    SubscriptionRule,
 };
 use safe_cameroon_infrastructure::postgres::{
     PostgresDeliveryPreferenceRepository, PostgresSubscriptionRepository, SubscriptionUpdateOutcome,
@@ -61,6 +62,7 @@ async fn a_subscription_with_every_rule_type_round_trips_through_postgres() {
             },
             SubscriptionRule::EventType(vec![safe_cameroon_domain::CaseEventType::CaseVerified]),
             SubscriptionRule::Geography(GeoArea::new("Douala - Bonamoussadi").unwrap()),
+            SubscriptionRule::Visibility(vec![AlertVisibility::Community, AlertVisibility::Public]),
         ],
     )
     .unwrap();

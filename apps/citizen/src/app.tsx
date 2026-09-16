@@ -1,10 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
 
+import { AlertsPanel } from "./components/AlertsPanel";
 import { ConfirmationCard } from "./components/ConfirmationCard";
 import { ReceiptsList } from "./components/ReceiptsList";
 import { ReportForm, type ReportFormPhoto } from "./components/ReportForm";
 import { ShieldMark } from "./components/ShieldMark";
 import { StatusBanner } from "./components/StatusBanner";
+import { TabSwitcher, type Tab } from "./components/TabSwitcher";
 import { countPendingReports, startBackgroundSync, submitOrQueue } from "./offline/queue";
 import { listReceipts, type Receipt } from "./offline/receipts";
 import { useOnlineStatus } from "./offline/useOnlineStatus";
@@ -16,6 +18,7 @@ type View =
 
 export function App() {
   const online = useOnlineStatus();
+  const [tab, setTab] = useState<Tab>("report");
   const [view, setView] = useState<View>({ kind: "form" });
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -68,39 +71,52 @@ export function App() {
           <span className="text-lg font-semibold text-slate-900">SafeCameroon</span>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5 sm:p-8">
-          <StatusBanner online={online} pendingCount={pendingCount} />
+        <TabSwitcher active={tab} onChange={setTab} />
 
-          {view.kind === "form" && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5 sm:p-8">
+          {tab === "report" && (
             <>
-              <h1 className="text-xl font-semibold text-slate-900">Report a missing child</h1>
-              <p className="mt-1 text-sm text-slate-500">
-                No account needed. Your identity is never recorded.
-              </p>
-              <div className="mt-6">
-                <ReportForm
-                  submitting={submitting}
-                  errorMessage={errorMessage}
-                  onSubmit={(content, photo) => void handleSubmit(content, photo)}
+              <StatusBanner online={online} pendingCount={pendingCount} />
+
+              {view.kind === "form" && (
+                <>
+                  <h1 className="text-xl font-semibold text-slate-900">
+                    Report a missing child
+                  </h1>
+                  <p className="mt-1 text-sm text-slate-500">
+                    No account needed. Your identity is never recorded.
+                  </p>
+                  <div className="mt-6">
+                    <ReportForm
+                      submitting={submitting}
+                      errorMessage={errorMessage}
+                      onSubmit={(content, photo) => void handleSubmit(content, photo)}
+                    />
+                  </div>
+                </>
+              )}
+
+              {view.kind === "sent" && (
+                <ConfirmationCard
+                  kind="sent"
+                  referenceCode={view.referenceCode}
+                  onReportAnother={() => setView({ kind: "form" })}
                 />
-              </div>
+              )}
+
+              {view.kind === "queued" && (
+                <ConfirmationCard
+                  kind="queued"
+                  onReportAnother={() => setView({ kind: "form" })}
+                />
+              )}
             </>
           )}
 
-          {view.kind === "sent" && (
-            <ConfirmationCard
-              kind="sent"
-              referenceCode={view.referenceCode}
-              onReportAnother={() => setView({ kind: "form" })}
-            />
-          )}
-
-          {view.kind === "queued" && (
-            <ConfirmationCard kind="queued" onReportAnother={() => setView({ kind: "form" })} />
-          )}
+          {tab === "alerts" && <AlertsPanel />}
         </div>
 
-        <ReceiptsList receipts={receipts} />
+        {tab === "report" && <ReceiptsList receipts={receipts} />}
       </div>
     </div>
   );

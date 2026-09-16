@@ -18,9 +18,9 @@ use axum::{
 };
 use safe_cameroon_application::authorization::{Capability, authorize};
 use safe_cameroon_domain::{
-    CaseEventType, ChannelEndpoint, ChannelType, Comparison, ConsumerId, DeliveryPreference,
-    DeliveryPreferenceError, DeliveryStrategy, EmptySubscriptionRules, GeoArea, IncidentType,
-    Severity, Subscription, SubscriptionId, SubscriptionRule,
+    AlertVisibility, CaseEventType, ChannelEndpoint, ChannelType, Comparison, ConsumerId,
+    DeliveryPreference, DeliveryPreferenceError, DeliveryStrategy, EmptySubscriptionRules, GeoArea,
+    IncidentType, Severity, Subscription, SubscriptionId, SubscriptionRule,
 };
 use safe_cameroon_infrastructure::postgres::SubscriptionUpdateOutcome;
 use serde::{Deserialize, Serialize};
@@ -58,6 +58,7 @@ pub enum SubscriptionRuleInput {
     Severity { operator: String, value: Severity },
     EventType { values: Vec<CaseEventType> },
     Geography { area: String },
+    Visibility { values: Vec<AlertVisibility> },
 }
 
 fn to_domain_rule(
@@ -86,6 +87,7 @@ fn to_domain_rule(
                 message: "area cannot be blank.",
                 request_id,
             }),
+        SubscriptionRuleInput::Visibility { values } => Ok(SubscriptionRule::Visibility(values)),
     }
 }
 
@@ -105,6 +107,9 @@ pub enum SubscriptionRuleOutput {
     Geography {
         area: String,
     },
+    Visibility {
+        values: Vec<AlertVisibility>,
+    },
 }
 
 fn rule_output(rule: &SubscriptionRule) -> SubscriptionRuleOutput {
@@ -121,6 +126,9 @@ fn rule_output(rule: &SubscriptionRule) -> SubscriptionRuleOutput {
         },
         SubscriptionRule::Geography(area) => SubscriptionRuleOutput::Geography {
             area: area.as_str().to_owned(),
+        },
+        SubscriptionRule::Visibility(values) => SubscriptionRuleOutput::Visibility {
+            values: values.clone(),
         },
     }
 }

@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+base64.workspace = true
 dotenvy.workspace = true
 safe-cameroon-application = { path = "../../crates/application" }
 safe-cameroon-domain = { path = "../../crates/domain" }
