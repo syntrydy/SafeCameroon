@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 
 import type { AlertSubscriptionRules, IncidentType, Severity } from "../api/subscriptions";
+import { CAMEROON_TOWNS } from "../domain/cameroonTowns";
 
 const INCIDENT_TYPE_OPTIONS: { value: IncidentType; label: string }[] = [
   { value: "MISSING_CHILD", label: "Missing child" },
@@ -114,12 +115,18 @@ export function AlertRulesForm({
         <input
           id="geography"
           type="text"
+          list="cameroon-towns"
           value={geography}
           onInput={(event) => setGeography((event.target as HTMLInputElement).value)}
           onBlur={() => setTouched(true)}
           placeholder="Douala"
           className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/30"
         />
+        <datalist id="cameroon-towns">
+          {CAMEROON_TOWNS.map((town) => (
+            <option key={town} value={town} />
+          ))}
+        </datalist>
         {touched && geographyIsBlank && (
           <p className="mt-1 text-sm text-red-600">Please enter an area.</p>
         )}
