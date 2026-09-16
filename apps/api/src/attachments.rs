@@ -13,13 +13,16 @@ use safe_cameroon_application::attachment_workflow::{
     PrepareAttachmentError, prepare_attachment_upload,
 };
 use safe_cameroon_application::authorization::{Capability, authorize};
+use safe_cameroon_application::rate_limit::RateLimitScope;
 use safe_cameroon_domain::{AttachmentContentType, AttachmentError, AttachmentId, ReportId};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::ApiError;
+use crate::rate_limit::enforce_rate_limit;
 use crate::request_id::request_id_from_headers;
 use crate::reviewer::actor_from_headers;
+use crate::source_key::source_key_from_headers;
 use crate::state::AppState;
 
 fn persistence_failed(request_id: Uuid) -> ApiError {
@@ -62,6 +65,14 @@ pub async fn create_attachment(
     Json(request): Json<CreateAttachmentRequest>,
 ) -> Result<(StatusCode, Json<CreateAttachmentResponse>), ApiError> {
     let request_id = request_id_from_headers(&headers);
+    enforce_rate_limit(
+        state.rate_limiter.as_ref(),
+        RateLimitScope::AttachmentUploadRequest,
+        source_key_from_headers(&headers),
+        request_id,
+    )
+    .await?;
+
     let report_id = ReportId::from_uuid(report_id);
 
     if !state
