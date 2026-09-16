@@ -103,6 +103,13 @@ describe("AlertPreview", () => {
     expect(screen.getByText("Active")).toBeInTheDocument();
   });
 
+  it("links to that alert's deliveries", async () => {
+    await loginAndReachAlert();
+
+    const link = screen.getByRole("link", { name: "View deliveries" });
+    expect(link).toHaveAttribute("href", `/alerts/${ALERT_ID}/deliveries`);
+  });
+
   it("cancels an active alert", async () => {
     const user = await loginAndReachAlert();
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 
 import { cancelAlert, getAlert, type Alert } from "../../api/alerts";
 import { ApiError } from "../../api/client";
@@ -113,6 +113,12 @@ export function AlertPreview() {
         <dt className="text-slate-500">Policy</dt>
         <dd className="text-slate-900">
           {alert.policy_id} v{alert.policy_version}
+        </dd>
+        <dt className="text-slate-500">Deliveries</dt>
+        <dd className="text-slate-900">
+          <Link to={`/alerts/${alert.alert_id}/deliveries`} className="underline">
+            View deliveries
+          </Link>
         </dd>
       </dl>
 
