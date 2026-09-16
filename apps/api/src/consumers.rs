@@ -1,15 +1,15 @@
-//! Consumer registration (docs/API.md section 5). A consumer is a receiver
-//! identity subscriptions and deliveries belong to (docs/DOMAIN_MODEL.md
-//! section 9) — reviewer-managed today, matching `subscriptions.rs`'s "not
-//! yet citizen self-service" note, gated by the same
-//! `Capability::ManageSubscriptions` used to manage a consumer's
-//! subscriptions. No audit event, matching the existing precedent that
-//! `PostgresSubscriptionRepository::create` itself has none (only
-//! subscription *updates* are audited).
+//! Consumer registration and listing (docs/API.md section 5). A consumer is
+//! a receiver identity subscriptions and deliveries belong to
+//! (docs/DOMAIN_MODEL.md section 9) — reviewer-managed today, matching
+//! `subscriptions.rs`'s "not yet citizen self-service" note, gated by the
+//! same `Capability::ManageSubscriptions` used to manage a consumer's
+//! subscriptions. No audit event on registration, matching the existing
+//! precedent that `PostgresSubscriptionRepository::create` itself has none
+//! (only subscription *updates* are audited).
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
 };
 use safe_cameroon_application::authorization::{Capability, authorize};
@@ -127,4 +127,47 @@ pub async fn get_consumer(
         .ok_or_else(|| consumer_not_found(request_id))?;
 
     Ok(Json(consumer_response(&consumer)))
+}
+
+const DEFAULT_LIMIT: u32 = 50;
+/// A hard ceiling regardless of what the caller asks for, so a single
+/// request can never force an unbounded scan/response.
+const MAX_LIMIT: u32 = 100;
+
+#[derive(Deserialize)]
+pub struct ListConsumersQuery {
+    consumer_type: Option<ConsumerType>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+}
+
+/// Previously the only way to find a consumer was to already know its id
+/// (from a prior `create` response) — this is a reviewer's first way to
+/// browse registered consumers at all, e.g. before setting up a
+/// subscription for one.
+pub async fn list_consumers(
+    State(state): State<AppState>,
+    Query(query): Query<ListConsumersQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<ConsumerResponse>>, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
+
+    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as i64;
+    let offset = query.offset.unwrap_or(0) as i64;
+
+    let consumers = state
+        .consumers
+        .list(query.consumer_type, limit, offset)
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+
+    Ok(Json(consumers.iter().map(consumer_response).collect()))
 }

@@ -55,6 +55,40 @@ impl PostgresReportRepository {
         Ok(found.is_some())
     }
 
+    /// A reviewer's second way to read a report's content, alongside
+    /// `list` — by id, once they already know it (e.g. from a case's
+    /// `report_ids`), rather than only ever finding it in the general
+    /// listing.
+    pub async fn find_by_id(
+        &self,
+        report_id: ReportId,
+    ) -> Result<Option<ReportSummary>, sqlx::Error> {
+        #[allow(clippy::type_complexity)]
+        let row: Option<(Uuid, String, String, String, String)> = sqlx::query_as(
+            r#"
+            SELECT id, source_channel::text, status::text, raw_content, received_at::text
+            FROM reports
+            WHERE id = $1
+            "#,
+        )
+        .bind(report_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(
+            |(id, source_channel, status, raw_content, received_at)| ReportSummary {
+                id,
+                source_channel: ReportSourceChannel::from_database_value(&source_channel).expect(
+                    "reports.source_channel is constrained by the report_source_channel enum",
+                ),
+                status: ReportStatus::from_database_value(&status)
+                    .expect("reports.status is constrained by the report_status enum"),
+                raw_content,
+                received_at,
+            },
+        ))
+    }
+
     /// Most recently received first (`reports_status_received_at_idx`),
     /// optionally narrowed by status. `limit`/`offset` are taken as given —
     /// the API layer clamps `limit` to a sane maximum before it ever reaches

@@ -1,12 +1,12 @@
 use axum::{
     Json,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
 };
 use safe_cameroon_application::authorization::{Capability, authorize};
 use safe_cameroon_application::rate_limit::RateLimitScope;
 use safe_cameroon_application::{ReportValidationError, prepare_anonymous_report};
-use safe_cameroon_domain::{ReportSourceChannel, ReportStatus};
+use safe_cameroon_domain::{ReportId, ReportSourceChannel, ReportStatus};
 use safe_cameroon_infrastructure::postgres::{ReportSummary, SubmissionResult};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -125,9 +125,9 @@ fn report_summary_response(report: &ReportSummary) -> ReportSummaryResponse {
     }
 }
 
-/// A reviewer's only way to read report content before deciding whether to
-/// open a case (`POST /v1/cases`) — there is still no single-report `GET`,
-/// only this list.
+/// Lists reports before a reviewer has settled on one — `get_report` below
+/// is for reading a single already-known report (e.g. one already linked to
+/// a case) without re-filtering the whole list to find it again.
 pub async fn list_reports(
     State(state): State<AppState>,
     Query(query): Query<ListReportsQuery>,
@@ -163,4 +163,44 @@ pub async fn list_reports(
         })?;
 
     Ok(Json(reports.iter().map(report_summary_response).collect()))
+}
+
+pub async fn get_report(
+    State(state): State<AppState>,
+    Path(report_id): Path<Uuid>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<ReportSummaryResponse>, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    authorize(actor, Capability::ViewCase).map_err(|_| ApiError {
+        status: StatusCode::FORBIDDEN,
+        code: "NOT_AUTHORIZED",
+        message: "Only an identified reviewer may view a report.",
+        request_id,
+    })?;
+
+    let report = state
+        .reports
+        .find_by_id(ReportId::from_uuid(report_id))
+        .await
+        .map_err(|_| ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            code: "REPORT_QUERY_FAILED",
+            message: "The report could not be read. Please try again.",
+            request_id,
+        })?
+        .ok_or(ApiError {
+            status: StatusCode::NOT_FOUND,
+            code: "REPORT_NOT_FOUND",
+            message: "No report exists with the given id.",
+            request_id,
+        })?;
+
+    Ok(Json(report_summary_response(&report)))
 }

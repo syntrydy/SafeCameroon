@@ -199,3 +199,37 @@ async fn list_respects_limit_and_offset() {
     let page2_ids: Vec<Uuid> = page2.iter().map(|report| report.id).collect();
     assert!(page1_ids.iter().all(|id| !page2_ids.contains(id)));
 }
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn find_by_id_returns_the_matching_report() {
+    let pool = test_pool().await;
+    let repository = PostgresReportRepository::new(pool);
+    let submission =
+        prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None).unwrap();
+    repository.submit_anonymous(&submission).await.unwrap();
+
+    let found = repository
+        .find_by_id(submission.report.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.id, submission.report.id.as_uuid());
+    assert_eq!(found.raw_content, "A child is missing.");
+    assert_eq!(found.status, ReportStatus::Received);
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn find_by_id_returns_none_for_an_unknown_report() {
+    let pool = test_pool().await;
+    let repository = PostgresReportRepository::new(pool);
+
+    assert!(
+        repository
+            .find_by_id(safe_cameroon_domain::ReportId::new())
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
