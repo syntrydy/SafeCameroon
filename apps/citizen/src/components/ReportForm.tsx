@@ -1,0 +1,168 @@
+import { useMemo, useRef, useState } from "preact/hooks";
+
+import type { PhotoContentType } from "../api/reports";
+import { MAX_REPORT_CONTENT_CHARS, validateReportContent } from "../domain/reportValidation";
+
+const ACCEPTED_PHOTO_TYPES: Record<string, PhotoContentType> = {
+  "image/jpeg": "image/jpeg",
+  "image/png": "image/png",
+  "image/webp": "image/webp",
+};
+
+export interface ReportFormPhoto {
+  blob: Blob;
+  contentType: PhotoContentType;
+  previewUrl: string;
+}
+
+interface ReportFormProps {
+  submitting: boolean;
+  errorMessage: string | null;
+  onSubmit: (content: string, photo?: ReportFormPhoto) => void;
+}
+
+export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormProps) {
+  const [content, setContent] = useState("");
+  const [photo, setPhoto] = useState<ReportFormPhoto | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [touched, setTouched] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const validationError = useMemo(() => validateReportContent(content), [content]);
+  const charCount = [...content.trim()].length;
+
+  function handlePhotoChange(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+    const contentType = ACCEPTED_PHOTO_TYPES[file.type];
+    if (!contentType) {
+      setPhotoError("Please choose a JPEG, PNG, or WebP photo.");
+      return;
+    }
+    setPhotoError(null);
+    if (photo) {
+      URL.revokeObjectURL(photo.previewUrl);
+    }
+    setPhoto({ blob: file, contentType, previewUrl: URL.createObjectURL(file) });
+  }
+
+  function removePhoto() {
+    if (photo) {
+      URL.revokeObjectURL(photo.previewUrl);
+    }
+    setPhoto(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  function handleSubmit(event: Event) {
+    event.preventDefault();
+    setTouched(true);
+    if (validationError) {
+      return;
+    }
+    onSubmit(content.trim(), photo ?? undefined);
+  }
+
+  return (
+    <form onSubmit={handleSubmit} noValidate>
+      <label htmlFor="report-content" className="block text-sm font-medium text-slate-700">
+        What is happening?
+      </label>
+      <p className="mt-1 text-sm text-slate-500">
+        Describe the child and the situation: name, age, what they look like, where and when
+        they were last seen. Every detail helps.
+      </p>
+      <textarea
+        id="report-content"
+        value={content}
+        onInput={(event) => setContent((event.target as HTMLTextAreaElement).value)}
+        onBlur={() => setTouched(true)}
+        rows={7}
+        autoFocus
+        placeholder="Example: My 8-year-old daughter Amina has not returned from school. She was last seen near Carrefour Bonamoussadi around 3pm today, wearing a blue school uniform..."
+        className="mt-3 w-full rounded-xl border border-slate-300 px-4 py-3 text-base text-slate-900 shadow-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/30"
+      />
+      <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
+        <span>
+          {touched && validationError === "EMPTY" && (
+            <span className="text-red-600">Please describe the situation.</span>
+          )}
+          {touched && validationError === "TOO_LONG" && (
+            <span className="text-red-600">Please shorten this a little.</span>
+          )}
+        </span>
+        <span>
+          {charCount.toLocaleString()} / {MAX_REPORT_CONTENT_CHARS.toLocaleString()}
+        </span>
+      </div>
+
+      <div className="mt-6">
+        <span className="block text-sm font-medium text-slate-700">Photo (optional)</span>
+        <p className="mt-1 text-sm text-slate-500">
+          A recent photo helps a reviewer confirm the report. You can skip this if you don't have
+          one.
+        </p>
+
+        {photo ? (
+          <div className="mt-3 flex items-center gap-3">
+            <img
+              src={photo.previewUrl}
+              alt="Selected"
+              className="h-20 w-20 rounded-lg object-cover"
+            />
+            <button
+              type="button"
+              onClick={removePhoto}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+            >
+              Remove photo
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="mt-3 rounded-lg border border-dashed border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-600 hover:border-emerald-600 hover:text-emerald-700"
+          >
+            Add a photo
+          </button>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          capture="environment"
+          onChange={handlePhotoChange}
+          className="hidden"
+        />
+        {photoError && <p className="mt-2 text-sm text-red-600">{photoError}</p>}
+      </div>
+
+      {errorMessage && (
+        <div
+          role="alert"
+          className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          {errorMessage}
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={submitting}
+        className="mt-6 w-full rounded-xl bg-emerald-700 px-4 py-3.5 text-base font-semibold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {submitting ? "Sending..." : "Send report"}
+      </button>
+
+      <p className="mt-4 text-center text-xs text-slate-400">
+        This report is anonymous. No account or personal information is required.
+      </p>
+    </form>
+  );
+}
