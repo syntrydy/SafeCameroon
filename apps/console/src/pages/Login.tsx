@@ -4,6 +4,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { GoogleSignInButton } from "../auth/GoogleSignInButton";
+import { Footer } from "../components/Footer";
 
 interface LocationState {
   from?: { pathname: string };
@@ -27,6 +28,46 @@ function ShieldMark({ className }: { className?: string }) {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+// Abstract "protection network" motif -- reports flowing in from a
+// community, met by a verified, central response. Deliberately not
+// photographic: this platform handles reports about at-risk people, so no
+// stock imagery of children or victims belongs on the sign-in screen.
+function ProtectionNetworkIllustration({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 200 140" fill="none" aria-hidden="true" className={className}>
+      <line x1="100" y1="70" x2="28" y2="18" stroke="currentColor" strokeWidth="1" strokeOpacity="0.35" />
+      <line x1="100" y1="70" x2="172" y2="18" stroke="currentColor" strokeWidth="1" strokeOpacity="0.35" />
+      <line x1="100" y1="70" x2="18" y2="102" stroke="currentColor" strokeWidth="1" strokeOpacity="0.35" />
+      <line x1="100" y1="70" x2="182" y2="102" stroke="currentColor" strokeWidth="1" strokeOpacity="0.35" />
+      <line x1="100" y1="70" x2="100" y2="132" stroke="currentColor" strokeWidth="1" strokeOpacity="0.35" />
+
+      <circle cx="28" cy="18" r="4" fill="currentColor" fillOpacity="0.55" />
+      <circle cx="172" cy="18" r="4" fill="currentColor" fillOpacity="0.55" />
+      <circle cx="18" cy="102" r="4" fill="currentColor" fillOpacity="0.55" />
+      <circle cx="182" cy="102" r="4" fill="currentColor" fillOpacity="0.55" />
+      <circle cx="100" cy="132" r="4" fill="currentColor" fillOpacity="0.55" />
+
+      <g transform="translate(78, 38) scale(1.8)">
+        <path
+          d="M12 2.5l7.5 3v5.2c0 4.86-3.2 9.24-7.5 10.8-4.3-1.56-7.5-5.94-7.5-10.8V5.5l7.5-3z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+          fill="currentColor"
+          fillOpacity="0.18"
+        />
+        <path
+          d="M8.5 12.2l2.4 2.4 4.6-5.1"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
     </svg>
   );
 }
@@ -58,7 +99,8 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen flex-col bg-slate-50">
+      <div className="flex flex-1">
       <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950 to-emerald-900 p-12 text-white lg:flex">
         <div
           aria-hidden="true"
@@ -73,6 +115,8 @@ export function Login() {
           <ShieldMark className="h-8 w-8 text-emerald-400" />
           <span className="text-xl font-semibold tracking-tight">SafeCameroon</span>
         </div>
+
+        <ProtectionNetworkIllustration className="relative h-36 w-full text-emerald-300/80" />
 
         <div className="relative max-w-md">
           <h2 className="text-3xl font-semibold leading-tight text-white">
@@ -127,6 +171,8 @@ export function Login() {
           </p>
         </div>
       </div>
+      </div>
+      <Footer />
     </div>
   );
 }
