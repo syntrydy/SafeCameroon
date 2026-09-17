@@ -72,7 +72,7 @@ async fn main() {
     // so identities like this remain attributable without one.
     let reviewer_id = Uuid::new_v4();
     let reviewer = Actor::Reviewer(reviewer_id);
-    println!("SafeCameroon pilot demo -- reviewer id {reviewer_id}");
+    println!("Sentinel pilot demo -- reviewer id {reviewer_id}");
 
     // -- 1. Anonymous citizen submits a missing-child report -----------------
     header("1", "Anonymous citizen submits a report");

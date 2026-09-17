@@ -1,8 +1,8 @@
+import { BRAND_NAME } from "../config/brand";
 import type { Locale } from "./locale";
 
 export interface Translations {
   brand: {
-    name: string;
     citizenBadge: string;
   };
   tabs: {
@@ -54,6 +54,7 @@ export interface Translations {
   footer: {
     tagline: string;
     copyright: (year: number) => string;
+    consoleLink: string;
   };
   alerts: {
     checking: string;
@@ -95,7 +96,6 @@ export interface Translations {
 export const translations: Record<Locale, Translations> = {
   en: {
     brand: {
-      name: "SafeCameroon",
       citizenBadge: "Citizen",
     },
     tabs: {
@@ -153,7 +153,8 @@ export const translations: Record<Locale, Translations> = {
     },
     footer: {
       tagline: "Privacy-first civic-protection platform",
-      copyright: (year) => `© ${year} SafeCameroon`,
+      copyright: (year) => `© ${year} ${BRAND_NAME}`,
+      consoleLink: "Organization or reviewer? Sign in to the console",
     },
     alerts: {
       checking: "Checking your alert settings...",
@@ -195,7 +196,6 @@ export const translations: Record<Locale, Translations> = {
   },
   fr: {
     brand: {
-      name: "SafeCameroon",
       citizenBadge: "Citoyen",
     },
     tabs: {
@@ -255,7 +255,8 @@ export const translations: Record<Locale, Translations> = {
     },
     footer: {
       tagline: "Plateforme de protection civile axée sur la confidentialité",
-      copyright: (year) => `© ${year} SafeCameroon`,
+      copyright: (year) => `© ${year} ${BRAND_NAME}`,
+      consoleLink: "Organisation ou examinateur ? Connectez-vous à la console",
     },
     alerts: {
       checking: "Vérification de vos paramètres d'alerte...",

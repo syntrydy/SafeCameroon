@@ -1,6 +1,10 @@
-# SafeCameroon
+# Sentinel
 
-SafeCameroon is a privacy-first civic-protection platform for anonymous incident intake,
+_(Repository name is `SafeCameroon` for historical reasons — Cameroon was the pilot country;
+the product itself is named Sentinel and is built to run in any country. See
+["Multi-country deployment model"](#multi-country-deployment-model) below.)_
+
+Sentinel is a privacy-first civic-protection platform for anonymous incident intake,
 case coordination, controlled alerts, and multi-channel delivery. The first operational
 use case is missing children.
 
@@ -40,6 +44,27 @@ Citizen reports anonymously (no account)
   delivery strategy are all domain-modeled to extend beyond one country or one incident class —
   missing children is the first hard case chosen to prove it end-to-end, not the ceiling of what
   the platform can do.
+
+## Multi-country deployment model
+
+Cameroon is the pilot, not a ceiling: each country gets its **own deployment** (own database, own
+reviewers/organizations, own secrets), not a shared multi-tenant instance. Given this handles
+child-safety data, police/NGO authority and legal reporting obligations are inherently national --
+keeping deployments fully separate is a far simpler and stronger privacy/jurisdiction guarantee
+than trusting a `country` filter on every query in a shared database, where one missed `WHERE`
+clause would be a cross-country data leak. Concretely, a second country's deployment only needs to
+set two things differently, both already config-driven rather than hardcoded:
+
+- **`VITE_BRAND_NAME`** (`apps/console/.env.example`, `apps/citizen/.env.example`) -- the product
+  name shown throughout both apps (headers, page titles, the citizen app's PWA manifest, footer
+  copyright). Falls back to `"Sentinel"` if unset, so the existing pilot deployment needs no
+  new configuration.
+- **`apps/citizen/src/domain/knownTowns.ts`** -- the autocomplete suggestions for the citizen app's
+  Area field. Not a validation allow-list (geography matching is free-text substring matching), so
+  a different country's deployment just ships this one file with that country's town list.
+
+Everything else -- the domain model, the API, the delivery/subscription engine, the CI/CD pipeline
+-- is already country-agnostic and needs no code change per country.
 
 ## Repository layout
 

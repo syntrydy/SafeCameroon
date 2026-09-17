@@ -15,13 +15,13 @@ use super::looks_like_email;
 
 const RESEND_URL: &str = "https://api.resend.com/emails";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-const SUBJECT: &str = "SafeCameroon Alert";
+const SUBJECT: &str = "Sentinel Alert";
 
 pub struct ResendEmailChannel {
     http: reqwest::Client,
     api_key: String,
     /// The verified sender identity Resend requires, e.g.
-    /// `"SafeCameroon Alerts <alerts@example.org>"` -- there is no safe
+    /// `"Sentinel Alerts <alerts@example.org>"` -- there is no safe
     /// default, since it must match a domain verified in the Resend
     /// account this API key belongs to.
     from_address: String,

@@ -5,7 +5,8 @@
 **Track 3: Safety, Reporting & Protection** — "platforms enabling anonymous reporting with
 pathways to actual protection."
 
-SafeCameroon is an anonymous incident-reporting and verified-alerting platform. The first
+Sentinel (repository name `SafeCameroon`, after its pilot country) is an anonymous
+incident-reporting and verified-alerting platform. The first
 operational use case is missing children, chosen because it forces the hardest version of the
 problem: a false negative can cost a life, a false positive erodes trust in every future alert,
 and the reporter is often a stranger with no standing relationship to the platform. The

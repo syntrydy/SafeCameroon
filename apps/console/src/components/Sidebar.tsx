@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { NavLink } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
+import { BRAND_NAME } from "../config/brand";
 import { useTranslation } from "../i18n/LanguageContext";
 import {
   AlertsIcon,
@@ -60,7 +61,7 @@ export function Sidebar() {
         </div>
         {!collapsed && (
           <span className="truncate text-sm font-semibold text-white">
-            {t.brand.name} {t.brand.consoleBadge}
+            {BRAND_NAME} {t.brand.consoleBadge}
           </span>
         )}
       </div>

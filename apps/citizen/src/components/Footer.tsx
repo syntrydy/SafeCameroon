@@ -1,3 +1,4 @@
+import { CONSOLE_URL } from "../config/links";
 import { useTranslation } from "../i18n/LanguageContext";
 
 export function Footer() {
@@ -10,6 +11,13 @@ export function Footer() {
         <p className="text-xs text-slate-500">{t.footer.tagline}</p>
       </div>
       <p className="mt-2 text-xs text-slate-600">{t.footer.copyright(new Date().getFullYear())}</p>
+      {CONSOLE_URL && (
+        <p className="mt-2 text-xs">
+          <a href={CONSOLE_URL} className="text-emerald-500 hover:text-emerald-400 hover:underline">
+            {t.footer.consoleLink}
+          </a>
+        </p>
+      )}
     </footer>
   );
 }

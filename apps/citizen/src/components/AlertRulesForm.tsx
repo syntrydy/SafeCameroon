@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 
 import type { AlertSubscriptionRules, IncidentType, Severity } from "../api/subscriptions";
-import { CAMEROON_TOWNS } from "../domain/cameroonTowns";
+import { KNOWN_TOWNS } from "../domain/knownTowns";
 import { useTranslation } from "../i18n/LanguageContext";
 
 interface AlertRulesFormProps {
@@ -97,7 +97,7 @@ export function AlertRulesForm({
 
   const filteredTowns =
     geographyDraft.trim().length > 0
-      ? CAMEROON_TOWNS.filter(
+      ? KNOWN_TOWNS.filter(
           (town) =>
             !geography.includes(town) &&
             town.toLowerCase().includes(geographyDraft.trim().toLowerCase()),
