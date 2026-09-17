@@ -32,6 +32,37 @@ export function AlertRulesForm({
   );
   const [geography, setGeography] = useState(initialRules?.geography ?? DEFAULT_RULES.geography);
   const [touched, setTouched] = useState(false);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+
+  const filteredTowns =
+    geography.trim().length > 0
+      ? CAMEROON_TOWNS.filter((town) => town.toLowerCase().includes(geography.trim().toLowerCase())).slice(0, 6)
+      : [];
+
+  function selectTown(town: string) {
+    setGeography(town);
+    setSuggestionsOpen(false);
+    setHighlightedIndex(-1);
+  }
+
+  function handleGeographyKeyDown(event: KeyboardEvent) {
+    if (!suggestionsOpen || filteredTowns.length === 0) {
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setHighlightedIndex((index) => Math.min(index + 1, filteredTowns.length - 1));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlightedIndex((index) => Math.max(index - 1, 0));
+    } else if (event.key === "Enter" && highlightedIndex >= 0) {
+      event.preventDefault();
+      selectTown(filteredTowns[highlightedIndex]);
+    } else if (event.key === "Escape") {
+      setSuggestionsOpen(false);
+    }
+  }
 
   const incidentTypeOptions: { value: IncidentType; label: string }[] = [
     { value: "MISSING_CHILD", label: t.alertRules.incidentTypeMissingChild },
@@ -114,21 +145,55 @@ export function AlertRulesForm({
           {t.alertRules.area}
         </label>
         <p className="mt-1 text-sm text-slate-500">{t.alertRules.areaHelper}</p>
-        <input
-          id="geography"
-          type="text"
-          list="cameroon-towns"
-          value={geography}
-          onInput={(event) => setGeography((event.target as HTMLInputElement).value)}
-          onBlur={() => setTouched(true)}
-          placeholder={t.alertRules.areaPlaceholder}
-          className="mt-2.5 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-sm text-white placeholder-slate-500 transition-all duration-300 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-        />
-        <datalist id="cameroon-towns">
-          {CAMEROON_TOWNS.map((town) => (
-            <option key={town} value={town} />
-          ))}
-        </datalist>
+        <div className="relative">
+          <input
+            id="geography"
+            type="text"
+            autoComplete="off"
+            role="combobox"
+            aria-expanded={suggestionsOpen && filteredTowns.length > 0}
+            aria-autocomplete="list"
+            aria-controls="geography-suggestions"
+            value={geography}
+            onInput={(event) => {
+              setGeography((event.target as HTMLInputElement).value);
+              setSuggestionsOpen(true);
+              setHighlightedIndex(-1);
+            }}
+            onFocus={() => setSuggestionsOpen(true)}
+            onBlur={() => {
+              setTouched(true);
+              setSuggestionsOpen(false);
+            }}
+            onKeyDown={handleGeographyKeyDown}
+            placeholder={t.alertRules.areaPlaceholder}
+            className="mt-2.5 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-sm text-white placeholder-slate-500 transition-all duration-300 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+          />
+          {suggestionsOpen && filteredTowns.length > 0 && (
+            <ul
+              id="geography-suggestions"
+              role="listbox"
+              className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-white/[0.08] bg-slate-900 py-1 shadow-xl shadow-black/40"
+            >
+              {filteredTowns.map((town, index) => (
+                <li key={town} role="option" aria-selected={index === highlightedIndex}>
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectTown(town)}
+                    className={`block w-full px-3 py-2 text-left text-sm transition-colors ${
+                      index === highlightedIndex
+                        ? "bg-emerald-500/10 text-emerald-300"
+                        : "text-slate-300 hover:bg-white/[0.05]"
+                    }`}
+                  >
+                    {town}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         {touched && geographyIsBlank && (
           <p className="mt-1 text-sm text-red-400">{t.alertRules.areaRequired}</p>
         )}
