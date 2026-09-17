@@ -3,6 +3,15 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ExtractionPanel } from "./ExtractionPanel";
+import { LanguageProvider } from "../../i18n/LanguageContext";
+
+function renderPanel(token: string, reportId: string) {
+  return render(
+    <LanguageProvider>
+      <ExtractionPanel token={token} reportId={reportId} />
+    </LanguageProvider>,
+  );
+}
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -19,7 +28,7 @@ describe("ExtractionPanel", () => {
   it("starts collapsed and shows no extractions yet after opening", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, [])));
     const user = userEvent.setup();
-    render(<ExtractionPanel token="token-1" reportId="report-1" />);
+    renderPanel("token-1", "report-1");
 
     expect(screen.queryByText("No extraction requested yet.")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "AI extraction" }));
@@ -57,7 +66,7 @@ describe("ExtractionPanel", () => {
       }),
     );
     const user = userEvent.setup();
-    render(<ExtractionPanel token="token-1" reportId="report-1" />);
+    renderPanel("token-1", "report-1");
 
     await user.click(screen.getByRole("button", { name: "AI extraction" }));
     await user.click(await screen.findByRole("button", { name: "Extract candidate info" }));
@@ -88,7 +97,7 @@ describe("ExtractionPanel", () => {
       }),
     );
     const user = userEvent.setup();
-    render(<ExtractionPanel token="token-1" reportId="report-1" />);
+    renderPanel("token-1", "report-1");
 
     await user.click(screen.getByRole("button", { name: "AI extraction" }));
     await user.click(await screen.findByRole("button", { name: "Extract candidate info" }));

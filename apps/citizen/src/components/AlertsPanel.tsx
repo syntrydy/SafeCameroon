@@ -20,6 +20,8 @@ import {
   type StoredSubscription,
 } from "../offline/subscriptionStorage";
 import { AlertRulesForm } from "./AlertRulesForm";
+import { useTranslation } from "../i18n/LanguageContext";
+import type { Translations } from "../i18n/translations";
 
 type View =
   | { kind: "loading" }
@@ -28,6 +30,7 @@ type View =
   | { kind: "off" };
 
 export function AlertsPanel() {
+  const { t } = useTranslation();
   const [view, setView] = useState<View>({ kind: "loading" });
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -71,7 +74,7 @@ export function AlertsPanel() {
       saveStoredSubscription(stored);
       setView({ kind: "subscribed", stored, rules });
     } catch (cause) {
-      setErrorMessage(describeError(cause));
+      setErrorMessage(describeError(cause, t));
     } finally {
       setSubmitting(false);
     }
@@ -84,7 +87,7 @@ export function AlertsPanel() {
       await updateCitizenSubscription(stored.subscriptionId, stored.managementToken, rules);
       setView({ kind: "subscribed", stored, rules });
     } catch (cause) {
-      setErrorMessage(describeError(cause));
+      setErrorMessage(describeError(cause, t));
     } finally {
       setSubmitting(false);
     }
@@ -99,31 +102,29 @@ export function AlertsPanel() {
       clearStoredSubscription();
       setView({ kind: "off" });
     } catch (cause) {
-      setErrorMessage(describeError(cause));
+      setErrorMessage(describeError(cause, t));
     } finally {
       setSubmitting(false);
     }
   }
 
   if (view.kind === "loading") {
-    return <p className="text-sm text-slate-400">Checking your alert settings...</p>;
+    return <p className="text-sm text-slate-400">{t.alerts.checking}</p>;
   }
 
   if (view.kind === "off") {
     return (
       <div className="text-center">
         <p className="text-sm font-semibold uppercase tracking-wider text-slate-400">
-          Alerts turned off
+          {t.alerts.turnedOffTitle}
         </p>
-        <p className="mt-3 text-sm text-slate-500">
-          You will no longer receive alerts on this device.
-        </p>
+        <p className="mt-3 text-sm text-slate-500">{t.alerts.turnedOffBody}</p>
         <button
           type="button"
           onClick={() => setView({ kind: "signup" })}
           className="mt-6 rounded-xl border border-white/[0.08] px-4 py-2.5 text-sm font-medium text-slate-300 hover:bg-white/[0.05]"
         >
-          Turn alerts back on
+          {t.alerts.turnBackOn}
         </button>
       </div>
     );
@@ -133,12 +134,12 @@ export function AlertsPanel() {
     return (
       <div>
         <div className="mb-6 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-300">
-          Alerts are on for this device.
+          {t.alerts.onForDevice}
         </div>
         <AlertRulesForm
           initialRules={view.rules}
           submitting={submitting}
-          submitLabel="Save changes"
+          submitLabel={t.alerts.saveChanges}
           onSubmit={(rules) => void handleUpdate(view.stored, rules)}
         />
         {errorMessage && (
@@ -152,7 +153,7 @@ export function AlertsPanel() {
           onClick={() => void handleTurnOff(view.stored)}
           className="mt-4 w-full rounded-xl border border-red-500/20 px-4 py-2.5 text-sm font-medium text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Turn off alerts
+          {t.alerts.turnOff}
         </button>
       </div>
     );
@@ -160,14 +161,12 @@ export function AlertsPanel() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-white">Get missing-child alerts</h2>
-      <p className="mt-1 text-sm text-slate-400">
-        Choose what you want to hear about. You can change this anytime.
-      </p>
+      <h2 className="text-xl font-bold text-white">{t.alerts.signupHeading}</h2>
+      <p className="mt-1 text-sm text-slate-400">{t.alerts.signupSubtitle}</p>
       <div className="mt-6">
         <AlertRulesForm
           submitting={submitting}
-          submitLabel="Enable alerts"
+          submitLabel={t.alerts.enableAlerts}
           onSubmit={(rules) => void handleSubscribe(rules)}
         />
       </div>
@@ -176,23 +175,20 @@ export function AlertsPanel() {
           {errorMessage}
         </p>
       )}
-      <p className="mt-4 text-center text-xs text-slate-500">
-        Your browser will ask permission to send notifications. No account or personal
-        information is required.
-      </p>
+      <p className="mt-4 text-center text-xs text-slate-500">{t.alerts.permissionNote}</p>
     </div>
   );
 }
 
-function describeError(cause: unknown): string {
+function describeError(cause: unknown, t: Translations): string {
   if (cause instanceof PushPermissionDeniedError) {
-    return "Notifications were not allowed. You can enable them in your browser's site settings and try again.";
+    return t.alerts.errorPermissionDenied;
   }
   if (cause instanceof PushUnsupportedError) {
-    return "This browser does not support push notifications.";
+    return t.alerts.errorUnsupported;
   }
   if (cause instanceof Error) {
     return cause.message;
   }
-  return "An unexpected error occurred.";
+  return t.alerts.errorUnexpected;
 }

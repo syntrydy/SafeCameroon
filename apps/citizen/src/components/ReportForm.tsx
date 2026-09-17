@@ -2,31 +2,12 @@ import { useMemo, useRef, useState } from "preact/hooks";
 
 import type { IncidentType, PhotoContentType } from "../api/reports";
 import { MAX_REPORT_CONTENT_CHARS, validateReportContent } from "../domain/reportValidation";
+import { useTranslation } from "../i18n/LanguageContext";
 
 const ACCEPTED_PHOTO_TYPES: Record<string, PhotoContentType> = {
   "image/jpeg": "image/jpeg",
   "image/png": "image/png",
   "image/webp": "image/webp",
-};
-
-const INCIDENT_TYPE_OPTIONS: { value: IncidentType; label: string }[] = [
-  { value: "MISSING_CHILD", label: "Missing child" },
-  { value: "OTHER_PROTECTION_INCIDENT", label: "Other incident" },
-];
-
-const CONTENT_GUIDANCE: Record<IncidentType, { helper: string; placeholder: string }> = {
-  MISSING_CHILD: {
-    helper:
-      "Describe the child and the situation: name, age, what they look like, where and when they were last seen. Every detail helps.",
-    placeholder:
-      "Example: My 8-year-old daughter Amina has not returned from school. She was last seen near Carrefour Bonamoussadi around 3pm today, wearing a blue school uniform...",
-  },
-  OTHER_PROTECTION_INCIDENT: {
-    helper:
-      "Describe what happened: who is involved, what you saw, and where and when it happened. Every detail helps.",
-    placeholder:
-      "Example: I saw a child being physically abused near the Bonamoussadi market around 5pm today...",
-  },
 };
 
 export interface ReportFormPhoto {
@@ -42,6 +23,7 @@ interface ReportFormProps {
 }
 
 export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormProps) {
+  const { t } = useTranslation();
   const [incidentType, setIncidentType] = useState<IncidentType>("MISSING_CHILD");
   const [content, setContent] = useState("");
   const [photo, setPhoto] = useState<ReportFormPhoto | null>(null);
@@ -49,9 +31,24 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
   const [touched, setTouched] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const incidentTypeOptions: { value: IncidentType; label: string }[] = [
+    { value: "MISSING_CHILD", label: t.reportForm.incidentTypeMissingChild },
+    { value: "OTHER_PROTECTION_INCIDENT", label: t.reportForm.incidentTypeOther },
+  ];
+  const contentGuidance: Record<IncidentType, { helper: string; placeholder: string }> = {
+    MISSING_CHILD: {
+      helper: t.reportForm.missingChildHelper,
+      placeholder: t.reportForm.missingChildPlaceholder,
+    },
+    OTHER_PROTECTION_INCIDENT: {
+      helper: t.reportForm.otherHelper,
+      placeholder: t.reportForm.otherPlaceholder,
+    },
+  };
+
   const validationError = useMemo(() => validateReportContent(content), [content]);
   const charCount = [...content.trim()].length;
-  const guidance = CONTENT_GUIDANCE[incidentType];
+  const guidance = contentGuidance[incidentType];
 
   function handlePhotoChange(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
@@ -61,7 +58,7 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
     }
     const contentType = ACCEPTED_PHOTO_TYPES[file.type];
     if (!contentType) {
-      setPhotoError("Please choose a JPEG, PNG, or WebP photo.");
+      setPhotoError(t.reportForm.photoInvalidType);
       return;
     }
     setPhotoError(null);
@@ -92,9 +89,11 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
 
   return (
     <form onSubmit={handleSubmit} noValidate>
-      <span className="block text-sm font-medium text-slate-300">What kind of report is this?</span>
+      <span className="block text-sm font-medium text-slate-300">
+        {t.reportForm.incidentTypeQuestion}
+      </span>
       <div className="mt-2.5 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.06] bg-white/[0.03] p-1">
-        {INCIDENT_TYPE_OPTIONS.map((option) => (
+        {incidentTypeOptions.map((option) => (
           <button
             key={option.value}
             type="button"
@@ -115,7 +114,7 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
       </div>
 
       <label htmlFor="report-content" className="mt-6 block text-sm font-medium text-slate-300">
-        What is happening?
+        {t.reportForm.whatIsHappening}
       </label>
       <p className="mt-1 text-sm text-slate-500">{guidance.helper}</p>
       <textarea
@@ -131,23 +130,18 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
       <div className="mt-1.5 flex items-center justify-between text-xs text-slate-500">
         <span>
           {touched && validationError === "EMPTY" && (
-            <span className="text-red-400">Please describe the situation.</span>
+            <span className="text-red-400">{t.reportForm.validationEmpty}</span>
           )}
           {touched && validationError === "TOO_LONG" && (
-            <span className="text-red-400">Please shorten this a little.</span>
+            <span className="text-red-400">{t.reportForm.validationTooLong}</span>
           )}
         </span>
-        <span>
-          {charCount.toLocaleString()} / {MAX_REPORT_CONTENT_CHARS.toLocaleString()}
-        </span>
+        <span>{t.reportForm.charCount(charCount, MAX_REPORT_CONTENT_CHARS)}</span>
       </div>
 
       <div className="mt-6">
-        <span className="block text-sm font-medium text-slate-300">Photo (optional)</span>
-        <p className="mt-1 text-sm text-slate-500">
-          A recent photo helps a reviewer confirm the report. You can skip this if you don't have
-          one.
-        </p>
+        <span className="block text-sm font-medium text-slate-300">{t.reportForm.photoLabel}</span>
+        <p className="mt-1 text-sm text-slate-500">{t.reportForm.photoHelper}</p>
 
         {photo ? (
           <div className="mt-3 flex items-center gap-3">
@@ -161,7 +155,7 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
               onClick={removePhoto}
               className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-sm text-slate-400 hover:bg-white/[0.05] hover:text-slate-300"
             >
-              Remove photo
+              {t.reportForm.removePhoto}
             </button>
           </div>
         ) : (
@@ -170,7 +164,7 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
             onClick={() => fileInputRef.current?.click()}
             className="mt-3 flex items-center gap-2 rounded-xl border border-dashed border-white/[0.08] px-4 py-3 text-sm font-medium text-slate-400 transition-all duration-300 hover:border-emerald-500/30 hover:bg-emerald-500/5 hover:text-emerald-400"
           >
-            Add a photo
+            {t.reportForm.addPhoto}
           </button>
         )}
         <input
@@ -198,13 +192,11 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
         disabled={submitting}
         className="group relative mt-6 w-full overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-3.5 text-base font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:from-emerald-500 hover:to-emerald-600 hover:shadow-xl hover:shadow-emerald-500/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {submitting ? "Sending..." : "Send report"}
+        {submitting ? t.reportForm.sending : t.reportForm.sendReport}
       </button>
 
       <div className="mt-5 flex items-center justify-center gap-2 rounded-lg border border-emerald-500/10 bg-emerald-500/5 px-3 py-2.5">
-        <p className="text-xs text-slate-400">
-          This report is anonymous. No account or personal information is required.
-        </p>
+        <p className="text-xs text-slate-400">{t.reportForm.anonymousNote}</p>
       </div>
     </form>
   );

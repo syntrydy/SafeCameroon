@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { listDeliveriesForAlert, type Delivery, type DeliveryStatus } from "../../api/deliveries";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
+import { useTranslation } from "../../i18n/LanguageContext";
 
 const STATUS_STYLES: Record<DeliveryStatus, string> = {
   QUEUED: "bg-slate-200 text-slate-600",
@@ -15,6 +16,7 @@ const STATUS_STYLES: Record<DeliveryStatus, string> = {
 };
 
 export function DeliveryList() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const { session } = useAuth();
   // Safe: this page only renders inside <RequireAuth>.
@@ -30,14 +32,14 @@ export function DeliveryList() {
     setError(null);
     listDeliveriesForAlert(token, id)
       .then(setDeliveries)
-      .catch((cause) => setError(cause instanceof ApiError ? cause.message : "An unexpected error occurred."))
+      .catch((cause) => setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError))
       .finally(() => setLoading(false));
-  }, [token, id]);
+  }, [token, id, t]);
 
   return (
     <div>
       <h2 className="mb-4 text-base font-semibold text-slate-900">
-        Deliveries for alert {id?.slice(0, 8)}
+        {t.deliveryList.heading(id?.slice(0, 8) ?? "")}
       </h2>
 
       {error && (
@@ -47,18 +49,18 @@ export function DeliveryList() {
       )}
 
       {loading ? (
-        <p className="text-sm text-slate-500">Loading deliveries...</p>
+        <p className="text-sm text-slate-500">{t.deliveryList.loading}</p>
       ) : deliveries.length === 0 ? (
-        <p className="text-sm text-slate-500">No deliveries have been planned for this alert.</p>
+        <p className="text-sm text-slate-500">{t.deliveryList.none}</p>
       ) : (
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
-              <th className="py-2 pr-4">Delivery</th>
-              <th className="py-2 pr-4">Channel</th>
-              <th className="py-2 pr-4">Tier</th>
-              <th className="py-2 pr-4">Status</th>
-              <th className="py-2 pr-4">Attempts</th>
+              <th className="py-2 pr-4">{t.deliveryList.colDelivery}</th>
+              <th className="py-2 pr-4">{t.deliveryList.colChannel}</th>
+              <th className="py-2 pr-4">{t.deliveryList.colTier}</th>
+              <th className="py-2 pr-4">{t.deliveryList.colStatus}</th>
+              <th className="py-2 pr-4">{t.deliveryList.colAttempts}</th>
             </tr>
           </thead>
           <tbody>

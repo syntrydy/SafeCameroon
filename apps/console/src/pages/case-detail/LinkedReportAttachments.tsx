@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { createDownloadUrl, listAttachmentsForReport, type AttachmentSummary } from "../../api/attachments";
 import { ApiError } from "../../api/client";
+import { useTranslation } from "../../i18n/LanguageContext";
 
 interface LinkedReportAttachmentsProps {
   token: string;
@@ -13,6 +14,7 @@ interface LinkedReportAttachmentsProps {
 // so the report's raw text itself is not fetchable here, only its id and
 // whatever files were attached to it.
 export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachmentsProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +31,7 @@ export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachm
     try {
       setAttachments(await listAttachmentsForReport(token, reportId));
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "An unexpected error occurred.");
+      setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     } finally {
       setLoading(false);
     }
@@ -40,7 +42,7 @@ export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachm
       const { download_url } = await createDownloadUrl(token, attachmentId);
       setDownloadUrls((current) => ({ ...current, [attachmentId]: download_url }));
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "An unexpected error occurred.");
+      setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     }
   }
 
@@ -49,26 +51,26 @@ export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachm
       <div className="flex items-center gap-2">
         <span className="font-mono text-xs text-slate-500">{reportId.slice(0, 8)}</span>
         <button type="button" onClick={() => void toggleExpanded()} className="text-xs font-medium text-slate-600 underline">
-          {expanded ? "Hide attachments" : "Show attachments"}
+          {expanded ? t.linkedAttachments.hideAttachments : t.linkedAttachments.showAttachments}
         </button>
       </div>
 
       {expanded && (
         <div className="mt-2 pl-4">
-          {loading && <p className="text-xs text-slate-500">Loading attachments...</p>}
+          {loading && <p className="text-xs text-slate-500">{t.linkedAttachments.loading}</p>}
           {error && (
             <p role="alert" className="text-xs text-red-700">
               {error}
             </p>
           )}
           {attachments !== null && attachments.length === 0 && (
-            <p className="text-xs text-slate-500">No attachments.</p>
+            <p className="text-xs text-slate-500">{t.linkedAttachments.none}</p>
           )}
           {attachments && attachments.length > 0 && (
             <ul>
               {attachments.map((attachment) => (
                 <li key={attachment.attachment_id} className="mb-1 text-xs text-slate-700">
-                  {attachment.content_type} ({attachment.size_bytes} bytes){" "}
+                  {attachment.content_type} ({t.linkedAttachments.sizeBytes(attachment.size_bytes)}){" "}
                   {downloadUrls[attachment.attachment_id] ? (
                     <a
                       href={downloadUrls[attachment.attachment_id]}
@@ -76,7 +78,7 @@ export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachm
                       rel="noreferrer"
                       className="text-slate-900 underline"
                     >
-                      Open
+                      {t.linkedAttachments.open}
                     </a>
                   ) : (
                     <button
@@ -84,7 +86,7 @@ export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachm
                       onClick={() => void getDownloadUrl(attachment.attachment_id)}
                       className="text-slate-600 underline"
                     >
-                      Get download link
+                      {t.linkedAttachments.getDownloadLink}
                     </button>
                   )}
                 </li>

@@ -1,3 +1,5 @@
+import { useTranslation } from "../i18n/LanguageContext";
+
 export type Tab = "report" | "alerts";
 
 interface TabSwitcherProps {
@@ -6,14 +8,15 @@ interface TabSwitcherProps {
 }
 
 export function TabSwitcher({ active, onChange }: TabSwitcherProps) {
+  const { t } = useTranslation();
+  const tabs: { tab: Tab; label: string }[] = [
+    { tab: "report", label: t.tabs.report },
+    { tab: "alerts", label: t.tabs.alerts },
+  ];
+
   return (
     <div className="grid grid-cols-2 gap-1 rounded-xl border border-white/[0.06] bg-white/[0.03] p-1 backdrop-blur-sm">
-      {(
-        [
-          { tab: "report", label: "Report" },
-          { tab: "alerts", label: "Get alerts" },
-        ] as const
-      ).map(({ tab, label }) => (
+      {tabs.map(({ tab, label }) => (
         <button
           key={tab}
           type="button"

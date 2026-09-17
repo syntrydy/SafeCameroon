@@ -15,18 +15,22 @@ import { ApiError } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { canCreateAlert } from "../../domain/alertEligibility";
 import { nextStatusOptions } from "../../domain/caseTransitions";
+import { useTranslation } from "../../i18n/LanguageContext";
+import type { Translations } from "../../i18n/translations";
 import { CreateAlertForm } from "../alerts/CreateAlertForm";
 import { LinkedReportAttachments } from "./LinkedReportAttachments";
 
-const STATUS_LABELS: Record<CaseStatus, string> = {
-  REPORTED: "Reported",
-  UNDER_REVIEW: "Under review",
-  VERIFIED: "Verified",
-  ACTIVE: "Active",
-  RESOLVED: "Resolved",
-  CANCELLED: "Cancelled",
-  REJECTED: "Rejected",
-};
+function statusLabels(t: Translations): Record<CaseStatus, string> {
+  return {
+    REPORTED: t.caseDetail.statusReported,
+    UNDER_REVIEW: t.caseDetail.statusUnderReview,
+    VERIFIED: t.caseDetail.statusVerified,
+    ACTIVE: t.caseDetail.statusActive,
+    RESOLVED: t.caseDetail.statusResolved,
+    CANCELLED: t.caseDetail.statusCancelled,
+    REJECTED: t.caseDetail.statusRejected,
+  };
+}
 
 async function applyTransition(token: string, caseId: string, to: CaseStatus): Promise<Case> {
   if (to === "VERIFIED") return verifyCase(token, caseId);
@@ -35,6 +39,8 @@ async function applyTransition(token: string, caseId: string, to: CaseStatus): P
 }
 
 export function CaseDetail() {
+  const { t } = useTranslation();
+  const labels = statusLabels(t);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { session } = useAuth();
@@ -57,11 +63,11 @@ export function CaseDetail() {
       setCaseData(nextCase);
       setEvents(nextEvents);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "An unexpected error occurred.");
+      setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     } finally {
       setLoading(false);
     }
-  }, [token, id]);
+  }, [token, id, t]);
 
   useEffect(() => {
     void load();
@@ -74,17 +80,17 @@ export function CaseDetail() {
     setError(null);
     try {
       await applyTransition(token, id, to);
-      setActionMessage(`Case moved to ${STATUS_LABELS[to]}.`);
+      setActionMessage(t.caseDetail.caseMovedTo(labels[to]));
       await load();
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "An unexpected error occurred.");
+      setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     } finally {
       setPendingTransition(null);
     }
   }
 
   if (loading) {
-    return <p className="text-sm text-slate-500">Loading case...</p>;
+    return <p className="text-sm text-slate-500">{t.caseDetail.loading}</p>;
   }
 
   if (error && !caseData) {
@@ -103,13 +109,15 @@ export function CaseDetail() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-slate-900">Case {caseData.case_id.slice(0, 8)}</h2>
+          <h2 className="text-base font-semibold text-slate-900">
+            {t.caseDetail.heading(caseData.case_id.slice(0, 8))}
+          </h2>
           <p className="text-sm text-slate-500">
-            {caseData.incident_type.replace(/_/g, " ")} &middot; version {caseData.version}
+            {caseData.incident_type.replace(/_/g, " ")} &middot; {t.caseDetail.version(caseData.version)}
           </p>
         </div>
         <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
-          {STATUS_LABELS[caseData.status]}
+          {labels[caseData.status]}
         </span>
       </div>
 
@@ -133,15 +141,15 @@ export function CaseDetail() {
             onClick={() => void handleTransition(status)}
             className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
           >
-            Mark {STATUS_LABELS[status]}
+            {t.caseDetail.markStatus(labels[status])}
           </button>
         ))}
       </div>
 
       <section className="mb-6">
-        <h3 className="mb-2 text-sm font-semibold text-slate-900">Linked reports</h3>
+        <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.caseDetail.linkedReports}</h3>
         {caseData.report_ids.length === 0 ? (
-          <p className="text-sm text-slate-500">No linked reports.</p>
+          <p className="text-sm text-slate-500">{t.caseDetail.noLinkedReports}</p>
         ) : (
           <ul className="divide-y divide-slate-100">
             {caseData.report_ids.map((reportId) => (
@@ -162,7 +170,7 @@ export function CaseDetail() {
       )}
 
       <section>
-        <h3 className="mb-2 text-sm font-semibold text-slate-900">History</h3>
+        <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.caseDetail.history}</h3>
         <ul className="divide-y divide-slate-100">
           {events.map((event) => (
             <li key={event.id} className="py-2 text-sm text-slate-700">

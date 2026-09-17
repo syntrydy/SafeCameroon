@@ -7,12 +7,14 @@ import { GoogleSignInButton } from "../auth/GoogleSignInButton";
 import { Footer } from "../components/Footer";
 import { ShieldIcon } from "../components/icons/ShieldIcon";
 import { NetworkIllustration } from "../components/NetworkIllustration";
+import { useTranslation } from "../i18n/LanguageContext";
 
 interface LocationState {
   from?: { pathname: string };
 }
 
 export function Login() {
+  const { t } = useTranslation();
   const { session, loginWithGoogle } = useAuth();
   const location = useLocation();
   const [error, setError] = useState<{ message: string; requestId: string | null } | null>(null);
@@ -31,11 +33,11 @@ export function Login() {
         if (cause instanceof ApiError) {
           setError({ message: cause.message, requestId: cause.requestId });
         } else {
-          setError({ message: "An unexpected error occurred.", requestId: null });
+          setError({ message: t.common.unexpectedError, requestId: null });
         }
       }
     },
-    [loginWithGoogle],
+    [loginWithGoogle, t],
   );
 
   if (session) {
@@ -90,9 +92,9 @@ export function Login() {
               </div>
             </div>
             <div>
-              <span className="text-xl font-bold tracking-tight text-white">SafeCameroon</span>
+              <span className="text-xl font-bold tracking-tight text-white">{t.brand.name}</span>
               <span className="ml-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wider text-emerald-400 uppercase">
-                Console
+                {t.brand.consoleBadge}
               </span>
             </div>
           </div>
@@ -111,23 +113,20 @@ export function Login() {
             }`}
           >
             <h2 className="text-3xl leading-tight font-semibold text-white xl:text-4xl">
-              Coordinated response for{" "}
+              {t.login.heroHeadingPrefix}{" "}
               <span className="bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">
-                every reported incident
+                {t.login.heroHeadingHighlight}
               </span>
             </h2>
-            <p className="mt-4 text-base leading-relaxed text-slate-400">
-              Verified reviewers triage reports, confirm cases, and issue alerts through a
-              single accountable console&mdash;built for privacy, speed, and oversight.
-            </p>
+            <p className="mt-4 text-base leading-relaxed text-slate-400">{t.login.heroSubtitle}</p>
             <div className="mt-8 flex items-center gap-6">
               <div className="flex items-center gap-2">
                 <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-                <span className="text-xs text-slate-500">Full audit trail</span>
+                <span className="text-xs text-slate-500">{t.login.fullAuditTrail}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="h-2 w-2 animate-pulse rounded-full bg-blue-400" />
-                <span className="text-xs text-slate-500">Privacy-first architecture</span>
+                <span className="text-xs text-slate-500">{t.login.privacyFirst}</span>
               </div>
             </div>
           </div>
@@ -148,7 +147,7 @@ export function Login() {
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-lg shadow-emerald-500/25">
                 <ShieldIcon className="h-5 w-5 text-white" />
               </div>
-              <span className="text-lg font-bold text-white">SafeCameroon</span>
+              <span className="text-lg font-bold text-white">{t.brand.name}</span>
             </div>
 
             <div className="relative">
@@ -160,11 +159,11 @@ export function Login() {
               <div className="relative rounded-2xl border border-white/[0.08] bg-slate-900/80 p-8 shadow-2xl shadow-black/20 backdrop-blur-xl">
                 <div className="mb-8">
                   <p className="text-xs font-semibold tracking-wider text-emerald-400 uppercase">
-                    Organization console
+                    {t.login.organizationConsole}
                   </p>
-                  <h1 className="mt-2 text-2xl font-bold text-white">Welcome back</h1>
+                  <h1 className="mt-2 text-2xl font-bold text-white">{t.login.welcomeBack}</h1>
                   <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                    Sign in with your registered Google account to access the console.
+                    {t.login.signInSubtitle}
                   </p>
                 </div>
 
@@ -193,9 +192,7 @@ export function Login() {
                       d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
                     />
                   </svg>
-                  <p className="text-xs text-slate-400">
-                    Secured with OAuth 2.0 &middot; Your credentials are never stored
-                  </p>
+                  <p className="text-xs text-slate-400">{t.login.secureNote}</p>
                 </div>
 
                 {error && (
@@ -213,9 +210,7 @@ export function Login() {
             </div>
 
             <div className="mt-8 space-y-3 text-center">
-              <p className="text-xs text-slate-500">
-                Access is limited to reviewers added by an administrator.
-              </p>
+              <p className="text-xs text-slate-500">{t.login.accessLimited}</p>
               <Footer variant="dark" />
             </div>
           </div>
