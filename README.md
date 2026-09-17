@@ -13,6 +13,24 @@ use case is missing children.
 - `apps/console`: TypeScript/React organization console (reviewer/admin, Google-authenticated).
 - `apps/citizen`: public, offline-capable Preact app for anonymously reporting an incident (missing child or another protection incident) and self-subscribing to alerts (no login).
 
+## Deployment
+
+All four services (`api`, `worker`, `console`, `citizen`) run on Railway,
+project `82278915-ac8b-4646-8826-358dd65b7d4f`, `production` environment.
+`.github/workflows/ci.yml`'s `deploy` job redeploys all four automatically on
+every push to `main` (i.e. every merged PR), after the `rust`/`console`/
+`citizen` test jobs pass -- it never runs for a pull request, only for a
+push directly to `main`. It authenticates as a project-scoped `RAILWAY_TOKEN`
+repository secret; Railway only lets a token be minted through its dashboard
+(Project Settings -> Tokens), not the CLI or API, so that secret has to be
+created and added by a human with dashboard access, not by an agent.
+
+Auto-deploy ships the already-built artifacts only -- it does **not** run
+database migrations. A migration lands in `migrations/` in the same PR as
+the code that needs it, but still has to be applied to production by hand
+once, before (or as part of) that merge:
+`railway run --service api --environment production --project <id> -- sqlx migrate run --source migrations`.
+
 ## Multi-area subscriptions
 
 `SubscriptionRule::Geography` (`crates/domain/src/subscription.rs`) holds one

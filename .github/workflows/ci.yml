@@ -69,3 +69,35 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run lint
+
+  # Deploys all four Railway services once every check above has passed.
+  # Only runs for a push to main (a merged PR), never for a pull_request
+  # event -- CI still runs and must pass on every PR, but nothing deploys
+  # until that PR is actually merged. Requires a RAILWAY_TOKEN repository
+  # secret (a project-scoped token created via the Railway dashboard,
+  # Project Settings -> Tokens -- Railway does not support minting one
+  # through the CLI or API). Deploys the already-built artifacts only; a
+  # database migration is still a separate, manual `sqlx migrate run`
+  # step (docs/DEPLOYMENT.md) -- auto-deploy does not auto-migrate.
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [rust, console, citizen]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_PROJECT_ID: 82278915-ac8b-4646-8826-358dd65b7d4f
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm i -g @railway/cli
+      - name: Deploy api
+        timeout-minutes: 10
+        run: railway up --service api --environment production --project "$RAILWAY_PROJECT_ID" --ci
+      - name: Deploy worker
+        timeout-minutes: 10
+        run: railway up --service worker --environment production --project "$RAILWAY_PROJECT_ID" --ci
+      - name: Deploy console
+        timeout-minutes: 10
+        run: railway up --service console --environment production --project "$RAILWAY_PROJECT_ID" --ci
+      - name: Deploy citizen
+        timeout-minutes: 10
+        run: railway up --service citizen --environment production --project "$RAILWAY_PROJECT_ID" --ci
