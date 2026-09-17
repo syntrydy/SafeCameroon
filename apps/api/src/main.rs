@@ -2580,7 +2580,7 @@ mod tests {
                             "rules": [
                                 {"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]},
                                 {"rule": "SEVERITY", "operator": "GREATER_THAN_OR_EQUAL", "value": "MEDIUM"},
-                                {"rule": "GEOGRAPHY", "area": "Douala"}
+                                {"rule": "GEOGRAPHY", "areas": ["Douala"]}
                             ]
                         })
                         .to_string(),
@@ -3716,7 +3716,7 @@ mod tests {
                             "rules": [
                                 {"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]},
                                 {"rule": "SEVERITY", "operator": "GREATER_THAN_OR_EQUAL", "value": "HIGH"},
-                                {"rule": "GEOGRAPHY", "area": "Douala"}
+                                {"rule": "GEOGRAPHY", "areas": ["Douala"]}
                             ]
                         })
                         .to_string(),
@@ -3800,7 +3800,7 @@ mod tests {
                         json!({
                             "incident_types": ["MISSING_CHILD"],
                             "minimum_severity": "HIGH",
-                            "geography": "Douala",
+                            "geography": ["Douala"],
                             "push_subscription": push_subscription_json("https://push.example/a"),
                         })
                         .to_string(),
@@ -3844,7 +3844,7 @@ mod tests {
         let fetched = json_body(get_response).await;
         assert_eq!(fetched["incident_types"], json!(["MISSING_CHILD"]));
         assert_eq!(fetched["minimum_severity"], json!("HIGH"));
-        assert_eq!(fetched["geography"], json!("Douala"));
+        assert_eq!(fetched["geography"], json!(["Douala"]));
 
         let update_response = app
             .clone()
@@ -3858,7 +3858,7 @@ mod tests {
                         json!({
                             "incident_types": ["MISSING_CHILD", "OTHER_PROTECTION_INCIDENT"],
                             "minimum_severity": "CRITICAL",
-                            "geography": "Yaounde",
+                            "geography": ["Yaounde"],
                         })
                         .to_string(),
                     ))
@@ -3869,7 +3869,7 @@ mod tests {
         assert_eq!(update_response.status(), StatusCode::OK);
         let updated = json_body(update_response).await;
         assert_eq!(updated["minimum_severity"], json!("CRITICAL"));
-        assert_eq!(updated["geography"], json!("Yaounde"));
+        assert_eq!(updated["geography"], json!(["Yaounde"]));
 
         let cancel_response = app
             .clone()
@@ -3919,7 +3919,7 @@ mod tests {
                         json!({
                             "incident_types": ["MISSING_CHILD"],
                             "minimum_severity": "HIGH",
-                            "geography": "Douala",
+                            "geography": ["Douala"],
                             "push_subscription": push_subscription_json("https://push.example/b"),
                         })
                         .to_string(),
@@ -3967,7 +3967,7 @@ mod tests {
                         json!({
                             "incident_types": [],
                             "minimum_severity": "HIGH",
-                            "geography": "Douala",
+                            "geography": ["Douala"],
                             "push_subscription": push_subscription_json("https://push.example/c"),
                         })
                         .to_string(),
@@ -3998,7 +3998,7 @@ mod tests {
                         json!({
                             "incident_types": ["MISSING_CHILD"],
                             "minimum_severity": "HIGH",
-                            "geography": "Douala",
+                            "geography": ["Douala"],
                             "push_subscription": push_subscription_json(&endpoint),
                         })
                         .to_string(),
@@ -4070,7 +4070,7 @@ mod tests {
                     .header("Authorization", format!("Bearer {token}"))
                     .body(Body::from(
                         json!({
-                            "rules": [{"rule": "GEOGRAPHY", "area": "Douala"}]
+                            "rules": [{"rule": "GEOGRAPHY", "areas": ["Douala"]}]
                         })
                         .to_string(),
                     ))
@@ -4084,7 +4084,7 @@ mod tests {
         assert_eq!(updated["version"], json!(2));
         assert_eq!(
             updated["rules"],
-            json!([{"rule": "GEOGRAPHY", "area": "Douala"}])
+            json!([{"rule": "GEOGRAPHY", "areas": ["Douala"]}])
         );
     }
 
@@ -4103,7 +4103,7 @@ mod tests {
                     .header("content-type", "application/json")
                     .header("Authorization", format!("Bearer {token}"))
                     .body(Body::from(
-                        json!({"rules": [{"rule": "GEOGRAPHY", "area": "Douala"}]}).to_string(),
+                        json!({"rules": [{"rule": "GEOGRAPHY", "areas": ["Douala"]}]}).to_string(),
                     ))
                     .unwrap(),
             )
@@ -4125,7 +4125,7 @@ mod tests {
                     .uri(format!("/v1/subscriptions/{}", Uuid::new_v4()))
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        json!({"rules": [{"rule": "GEOGRAPHY", "area": "Douala"}]}).to_string(),
+                        json!({"rules": [{"rule": "GEOGRAPHY", "areas": ["Douala"]}]}).to_string(),
                     ))
                     .unwrap(),
             )

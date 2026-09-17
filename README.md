@@ -13,6 +13,20 @@ use case is missing children.
 - `apps/console`: TypeScript/React organization console (reviewer/admin, Google-authenticated).
 - `apps/citizen`: public, offline-capable Preact app for anonymously reporting an incident (missing child or another protection incident) and self-subscribing to alerts (no login).
 
+## Multi-area subscriptions
+
+`SubscriptionRule::Geography` (`crates/domain/src/subscription.rs`) holds one
+or more areas and matches if an alert's target intersects *any* of them (an
+OR within the rule, the same semantics `IncidentType`/`EventType` already
+had) -- a citizen or organization can subscribe to several towns/regions in
+one subscription instead of needing a separate subscription per area. Stored
+as a JSONB array (`crates/infrastructure/src/postgres/subscriptions.rs`);
+reading still accepts the older single-string shape from subscriptions
+persisted before this change, so no backfill migration was needed. Both
+`apps/citizen`'s Area field and `apps/console`'s Geography rule editor are
+typeahead multiselects (chips + a filtered dropdown, plus free text on the
+citizen side for towns not in `apps/citizen/src/domain/cameroonTowns.ts`).
+
 ## Internationalization
 
 `apps/citizen` and `apps/console` both support English and French. Language is

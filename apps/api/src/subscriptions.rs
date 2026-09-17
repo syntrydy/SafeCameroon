@@ -57,7 +57,7 @@ pub enum SubscriptionRuleInput {
     IncidentType { values: Vec<IncidentType> },
     Severity { operator: String, value: Severity },
     EventType { values: Vec<CaseEventType> },
-    Geography { area: String },
+    Geography { areas: Vec<String> },
     Visibility { values: Vec<AlertVisibility> },
 }
 
@@ -79,14 +79,27 @@ fn to_domain_rule(
             Ok(SubscriptionRule::Severity { operator, value })
         }
         SubscriptionRuleInput::EventType { values } => Ok(SubscriptionRule::EventType(values)),
-        SubscriptionRuleInput::Geography { area } => GeoArea::new(area)
-            .map(SubscriptionRule::Geography)
-            .map_err(|_| ApiError {
-                status: StatusCode::BAD_REQUEST,
-                code: "INVALID_GEOGRAPHY_AREA",
-                message: "area cannot be blank.",
-                request_id,
-            }),
+        SubscriptionRuleInput::Geography { areas } => {
+            let areas: Vec<GeoArea> = areas
+                .into_iter()
+                .map(GeoArea::new)
+                .collect::<Result<_, _>>()
+                .map_err(|_| ApiError {
+                    status: StatusCode::BAD_REQUEST,
+                    code: "INVALID_GEOGRAPHY_AREA",
+                    message: "each area must be non-blank.",
+                    request_id,
+                })?;
+            if areas.is_empty() {
+                return Err(ApiError {
+                    status: StatusCode::BAD_REQUEST,
+                    code: "INVALID_GEOGRAPHY_AREA",
+                    message: "areas must contain at least one area.",
+                    request_id,
+                });
+            }
+            Ok(SubscriptionRule::Geography(areas))
+        }
         SubscriptionRuleInput::Visibility { values } => Ok(SubscriptionRule::Visibility(values)),
     }
 }
@@ -105,7 +118,7 @@ pub enum SubscriptionRuleOutput {
         values: Vec<CaseEventType>,
     },
     Geography {
-        area: String,
+        areas: Vec<String>,
     },
     Visibility {
         values: Vec<AlertVisibility>,
@@ -124,8 +137,8 @@ fn rule_output(rule: &SubscriptionRule) -> SubscriptionRuleOutput {
         SubscriptionRule::EventType(values) => SubscriptionRuleOutput::EventType {
             values: values.clone(),
         },
-        SubscriptionRule::Geography(area) => SubscriptionRuleOutput::Geography {
-            area: area.as_str().to_owned(),
+        SubscriptionRule::Geography(areas) => SubscriptionRuleOutput::Geography {
+            areas: areas.iter().map(|area| area.as_str().to_owned()).collect(),
         },
         SubscriptionRule::Visibility(values) => SubscriptionRuleOutput::Visibility {
             values: values.clone(),

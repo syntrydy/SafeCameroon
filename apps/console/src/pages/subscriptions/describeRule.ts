@@ -18,6 +18,6 @@ export function describeRule(rule: SubscriptionRule, t: Translations): string {
     case "EVENT_TYPE":
       return t.describeRule.eventType(rule.values.join(", ") || t.describeRule.noneSelected);
     case "GEOGRAPHY":
-      return t.describeRule.geography(rule.area || t.describeRule.none);
+      return t.describeRule.geography(rule.areas.join(", ") || t.describeRule.none);
   }
 }

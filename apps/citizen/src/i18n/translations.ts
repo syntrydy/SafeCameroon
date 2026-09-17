@@ -86,6 +86,9 @@ export interface Translations {
     areaHelper: string;
     areaPlaceholder: string;
     areaRequired: string;
+    alertTypePlaceholder: string;
+    removeIncidentType: (label: string) => string;
+    removeArea: (area: string) => string;
   };
 }
 
@@ -185,6 +188,9 @@ export const translations: Record<Locale, Translations> = {
       areaHelper: 'A city, neighborhood, or region name -- e.g. "Douala" or "Bonamoussadi".',
       areaPlaceholder: "Douala",
       areaRequired: "Please enter an area.",
+      alertTypePlaceholder: "Add another alert type...",
+      removeIncidentType: (label) => `Remove ${label}`,
+      removeArea: (area) => `Remove ${area}`,
     },
   },
   fr: {
@@ -286,6 +292,9 @@ export const translations: Record<Locale, Translations> = {
         'Un nom de ville, de quartier ou de région -- ex. "Douala" ou "Bonamoussadi".',
       areaPlaceholder: "Douala",
       areaRequired: "Veuillez saisir une zone.",
+      alertTypePlaceholder: "Ajouter un autre type d'alerte...",
+      removeIncidentType: (label) => `Retirer ${label}`,
+      removeArea: (area) => `Retirer ${area}`,
     },
   },
 };

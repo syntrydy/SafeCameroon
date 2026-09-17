@@ -258,7 +258,7 @@ mod tests {
                     operator: Comparison::GreaterThanOrEqual,
                     value: Severity::Medium,
                 },
-                SubscriptionRule::Geography(GeoArea::new("Douala").unwrap()),
+                SubscriptionRule::Geography(vec![GeoArea::new("Douala").unwrap()]),
             ],
         )
         .unwrap();
@@ -342,9 +342,9 @@ mod tests {
             SubscriptionId::new(),
             consumer_id,
             1,
-            vec![SubscriptionRule::Geography(
+            vec![SubscriptionRule::Geography(vec![
                 GeoArea::new("Yaounde").unwrap(),
-            )],
+            ])],
         )
         .unwrap();
         repos.subscriptions.create(&subscription).await.unwrap();

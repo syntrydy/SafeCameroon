@@ -6,7 +6,7 @@ export type Severity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 export interface AlertSubscriptionRules {
   incidentTypes: IncidentType[];
   minimumSeverity: Severity;
-  geography: string;
+  geography: string[];
 }
 
 interface CreateCitizenSubscriptionResult {
@@ -47,7 +47,7 @@ export function getCitizenSubscription(
 interface GetCitizenSubscriptionResult {
   incident_types: IncidentType[];
   minimum_severity: Severity;
-  geography: string;
+  geography: string[];
 }
 
 export function updateCitizenSubscription(

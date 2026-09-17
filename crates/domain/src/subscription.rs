@@ -118,7 +118,11 @@ pub enum SubscriptionRule {
         value: Severity,
     },
     EventType(Vec<CaseEventType>),
-    Geography(GeoArea),
+    /// Matches if the alert's target intersects *any* of these areas (an OR
+    /// within the rule, same as `IncidentType`/`EventType`'s Vec semantics) --
+    /// lets a subscriber ask for several towns/regions in one subscription
+    /// instead of needing a separate subscription per area.
+    Geography(Vec<GeoArea>),
     /// Restricts a subscription to alerts issued at one of these
     /// visibilities. Added specifically so a self-service consumer (e.g. an
     /// anonymous citizen subscription) can be scoped to broad-audience
@@ -154,11 +158,11 @@ impl fmt::Display for MatchReason {
             SubscriptionRule::EventType(values) => {
                 write!(f, "event: expected one of {values:?} - {verdict}")
             }
-            SubscriptionRule::Geography(area) => {
+            SubscriptionRule::Geography(areas) => {
+                let names: Vec<&str> = areas.iter().map(GeoArea::as_str).collect();
                 write!(
                     f,
-                    "geography: target intersects {} - {verdict}",
-                    area.as_str()
+                    "geography: target intersects any of {names:?} - {verdict}"
                 )
             }
             SubscriptionRule::Visibility(values) => {
@@ -263,7 +267,9 @@ fn evaluate_rule(rule: &SubscriptionRule, alert: &Alert) -> MatchReason {
             operator.evaluate(alert.severity(), *value)
         }
         SubscriptionRule::EventType(values) => values.contains(&alert.trigger()),
-        SubscriptionRule::Geography(area) => area.matches_target(alert.target_geography()),
+        SubscriptionRule::Geography(areas) => areas
+            .iter()
+            .any(|area| area.matches_target(alert.target_geography())),
         SubscriptionRule::Visibility(values) => values.contains(&alert.visibility()),
     };
     MatchReason {
@@ -394,9 +400,9 @@ mod tests {
         ])]);
         assert_eq!(sub.version(), 1);
 
-        let new_rules = vec![SubscriptionRule::Geography(
+        let new_rules = vec![SubscriptionRule::Geography(vec![
             GeoArea::new("Yaounde").unwrap(),
-        )];
+        ])];
         sub.update_rules(new_rules.clone()).unwrap();
 
         assert_eq!(sub.version(), 2);
@@ -500,14 +506,36 @@ mod tests {
             ("Bonamoussadi", true),
             ("Yaounde", false),
         ] {
-            let subscription = subscription(vec![SubscriptionRule::Geography(
+            let subscription = subscription(vec![SubscriptionRule::Geography(vec![
                 GeoArea::new(area).unwrap(),
-            )]);
+            ])]);
             assert_eq!(
                 evaluate_subscription(&subscription, &alert).matched,
                 expected
             );
         }
+    }
+
+    #[test]
+    fn a_geography_rule_matches_if_the_target_intersects_any_listed_area() {
+        let alert = community_alert(IncidentType::MissingChild, Severity::High, "Yaounde");
+        let subscription = subscription(vec![SubscriptionRule::Geography(vec![
+            GeoArea::new("Douala").unwrap(),
+            GeoArea::new("Yaounde").unwrap(),
+        ])]);
+
+        assert!(evaluate_subscription(&subscription, &alert).matched);
+    }
+
+    #[test]
+    fn a_geography_rule_with_no_intersecting_area_does_not_match() {
+        let alert = community_alert(IncidentType::MissingChild, Severity::High, "Bafoussam");
+        let subscription = subscription(vec![SubscriptionRule::Geography(vec![
+            GeoArea::new("Douala").unwrap(),
+            GeoArea::new("Yaounde").unwrap(),
+        ])]);
+
+        assert!(!evaluate_subscription(&subscription, &alert).matched);
     }
 
     #[test]
@@ -542,7 +570,7 @@ mod tests {
                 operator: Comparison::GreaterThanOrEqual,
                 value: Severity::High,
             },
-            SubscriptionRule::Geography(GeoArea::new("Yaounde").unwrap()),
+            SubscriptionRule::Geography(vec![GeoArea::new("Yaounde").unwrap()]),
         ]);
 
         let decision = evaluate_subscription(&subscription, &alert);
@@ -603,16 +631,18 @@ mod tests {
             SubscriptionId::new(),
             consumer,
             1,
-            vec![SubscriptionRule::Geography(GeoArea::new("Douala").unwrap())],
+            vec![SubscriptionRule::Geography(vec![
+                GeoArea::new("Douala").unwrap(),
+            ])],
         )
         .unwrap();
         let non_matching = Subscription::new(
             SubscriptionId::new(),
             ConsumerId::new(),
             1,
-            vec![SubscriptionRule::Geography(
+            vec![SubscriptionRule::Geography(vec![
                 GeoArea::new("Yaounde").unwrap(),
-            )],
+            ])],
         )
         .unwrap();
 

@@ -67,6 +67,44 @@ describe("AlertsPanel", () => {
     });
   });
 
+  it("subscribes to multiple alert types and areas in one subscription", async () => {
+    let sentBody: { incident_types: string[]; geography: string[] } | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_input: string, init?: RequestInit) => {
+        sentBody = JSON.parse(init?.body as string);
+        return Promise.resolve(
+          jsonResponse(201, {
+            consumer_id: "11111111-1111-1111-1111-111111111111",
+            subscription_id: "22222222-2222-2222-2222-222222222222",
+            management_token: "a-fake-management-token",
+          }),
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    renderPanel();
+
+    await screen.findByText("Get missing-child alerts");
+    await user.click(screen.getByRole("combobox", { name: "Alert type" }));
+    await user.click(await screen.findByRole("option", { name: "Other protection incident" }));
+    await user.type(screen.getByLabelText("Area"), "Douala");
+    await user.keyboard("{Enter}");
+    await user.type(screen.getByLabelText("Area"), "Yaounde");
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("button", { name: "Enable alerts" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Alerts are on for this device.")).toBeInTheDocument();
+    });
+    expect(sentBody).toEqual(
+      expect.objectContaining({
+        incident_types: ["MISSING_CHILD", "OTHER_PROTECTION_INCIDENT"],
+        geography: ["Douala", "Yaounde"],
+      }),
+    );
+  });
+
   it("loads an existing subscription from this device and shows it as on", async () => {
     window.localStorage.setItem(
       "safecameroon-citizen-alert-subscription",
@@ -78,7 +116,7 @@ describe("AlertsPanel", () => {
         jsonResponse(200, {
           incident_types: ["MISSING_CHILD"],
           minimum_severity: "HIGH",
-          geography: "Douala",
+          geography: ["Douala"],
         }),
       ),
     );
@@ -88,7 +126,7 @@ describe("AlertsPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Alerts are on for this device.")).toBeInTheDocument();
     });
-    expect(screen.getByDisplayValue("Douala")).toBeInTheDocument();
+    expect(screen.getByText("Douala")).toBeInTheDocument();
   });
 
   it("clears a subscription this device can no longer authenticate", async () => {
@@ -124,7 +162,7 @@ describe("AlertsPanel", () => {
             jsonResponse(200, {
               incident_types: ["MISSING_CHILD"],
               minimum_severity: "HIGH",
-              geography: "Douala",
+              geography: ["Douala"],
             }),
           );
         }

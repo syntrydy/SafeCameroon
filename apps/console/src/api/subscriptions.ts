@@ -11,7 +11,7 @@ export type SubscriptionRule =
   | { rule: "INCIDENT_TYPE"; values: IncidentType[] }
   | { rule: "SEVERITY"; operator: Comparison; value: Severity }
   | { rule: "EVENT_TYPE"; values: CaseEventType[] }
-  | { rule: "GEOGRAPHY"; area: string };
+  | { rule: "GEOGRAPHY"; areas: string[] };
 
 // Matches apps/api/src/subscriptions.rs `SubscriptionResponse`.
 export interface Subscription {

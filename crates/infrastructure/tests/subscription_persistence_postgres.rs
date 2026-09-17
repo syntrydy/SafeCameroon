@@ -61,7 +61,10 @@ async fn a_subscription_with_every_rule_type_round_trips_through_postgres() {
                 value: Severity::High,
             },
             SubscriptionRule::EventType(vec![safe_cameroon_domain::CaseEventType::CaseVerified]),
-            SubscriptionRule::Geography(GeoArea::new("Douala - Bonamoussadi").unwrap()),
+            SubscriptionRule::Geography(vec![
+                GeoArea::new("Douala - Bonamoussadi").unwrap(),
+                GeoArea::new("Yaounde").unwrap(),
+            ]),
             SubscriptionRule::Visibility(vec![AlertVisibility::Community, AlertVisibility::Public]),
         ],
     )
@@ -201,9 +204,9 @@ async fn updating_a_subscription_persists_the_new_rules_and_version_and_audits_i
     repository.create(&subscription).await.unwrap();
 
     subscription
-        .update_rules(vec![SubscriptionRule::Geography(
+        .update_rules(vec![SubscriptionRule::Geography(vec![
             GeoArea::new("Douala").unwrap(),
-        )])
+        ])])
         .unwrap();
     let reviewer = Actor::Reviewer(Uuid::new_v4());
     let request_id = Uuid::new_v4();
@@ -250,14 +253,14 @@ async fn updating_a_subscription_from_a_stale_read_is_a_conflict() {
     let mut first_reader = subscription.clone();
     let mut second_reader = subscription.clone();
     first_reader
-        .update_rules(vec![SubscriptionRule::Geography(
+        .update_rules(vec![SubscriptionRule::Geography(vec![
             GeoArea::new("Douala").unwrap(),
-        )])
+        ])])
         .unwrap();
     second_reader
-        .update_rules(vec![SubscriptionRule::Geography(
+        .update_rules(vec![SubscriptionRule::Geography(vec![
             GeoArea::new("Yaounde").unwrap(),
-        )])
+        ])])
         .unwrap();
 
     let actor = Actor::Reviewer(Uuid::new_v4());
