@@ -132,6 +132,21 @@ introducing a shared package for a two-app monorepo. Adding a UI string means
 adding the key to both languages in that app's `translations.ts` -- the
 `Translations` interface makes a missing key or locale a compile error.
 
+## SEO and discoverability (citizen app only)
+
+The citizen app is meant to be found and shared -- it gets full search/AI-crawler
+treatment: Open Graph and Twitter card meta tags with a real 1200x630 preview
+image (link-preview quality matters here since this gets shared via WhatsApp
+during real incidents), JSON-LD structured data (`WebApplication`), a canonical
+URL, `robots.txt`/`sitemap.xml`, and an `llms.txt` (an emerging convention some
+AI tools read for a plain-language site summary). `<html lang>` is set at
+runtime to the detected locale (`apps/citizen/src/i18n/LanguageContext.tsx`),
+since the static HTML shell has no server-side locale detection to set it
+upfront. The console/portal gets the opposite treatment on purpose --
+`<meta name="robots" content="noindex, nofollow">` and a blanket-disallow
+`robots.txt` -- it's an authenticated org login with no benefit to public
+search discovery.
+
 ## Pilot demo
 
 `cargo run -p safe-cameroon-api --bin demo` (needs `DATABASE_URL`; `OPENROUTER_API_KEY`

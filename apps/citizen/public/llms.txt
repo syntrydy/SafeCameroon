@@ -1,0 +1,26 @@
+# Sentinel
+
+> Sentinel is a free, privacy-first civic-protection platform for anonymously reporting a missing child or another protection incident, and for subscribing to verified safety alerts for a chosen area. No account or personal information is required to report; the app works offline and sends automatically once back online.
+
+Sentinel exists to close the gap between a bystander who witnesses an incident and the organizations (police, NGOs, schools) who can actually help. A report is never acted on automatically: a trust-granted human reviewer verifies it and issues any alert, and AI is used only to suggest structured fields from the report text — never to make a decision.
+
+## Key facts
+
+- Reporting requires no account, no login, and no personal information; the reporter's identity is never recorded.
+- The app works fully offline and queues a report for automatic sending once connectivity returns.
+- Available in English and French, detected automatically from the browser's language.
+- Citizens can subscribe to push notifications for specific incident types, minimum severity, and geographic areas.
+- The underlying platform (case verification, alert policy, delivery) is open source under the MIT license.
+
+## Primary pages
+
+- [Report an incident](https://sentinel.africalineage.com/): the main app — report a missing child or protection incident, or manage alert subscriptions.
+
+## For organizations
+
+Police, NGOs, schools, and other trust-granted organizations use a separate, authenticated reviewer portal (not intended for public search discovery) to verify reports, manage cases, and issue alerts.
+
+## Source and contact
+
+- Source code: https://github.com/syntrydy/SafeCameroon (MIT license)
+- This is a civic-technology project; there is no commercial entity or paid tier.

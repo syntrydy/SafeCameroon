@@ -1,6 +1,6 @@
 import { createContext } from "preact";
 import type { ComponentChildren } from "preact";
-import { useContext, useMemo } from "preact/hooks";
+import { useContext, useEffect, useMemo } from "preact/hooks";
 
 import { detectLocale, type Locale } from "./locale";
 import { translations, type Translations } from "./translations";
@@ -12,6 +12,13 @@ export function LanguageProvider({ children }: { children: ComponentChildren }) 
     const locale = detectLocale();
     return { locale, t: translations[locale] };
   }, []);
+
+  // Keeps the static index.html's lang="en" accurate for screen readers and
+  // search engines once the actual detected locale is known -- the HTML
+  // shell has no server-side locale detection to set this upfront.
+  useEffect(() => {
+    document.documentElement.lang = value.locale;
+  }, [value.locale]);
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 }
