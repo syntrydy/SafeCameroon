@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => {
   // country) -- read the same way the app's own runtime config does
   // (apps/citizen/src/config/brand.ts), just from Node's env here since this
   // file runs at build time, not in the browser.
-  const brandName = loadEnv(mode, process.cwd(), "").VITE_BRAND_NAME || "SafeCameroon";
+  const brandName = loadEnv(mode, process.cwd(), "").VITE_BRAND_NAME || "Sentinel";
 
   return {
     plugins: [

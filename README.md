@@ -1,6 +1,10 @@
-# SafeCameroon
+# Sentinel
 
-SafeCameroon is a privacy-first civic-protection platform for anonymous incident intake,
+_(Repository name is `SafeCameroon` for historical reasons — Cameroon was the pilot country;
+the product itself is named Sentinel and is built to run in any country. See
+["Multi-country deployment model"](#multi-country-deployment-model) below.)_
+
+Sentinel is a privacy-first civic-protection platform for anonymous incident intake,
 case coordination, controlled alerts, and multi-channel delivery. The first operational
 use case is missing children.
 
@@ -53,7 +57,7 @@ set two things differently, both already config-driven rather than hardcoded:
 
 - **`VITE_BRAND_NAME`** (`apps/console/.env.example`, `apps/citizen/.env.example`) -- the product
   name shown throughout both apps (headers, page titles, the citizen app's PWA manifest, footer
-  copyright). Falls back to `"SafeCameroon"` if unset, so the existing pilot deployment needs no
+  copyright). Falls back to `"Sentinel"` if unset, so the existing pilot deployment needs no
   new configuration.
 - **`apps/citizen/src/domain/knownTowns.ts`** -- the autocomplete suggestions for the citizen app's
   Area field. Not a validation allow-list (geography matching is free-text substring matching), so
