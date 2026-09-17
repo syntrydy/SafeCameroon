@@ -287,6 +287,18 @@ impl PostgresDeliveryRepository {
     /// concurrent workers"). Every returned delivery is already `SENDING`
     /// with its `DELIVERY_STARTED` event/audit/outbox row persisted; the
     /// caller only needs to dispatch it to a channel and report the outcome.
+    ///
+    /// A tier-`N` delivery (`N` > 0, i.e. `PrimaryFallback`/`PriorityList`'s
+    /// fallback tiers -- `DeliveryPreference::tiers`) is excluded until every
+    /// lower-tier delivery for the same `alert_id`/`consumer_id` has reached
+    /// `FAILED_PERMANENTLY`. If a lower tier is still in flight, retrying, or
+    /// already succeeded, the fallback simply never becomes claimable (a
+    /// successful primary makes the fallback row permanently moot, which is
+    /// correct -- there is nothing left to fall back from). The `NOT EXISTS`
+    /// subquery is not part of the outer `FROM`, so `FOR UPDATE OF d` locks
+    /// only the rows this call may actually claim, never the lower-tier rows
+    /// it merely reads to decide gating (avoiding needless lock contention
+    /// with whatever is concurrently dispatching those tier-0 rows).
     pub async fn claim_next(&self, limit: i64) -> Result<Vec<Delivery>, sqlx::Error> {
         let mut tx = self.pool.begin().await?;
         #[allow(clippy::type_complexity)]
@@ -304,15 +316,25 @@ impl PostgresDeliveryRepository {
             i64,
         )> = sqlx::query_as(
             r#"
-            SELECT id, alert_id, consumer_id, channel::text, endpoint_address, tier,
-                   matching_subscriptions, status::text, attempt_count, max_attempts,
-                   aggregate_version
-            FROM deliveries
-            WHERE status IN ('QUEUED', 'RETRYING')
-              AND (next_attempt_at IS NULL OR next_attempt_at <= now())
-            ORDER BY created_at
+            SELECT d.id, d.alert_id, d.consumer_id, d.channel::text, d.endpoint_address, d.tier,
+                   d.matching_subscriptions, d.status::text, d.attempt_count, d.max_attempts,
+                   d.aggregate_version
+            FROM deliveries d
+            WHERE d.status IN ('QUEUED', 'RETRYING')
+              AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= now())
+              AND (
+                d.tier = 0
+                OR NOT EXISTS (
+                  SELECT 1 FROM deliveries lower
+                  WHERE lower.alert_id = d.alert_id
+                    AND lower.consumer_id = d.consumer_id
+                    AND lower.tier < d.tier
+                    AND lower.status <> 'FAILED_PERMANENTLY'
+                )
+              )
+            ORDER BY d.created_at
             LIMIT $1
-            FOR UPDATE SKIP LOCKED
+            FOR UPDATE OF d SKIP LOCKED
             "#,
         )
         .bind(limit)

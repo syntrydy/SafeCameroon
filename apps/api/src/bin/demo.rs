@@ -412,72 +412,86 @@ async fn main() {
     println!("{} delivery attempt(s) planned.", planned.len());
     deliveries.create_planned(&planned).await.unwrap();
 
-    let claimed = deliveries.claim_next(10).await.unwrap();
-    for mut delivery in claimed {
-        let message = build_outbound_message(&alert, &delivery);
-        let outcome = match delivery.channel() {
-            ChannelType::WhatsApp => WhatsAppChannel.send(message).await,
-            ChannelType::Sms => SmsChannel.send(message).await,
-            ChannelType::Email => EmailChannel.send(message).await,
-            ChannelType::Push => Err(safe_cameroon_application::channel::ChannelError {
-                retryable: false,
-                message: "demo push endpoint is a placeholder, not a real subscription".into(),
-            }),
-        };
-        match outcome {
-            Ok(send_outcome) => {
-                let transition = record_delivery_success(
-                    &mut delivery,
-                    send_outcome.provider_message_id,
-                    Actor::Automated,
-                    Uuid::new_v4(),
-                )
-                .unwrap();
-                deliveries
-                    .apply_attempt_transition(&delivery, &transition)
-                    .await
+    // Fallback tiers are gated: the NGO's tier-1 email is not claimable
+    // until its tier-0 SMS has failed permanently, so this can take two
+    // rounds -- round 1 claims every tier-0 delivery (plus any consumer with
+    // no fallback at all), and round 2 picks up whatever fallback tiers just
+    // became unblocked as a result. A fixed two rounds is enough for this
+    // demo's fixture data (a single fallback tier); a real worker just loops
+    // `claim_next` until it comes back empty.
+    for round in 1..=2 {
+        let claimed = deliveries.claim_next(10).await.unwrap();
+        if claimed.is_empty() {
+            println!("  (round {round}: nothing claimable)");
+            continue;
+        }
+        println!("  -- round {round} --");
+        for mut delivery in claimed {
+            let message = build_outbound_message(&alert, &delivery);
+            let outcome = match delivery.channel() {
+                ChannelType::WhatsApp => WhatsAppChannel.send(message).await,
+                ChannelType::Sms => SmsChannel.send(message).await,
+                ChannelType::Email => EmailChannel.send(message).await,
+                ChannelType::Push => Err(safe_cameroon_application::channel::ChannelError {
+                    retryable: false,
+                    message: "demo push endpoint is a placeholder, not a real subscription".into(),
+                }),
+            };
+            match outcome {
+                Ok(send_outcome) => {
+                    let transition = record_delivery_success(
+                        &mut delivery,
+                        send_outcome.provider_message_id,
+                        Actor::Automated,
+                        Uuid::new_v4(),
+                    )
                     .unwrap();
-                println!(
-                    "  OK   {:?} -> {} (tier {})",
-                    delivery.channel(),
-                    delivery.endpoint_address(),
-                    delivery.tier()
-                );
-            }
-            Err(error) => {
-                let transition = record_delivery_failure(
-                    &mut delivery,
-                    error.retryable,
-                    error.message.clone(),
-                    Actor::Automated,
-                    Uuid::new_v4(),
-                )
-                .unwrap();
-                deliveries
-                    .apply_attempt_transition(&delivery, &transition)
-                    .await
+                    deliveries
+                        .apply_attempt_transition(&delivery, &transition)
+                        .await
+                        .unwrap();
+                    println!(
+                        "  OK   {:?} -> {} (tier {})",
+                        delivery.channel(),
+                        delivery.endpoint_address(),
+                        delivery.tier()
+                    );
+                }
+                Err(error) => {
+                    let transition = record_delivery_failure(
+                        &mut delivery,
+                        error.retryable,
+                        error.message.clone(),
+                        Actor::Automated,
+                        Uuid::new_v4(),
+                    )
                     .unwrap();
-                println!(
-                    "  FAIL {:?} -> {} (tier {}): {} ({})",
-                    delivery.channel(),
-                    delivery.endpoint_address(),
-                    delivery.tier(),
-                    error.message,
-                    if error.retryable {
-                        "will retry"
-                    } else {
-                        "permanent"
-                    }
-                );
+                    deliveries
+                        .apply_attempt_transition(&delivery, &transition)
+                        .await
+                        .unwrap();
+                    println!(
+                        "  FAIL {:?} -> {} (tier {}): {} ({})",
+                        delivery.channel(),
+                        delivery.endpoint_address(),
+                        delivery.tier(),
+                        error.message,
+                        if error.retryable {
+                            "will retry"
+                        } else {
+                            "permanent"
+                        }
+                    );
+                }
             }
         }
     }
     println!(
-        "Note: every planned channel/tier is attempted independently in the current system \
-         (there is no 'wait for the primary to fail before trying the fallback' gating yet) -- \
-         the NGO's invalid SMS failing permanently alongside its email succeeding demonstrates \
-         that one consumer's provider failure never blocks another delivery, which is the part \
-         that is fully real and tested today."
+        "Note: a fallback tier (tier > 0) is now gated -- it only becomes claimable once every \
+         lower tier for that alert/consumer has failed permanently. The Bonamoussadi NGO's \
+         invalid SMS (tier 0) fails permanently in round 1, which is what unblocks its email \
+         (tier 1) for round 2; a consumer whose primary tier succeeds never has its fallback \
+         claimed at all."
     );
 
     // -- 8. Case resolved; a follow-up update alert is issued ------------------
