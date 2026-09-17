@@ -8,6 +8,7 @@ import { ReportForm, type ReportFormPhoto } from "./components/ReportForm";
 import { ShieldMark } from "./components/ShieldMark";
 import { StatusBanner } from "./components/StatusBanner";
 import { TabSwitcher, type Tab } from "./components/TabSwitcher";
+import { BRAND_NAME } from "./config/brand";
 import { countPendingReports, startBackgroundSync, submitOrQueue } from "./offline/queue";
 import { listReceipts, type Receipt } from "./offline/receipts";
 import { useOnlineStatus } from "./offline/useOnlineStatus";
@@ -40,6 +41,10 @@ function AppContent() {
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    document.title = `${BRAND_NAME} – Report a Missing Child`;
   }, []);
 
   useEffect(() => {
@@ -114,7 +119,7 @@ function AppContent() {
             </div>
           </div>
           <div>
-            <span className="text-lg font-bold text-white">{t.brand.name}</span>
+            <span className="text-lg font-bold text-white">{BRAND_NAME}</span>
             <span className="ml-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wider text-emerald-400 uppercase">
               {t.brand.citizenBadge}
             </span>

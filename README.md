@@ -41,6 +41,27 @@ Citizen reports anonymously (no account)
   missing children is the first hard case chosen to prove it end-to-end, not the ceiling of what
   the platform can do.
 
+## Multi-country deployment model
+
+Cameroon is the pilot, not a ceiling: each country gets its **own deployment** (own database, own
+reviewers/organizations, own secrets), not a shared multi-tenant instance. Given this handles
+child-safety data, police/NGO authority and legal reporting obligations are inherently national --
+keeping deployments fully separate is a far simpler and stronger privacy/jurisdiction guarantee
+than trusting a `country` filter on every query in a shared database, where one missed `WHERE`
+clause would be a cross-country data leak. Concretely, a second country's deployment only needs to
+set two things differently, both already config-driven rather than hardcoded:
+
+- **`VITE_BRAND_NAME`** (`apps/console/.env.example`, `apps/citizen/.env.example`) -- the product
+  name shown throughout both apps (headers, page titles, the citizen app's PWA manifest, footer
+  copyright). Falls back to `"SafeCameroon"` if unset, so the existing pilot deployment needs no
+  new configuration.
+- **`apps/citizen/src/domain/knownTowns.ts`** -- the autocomplete suggestions for the citizen app's
+  Area field. Not a validation allow-list (geography matching is free-text substring matching), so
+  a different country's deployment just ships this one file with that country's town list.
+
+Everything else -- the domain model, the API, the delivery/subscription engine, the CI/CD pipeline
+-- is already country-agnostic and needs no code change per country.
+
 ## Repository layout
 
 - `crates/domain`: pure domain types and state-transition rules.

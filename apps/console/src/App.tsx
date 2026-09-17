@@ -1,8 +1,10 @@
+import { useEffect } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import { AppLayout } from "./components/AppLayout";
 import { RequireAuth } from "./auth/RequireAuth";
 import { RequirePlatformAdmin } from "./auth/RequirePlatformAdmin";
+import { BRAND_NAME } from "./config/brand";
 import { AlertList } from "./pages/alerts/AlertList";
 import { AlertPreview } from "./pages/alerts/AlertPreview";
 import { CaseDetail } from "./pages/case-detail/CaseDetail";
@@ -25,6 +27,10 @@ function ProtectedLayout() {
 }
 
 export function App() {
+  useEffect(() => {
+    document.title = `${BRAND_NAME} Console`;
+  }, []);
+
   return (
     <LanguageProvider>
       <Routes>

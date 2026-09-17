@@ -7,6 +7,7 @@ import { GoogleSignInButton } from "../auth/GoogleSignInButton";
 import { Footer } from "../components/Footer";
 import { ShieldIcon } from "../components/icons/ShieldIcon";
 import { NetworkIllustration } from "../components/NetworkIllustration";
+import { BRAND_NAME } from "../config/brand";
 import { useTranslation } from "../i18n/LanguageContext";
 
 interface LocationState {
@@ -92,7 +93,7 @@ export function Login() {
               </div>
             </div>
             <div>
-              <span className="text-xl font-bold tracking-tight text-white">{t.brand.name}</span>
+              <span className="text-xl font-bold tracking-tight text-white">{BRAND_NAME}</span>
               <span className="ml-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wider text-emerald-400 uppercase">
                 {t.brand.consoleBadge}
               </span>
@@ -147,7 +148,7 @@ export function Login() {
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-lg shadow-emerald-500/25">
                 <ShieldIcon className="h-5 w-5 text-white" />
               </div>
-              <span className="text-lg font-bold text-white">{t.brand.name}</span>
+              <span className="text-lg font-bold text-white">{BRAND_NAME}</span>
             </div>
 
             <div className="relative">
