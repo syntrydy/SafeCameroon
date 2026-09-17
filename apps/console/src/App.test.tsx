@@ -140,13 +140,15 @@ describe("console auth flow", () => {
     expect(screen.queryByRole("link", { name: "Organizations" })).not.toBeInTheDocument();
   });
 
-  it("shows the Organizations link for a platform admin and navigates to it", async () => {
+  it("shows the Organizations link and an Admin label for a platform admin", async () => {
     stubBackend("PLATFORM_ADMIN");
     const user = userEvent.setup();
     renderApp("/login");
 
     await user.click(screen.getByRole("button", { name: "Fake Google Sign-In" }));
     await screen.findByRole("heading", { name: "Review queue" });
+
+    expect(screen.getByText(`Admin ${LOGIN_RESPONSE.email}`)).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Organizations" }));
 
