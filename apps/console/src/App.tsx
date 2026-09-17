@@ -2,12 +2,14 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import { AppLayout } from "./components/AppLayout";
 import { RequireAuth } from "./auth/RequireAuth";
+import { RequirePlatformAdmin } from "./auth/RequirePlatformAdmin";
 import { AlertList } from "./pages/alerts/AlertList";
 import { AlertPreview } from "./pages/alerts/AlertPreview";
 import { CaseDetail } from "./pages/case-detail/CaseDetail";
 import { DeliveryDetail } from "./pages/deliveries/DeliveryDetail";
 import { DeliveryList } from "./pages/deliveries/DeliveryList";
 import { Login } from "./pages/Login";
+import { Organizations } from "./pages/organizations/Organizations";
 import { ReviewQueue } from "./pages/review-queue/ReviewQueue";
 import { Subscriptions } from "./pages/subscriptions/Subscriptions";
 import { LanguageProvider } from "./i18n/LanguageContext";
@@ -35,6 +37,14 @@ export function App() {
           <Route path="/alerts/:id/deliveries" element={<DeliveryList />} />
           <Route path="/deliveries/:id" element={<DeliveryDetail />} />
           <Route path="/subscriptions" element={<Subscriptions />} />
+          <Route
+            path="/organizations"
+            element={
+              <RequirePlatformAdmin>
+                <Organizations />
+              </RequirePlatformAdmin>
+            }
+          />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
