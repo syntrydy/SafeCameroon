@@ -45,6 +45,17 @@ persisted before this change, so no backfill migration was needed. Both
 typeahead multiselects (chips + a filtered dropdown, plus free text on the
 citizen side for towns not in `apps/citizen/src/domain/cameroonTowns.ts`).
 
+## Delivery fallback tiers
+
+`DeliveryPreference` with `PrimaryFallback`/`PriorityList` numbers its channels
+into tiers (0 = primary, 1 = first fallback, ...). `claim_next`
+(`crates/infrastructure/src/postgres/deliveries.rs`) only dequeues a tier > 0
+delivery once every lower-tier delivery for that same alert/consumer has
+reached `FAILED_PERMANENTLY` -- a still-pending or already-succeeded lower
+tier leaves the fallback un-claimable, so a working primary channel never
+also sends the fallback message. Gating a delivery this way needs no extra
+status: it simply stays `QUEUED` until the gate opens.
+
 ## Internationalization
 
 `apps/citizen` and `apps/console` both support English and French. Language is

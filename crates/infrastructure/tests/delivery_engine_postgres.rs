@@ -393,6 +393,172 @@ async fn plan_and_persist_one(
     planned[0].delivery.id()
 }
 
+/// Plans and persists one consumer's `PrimaryFallback` deliveries across two
+/// channels, returning `(tier_0_id, tier_1_id)`.
+async fn plan_and_persist_fallback(
+    delivery_repository: &PostgresDeliveryRepository,
+    alert: &safe_cameroon_domain::Alert,
+    primary: ChannelType,
+    fallback: ChannelType,
+) -> (
+    safe_cameroon_domain::DeliveryId,
+    safe_cameroon_domain::DeliveryId,
+) {
+    let consumer_id = ConsumerId::new();
+    let preference = safe_cameroon_domain::DeliveryPreference::new(
+        DeliveryStrategy::PrimaryFallback,
+        vec![
+            ChannelEndpoint::new(primary, "+237600000000").unwrap(),
+            ChannelEndpoint::new(fallback, "+237600000001").unwrap(),
+        ],
+    )
+    .unwrap();
+    let mut preferences = HashMap::new();
+    preferences.insert(consumer_id, preference);
+    let consumer_matches = vec![ConsumerMatch {
+        consumer_id,
+        matching_subscriptions: vec![MatchedSubscription {
+            subscription_id: SubscriptionId::new(),
+            subscription_version: 1,
+        }],
+    }];
+    let planned = plan_deliveries(
+        alert,
+        &consumer_matches,
+        &preferences,
+        RetryPolicy::standard(),
+        Actor::Automated,
+        Uuid::new_v4(),
+    );
+    delivery_repository.create_planned(&planned).await.unwrap();
+    let tier_0 = planned
+        .iter()
+        .find(|p| p.delivery.tier() == 0)
+        .expect("a tier-0 delivery must be planned")
+        .delivery
+        .id();
+    let tier_1 = planned
+        .iter()
+        .find(|p| p.delivery.tier() == 1)
+        .expect("a tier-1 delivery must be planned")
+        .delivery
+        .id();
+    (tier_0, tier_1)
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn a_fallback_tier_is_not_claimed_while_its_primary_tier_is_still_pending() {
+    let pool = test_pool().await;
+    let alert = verified_alert(&pool).await;
+    let delivery_repository = PostgresDeliveryRepository::new(pool.clone());
+
+    let (tier_0_id, _tier_1_id) = plan_and_persist_fallback(
+        &delivery_repository,
+        &alert,
+        ChannelType::Sms,
+        ChannelType::Email,
+    )
+    .await;
+
+    let claimed = delivery_repository.claim_next(10).await.unwrap();
+
+    assert_eq!(
+        claimed.len(),
+        1,
+        "only the still-pending tier-0 delivery may be claimed"
+    );
+    assert_eq!(claimed[0].id(), tier_0_id);
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn a_fallback_tier_stays_blocked_once_its_primary_tier_succeeds() {
+    let pool = test_pool().await;
+    let alert = verified_alert(&pool).await;
+    let delivery_repository = PostgresDeliveryRepository::new(pool.clone());
+
+    let (tier_0_id, _tier_1_id) = plan_and_persist_fallback(
+        &delivery_repository,
+        &alert,
+        ChannelType::Sms,
+        ChannelType::Email,
+    )
+    .await;
+
+    let mut tier_0 = delivery_repository
+        .find_by_id(tier_0_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let start = start_delivery_attempt(&mut tier_0, Actor::Automated, Uuid::new_v4()).unwrap();
+    delivery_repository
+        .apply_transition(&tier_0, &start)
+        .await
+        .unwrap();
+    let succeeded =
+        record_delivery_success(&mut tier_0, None, Actor::Automated, Uuid::new_v4()).unwrap();
+    delivery_repository
+        .apply_attempt_transition(&tier_0, &succeeded)
+        .await
+        .unwrap();
+
+    let claimed = delivery_repository.claim_next(10).await.unwrap();
+    assert!(
+        claimed.is_empty(),
+        "a successful primary leaves nothing to fall back from, so the fallback must never fire"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn a_fallback_tier_becomes_claimable_once_every_primary_tier_delivery_fails_permanently() {
+    let pool = test_pool().await;
+    let alert = verified_alert(&pool).await;
+    let delivery_repository = PostgresDeliveryRepository::new(pool.clone());
+
+    let (tier_0_id, tier_1_id) = plan_and_persist_fallback(
+        &delivery_repository,
+        &alert,
+        ChannelType::Sms,
+        ChannelType::Email,
+    )
+    .await;
+
+    let mut tier_0 = delivery_repository
+        .find_by_id(tier_0_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let start = start_delivery_attempt(&mut tier_0, Actor::Automated, Uuid::new_v4()).unwrap();
+    delivery_repository
+        .apply_transition(&tier_0, &start)
+        .await
+        .unwrap();
+    let failed = record_delivery_failure(
+        &mut tier_0,
+        false,
+        "invalid phone number",
+        Actor::Automated,
+        Uuid::new_v4(),
+    )
+    .unwrap();
+    delivery_repository
+        .apply_attempt_transition(&tier_0, &failed)
+        .await
+        .unwrap();
+    assert_eq!(tier_0.status(), DeliveryStatus::FailedPermanently);
+
+    let claimed = delivery_repository.claim_next(10).await.unwrap();
+    assert_eq!(
+        claimed.len(),
+        1,
+        "the fallback becomes claimable once its only primary tier has failed permanently"
+    );
+    assert_eq!(claimed[0].id(), tier_1_id);
+    assert_eq!(claimed[0].status(), DeliveryStatus::Sending);
+}
+
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
 async fn claim_next_only_dequeues_queued_or_retrying_deliveries_and_starts_their_attempt() {
