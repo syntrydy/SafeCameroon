@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type { Role } from "./organizations";
 
 // Matches apps/api/src/auth.rs `LoginResponse`.
 export interface LoginResponse {
@@ -6,6 +7,7 @@ export interface LoginResponse {
   expires_in_seconds: number;
   reviewer_id: string;
   email: string;
+  role: Role;
 }
 
 export function loginWithGoogle(idToken: string): Promise<LoginResponse> {

@@ -189,6 +189,7 @@ pub struct LoginResponse {
     expires_in_seconds: u64,
     reviewer_id: Uuid,
     email: String,
+    role: Role,
 }
 
 pub async fn google_login(
@@ -246,12 +247,20 @@ pub async fn google_login(
         .await
         .map_err(|_| persistence_failed(request_id))?;
 
+    let membership = state
+        .organizations
+        .find_membership(reviewer_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .expect("every registered reviewer is given a membership at registration time");
+
     let issued = state.reviewer_session_tokens.issue(reviewer_id);
     Ok(Json(LoginResponse {
         token: issued.token,
         expires_in_seconds: issued.expires_in.as_secs(),
         reviewer_id,
         email: normalized_email,
+        role: membership.role,
     }))
 }
 

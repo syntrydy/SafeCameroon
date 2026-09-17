@@ -18,8 +18,11 @@ export interface Translations {
     reports: string;
     alerts: string;
     subscriptions: string;
+    organizations: string;
     reviewer: string;
     signOut: string;
+    collapseSidebar: string;
+    expandSidebar: string;
   };
   login: {
     heroHeadingPrefix: string;
@@ -249,6 +252,25 @@ export interface Translations {
     saving: string;
     saveDeliveryPreference: string;
   };
+  organizations: {
+    heading: string;
+    createHeading: string;
+    name: string;
+    creating: string;
+    create: string;
+    loading: string;
+    noOrganizations: string;
+    verifiedIncidentTypes: string;
+    verifiedVisibilities: string;
+    none: string;
+    viewDetails: string;
+    hideDetails: string;
+    membersHeading: string;
+    noMembers: string;
+    trustGrantsHeading: string;
+    saveTrustGrants: string;
+    saving: string;
+  };
 }
 
 export const translations: Record<Locale, Translations> = {
@@ -270,8 +292,11 @@ export const translations: Record<Locale, Translations> = {
       reports: "Reports",
       alerts: "Alerts",
       subscriptions: "Subscriptions",
+      organizations: "Organizations",
       reviewer: "Reviewer",
       signOut: "Sign out",
+      collapseSidebar: "Collapse sidebar",
+      expandSidebar: "Expand sidebar",
     },
     login: {
       heroHeadingPrefix: "Coordinated response for",
@@ -503,6 +528,25 @@ export const translations: Record<Locale, Translations> = {
       saving: "Saving...",
       saveDeliveryPreference: "Save delivery preference",
     },
+    organizations: {
+      heading: "Organizations",
+      createHeading: "Register a new organization",
+      name: "Name",
+      creating: "Creating...",
+      create: "Create organization",
+      loading: "Loading organizations...",
+      noOrganizations: "No organizations registered yet.",
+      verifiedIncidentTypes: "Verified incident types",
+      verifiedVisibilities: "Verified alert visibilities",
+      none: "None",
+      viewDetails: "View details",
+      hideDetails: "Hide details",
+      membersHeading: "Members",
+      noMembers: "No members yet.",
+      trustGrantsHeading: "Trust grants",
+      saveTrustGrants: "Save trust grants",
+      saving: "Saving...",
+    },
   },
   fr: {
     common: {
@@ -522,8 +566,11 @@ export const translations: Record<Locale, Translations> = {
       reports: "Signalements",
       alerts: "Alertes",
       subscriptions: "Abonnements",
+      organizations: "Organisations",
       reviewer: "Examinateur",
       signOut: "Se déconnecter",
+      collapseSidebar: "Réduire la barre latérale",
+      expandSidebar: "Agrandir la barre latérale",
     },
     login: {
       heroHeadingPrefix: "Une réponse coordonnée pour",
@@ -756,6 +803,25 @@ export const translations: Record<Locale, Translations> = {
       addChannel: "Ajouter un canal",
       saving: "Enregistrement...",
       saveDeliveryPreference: "Enregistrer la préférence de livraison",
+    },
+    organizations: {
+      heading: "Organisations",
+      createHeading: "Enregistrer une nouvelle organisation",
+      name: "Nom",
+      creating: "Création...",
+      create: "Créer l'organisation",
+      loading: "Chargement des organisations...",
+      noOrganizations: "Aucune organisation enregistrée pour l'instant.",
+      verifiedIncidentTypes: "Types d'incidents vérifiés",
+      verifiedVisibilities: "Visibilités d'alerte vérifiées",
+      none: "Aucun",
+      viewDetails: "Voir les détails",
+      hideDetails: "Masquer les détails",
+      membersHeading: "Membres",
+      noMembers: "Aucun membre pour l'instant.",
+      trustGrantsHeading: "Habilitations de confiance",
+      saveTrustGrants: "Enregistrer les habilitations",
+      saving: "Enregistrement...",
     },
   },
 };

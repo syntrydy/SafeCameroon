@@ -1847,10 +1847,55 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(login_response.status(), StatusCode::OK);
+        let body = json_body(login_response).await;
+        assert_eq!(body["email"], json!(email.to_lowercase()));
         assert_eq!(
-            json_body(login_response).await["email"],
-            json!(email.to_lowercase())
+            body["role"],
+            json!("PLATFORM_ADMIN"),
+            "the bootstrapping first reviewer must be a platform admin"
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn google_login_response_carries_a_non_admin_reviewers_granted_role() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let admin_token = login_reviewer(app.clone()).await;
+        let organization_id = create_organization(app.clone(), &admin_token, "Douala Police").await;
+        let email = format!("member-{}@example.test", Uuid::new_v4());
+
+        let register_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {admin_token}"))
+                    .body(Body::from(
+                        json!({"email": email, "role": "MEMBER", "organization_id": organization_id})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(register_response.status(), StatusCode::CREATED);
+
+        let login_response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/google")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"id_token": email}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(login_response.status(), StatusCode::OK);
+        assert_eq!(json_body(login_response).await["role"], json!("MEMBER"));
     }
 
     #[tokio::test]

@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
 import * as authApi from "../api/auth";
+import type { Role } from "../api/organizations";
 
 export interface Session {
   reviewerId: string;
   email: string;
+  role: Role;
   token: string;
 }
 
@@ -25,7 +27,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithGoogle = useCallback(async (idToken: string) => {
     const response = await authApi.loginWithGoogle(idToken);
-    setSession({ reviewerId: response.reviewer_id, email: response.email, token: response.token });
+    setSession({
+      reviewerId: response.reviewer_id,
+      email: response.email,
+      role: response.role,
+      token: response.token,
+    });
   }, []);
 
   const logout = useCallback(async () => {

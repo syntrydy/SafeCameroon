@@ -39,22 +39,26 @@ const LOGIN_RESPONSE = {
   expires_in_seconds: 3600,
   reviewer_id: "22222222-2222-2222-2222-222222222222",
   email: "reviewer@example.test",
+  role: "MEMBER",
 };
 
 /** Routes a mocked fetch by method + path so login (and the review queue it
  * lands on) can be exercised without a real backend. */
-function stubBackend() {
+function stubBackend(role: string = "MEMBER") {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockImplementation((input: string, init?: RequestInit) => {
       const url = new URL(input, "http://localhost");
       if (url.pathname === "/v1/auth/google") {
-        return Promise.resolve(jsonResponse(200, LOGIN_RESPONSE));
+        return Promise.resolve(jsonResponse(200, { ...LOGIN_RESPONSE, role }));
       }
       if (url.pathname === "/v1/auth/logout") {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
       if (url.pathname === "/v1/reports" && (init?.method ?? "GET") === "GET") {
+        return Promise.resolve(jsonResponse(200, []));
+      }
+      if (url.pathname === "/v1/organizations" && (init?.method ?? "GET") === "GET") {
         return Promise.resolve(jsonResponse(200, []));
       }
       throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url.pathname}`);
@@ -123,5 +127,29 @@ describe("console auth flow", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Fake Google Sign-In" })).toBeInTheDocument();
     });
+  });
+
+  it("hides the Organizations link and redirects away from it for a non-admin reviewer", async () => {
+    stubBackend("MEMBER");
+    const user = userEvent.setup();
+    renderApp("/login");
+
+    await user.click(screen.getByRole("button", { name: "Fake Google Sign-In" }));
+    await screen.findByRole("heading", { name: "Review queue" });
+
+    expect(screen.queryByRole("link", { name: "Organizations" })).not.toBeInTheDocument();
+  });
+
+  it("shows the Organizations link for a platform admin and navigates to it", async () => {
+    stubBackend("PLATFORM_ADMIN");
+    const user = userEvent.setup();
+    renderApp("/login");
+
+    await user.click(screen.getByRole("button", { name: "Fake Google Sign-In" }));
+    await screen.findByRole("heading", { name: "Review queue" });
+
+    await user.click(screen.getByRole("link", { name: "Organizations" }));
+
+    expect(await screen.findByRole("heading", { name: "Organizations" })).toBeInTheDocument();
   });
 });
