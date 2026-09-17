@@ -3,12 +3,8 @@ import { useState } from "react";
 import { ApiError } from "../../api/client";
 import type { IncidentType } from "../../api/cases";
 import type { ReportSummary } from "../../api/reports";
+import { useTranslation } from "../../i18n/LanguageContext";
 import { ExtractionPanel } from "./ExtractionPanel";
-
-const INCIDENT_TYPES: { value: IncidentType; label: string }[] = [
-  { value: "MISSING_CHILD", label: "Missing child" },
-  { value: "OTHER_PROTECTION_INCIDENT", label: "Other protection incident" },
-];
 
 const STATUS_STYLES: Record<ReportSummary["status"], string> = {
   RECEIVED: "bg-amber-100 text-amber-800",
@@ -25,6 +21,11 @@ interface ReportRowProps {
 }
 
 export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportRowProps) {
+  const { t } = useTranslation();
+  const incidentTypes: { value: IncidentType; label: string }[] = [
+    { value: "MISSING_CHILD", label: t.reportRow.incidentTypeMissingChild },
+    { value: "OTHER_PROTECTION_INCIDENT", label: t.reportRow.incidentTypeOtherProtection },
+  ];
   const [expanded, setExpanded] = useState(false);
   const [incidentType, setIncidentType] = useState<IncidentType>(
     report.reported_incident_type ?? "MISSING_CHILD",
@@ -43,7 +44,7 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
     try {
       await action();
     } catch (cause) {
-      const message = cause instanceof ApiError ? cause.message : "An unexpected error occurred.";
+      const message = cause instanceof ApiError ? cause.message : t.common.unexpectedError;
       const requestId = cause instanceof ApiError ? cause.requestId : null;
       setError(requestId ? `${message} (reference: ${requestId})` : message);
     } finally {
@@ -71,7 +72,7 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
             onClick={() => setExpanded((value) => !value)}
             className="mt-1 text-xs font-medium text-slate-500 underline"
           >
-            {expanded ? "Show less" : "Show more"}
+            {expanded ? t.reportRow.showLess : t.reportRow.showMore}
           </button>
         )}
 
@@ -79,8 +80,8 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
 
         {report.reported_incident_type && (
           <p className="mt-2 text-xs text-slate-400">
-            Reporter suggested:{" "}
-            {INCIDENT_TYPES.find((option) => option.value === report.reported_incident_type)
+            {t.reportRow.reporterSuggested}{" "}
+            {incidentTypes.find((option) => option.value === report.reported_incident_type)
               ?.label ?? report.reported_incident_type}
           </p>
         )}
@@ -90,9 +91,9 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
             value={incidentType}
             onChange={(event) => setIncidentType(event.target.value as IncidentType)}
             className="rounded border border-slate-300 px-2 py-1 text-xs"
-            aria-label={`Incident type for report ${report.report_id}`}
+            aria-label={t.reportRow.incidentTypeLabel(report.report_id)}
           >
-            {INCIDENT_TYPES.map((option) => (
+            {incidentTypes.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -104,14 +105,14 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
             onClick={() => void runAction(() => onCreateCase(report.report_id, incidentType))}
             className="rounded bg-slate-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
           >
-            Create case
+            {t.reportRow.createCase}
           </button>
 
           <input
             value={caseId}
             onChange={(event) => setCaseId(event.target.value)}
-            placeholder="Existing case id"
-            aria-label={`Existing case id for report ${report.report_id}`}
+            placeholder={t.reportRow.existingCaseIdPlaceholder}
+            aria-label={t.reportRow.existingCaseIdLabel(report.report_id)}
             className="rounded border border-slate-300 px-2 py-1 text-xs"
           />
           <button
@@ -120,7 +121,7 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
             onClick={() => void runAction(() => onLinkToCase(report.report_id, caseId.trim()))}
             className="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 disabled:opacity-50"
           >
-            Link to case
+            {t.reportRow.linkToCase}
           </button>
         </div>
 

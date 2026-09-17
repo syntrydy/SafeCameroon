@@ -12,6 +12,7 @@ import { countPendingReports, startBackgroundSync, submitOrQueue } from "./offli
 import { listReceipts, type Receipt } from "./offline/receipts";
 import { useOnlineStatus } from "./offline/useOnlineStatus";
 import type { IncidentType } from "./api/reports";
+import { LanguageProvider, useTranslation } from "./i18n/LanguageContext";
 
 type View =
   | { kind: "form" }
@@ -19,6 +20,15 @@ type View =
   | { kind: "queued" };
 
 export function App() {
+  return (
+    <LanguageProvider>
+      <AppContent />
+    </LanguageProvider>
+  );
+}
+
+function AppContent() {
+  const { t } = useTranslation();
   const online = useOnlineStatus();
   const [tab, setTab] = useState<Tab>("report");
   const [view, setView] = useState<View>({ kind: "form" });
@@ -104,9 +114,9 @@ export function App() {
             </div>
           </div>
           <div>
-            <span className="text-lg font-bold text-white">SafeCameroon</span>
+            <span className="text-lg font-bold text-white">{t.brand.name}</span>
             <span className="ml-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wider text-emerald-400 uppercase">
-              Citizen
+              {t.brand.citizenBadge}
             </span>
           </div>
         </div>
@@ -135,10 +145,8 @@ export function App() {
 
                 {view.kind === "form" && (
                   <>
-                    <h1 className="text-xl font-bold text-white">Report an incident</h1>
-                    <p className="mt-1.5 text-sm text-slate-400">
-                      No account needed. Your identity is never recorded.
-                    </p>
+                    <h1 className="text-xl font-bold text-white">{t.reportForm.heading}</h1>
+                    <p className="mt-1.5 text-sm text-slate-400">{t.reportForm.subtitle}</p>
                     <div className="mt-6">
                       <ReportForm
                         submitting={submitting}

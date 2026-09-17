@@ -3,6 +3,15 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AlertsPanel } from "./AlertsPanel";
+import { LanguageProvider } from "../i18n/LanguageContext";
+
+function renderPanel() {
+  return render(
+    <LanguageProvider>
+      <AlertsPanel />
+    </LanguageProvider>,
+  );
+}
 
 vi.mock("../push/subscribe", () => ({
   subscribeToPush: vi.fn().mockResolvedValue({
@@ -43,7 +52,7 @@ describe("AlertsPanel", () => {
       ),
     );
     const user = userEvent.setup();
-    render(<AlertsPanel />);
+    renderPanel();
 
     await screen.findByText("Get missing-child alerts");
     await user.type(screen.getByLabelText("Area"), "Douala");
@@ -74,7 +83,7 @@ describe("AlertsPanel", () => {
       ),
     );
 
-    render(<AlertsPanel />);
+    renderPanel();
 
     await waitFor(() => {
       expect(screen.getByText("Alerts are on for this device.")).toBeInTheDocument();
@@ -96,7 +105,7 @@ describe("AlertsPanel", () => {
       ),
     );
 
-    render(<AlertsPanel />);
+    renderPanel();
 
     await screen.findByText("Get missing-child alerts");
     expect(window.localStorage.getItem("safecameroon-citizen-alert-subscription")).toBeNull();
@@ -123,7 +132,7 @@ describe("AlertsPanel", () => {
       }),
     );
     const user = userEvent.setup();
-    render(<AlertsPanel />);
+    renderPanel();
 
     await user.click(await screen.findByRole("button", { name: "Turn off alerts" }));
 

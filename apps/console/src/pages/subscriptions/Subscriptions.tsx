@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
+import { useTranslation } from "../../i18n/LanguageContext";
 import { getConsumer, registerConsumer, type Consumer, type ConsumerType } from "../../api/consumers";
 import {
   createSubscription,
@@ -24,6 +25,7 @@ function CreateSubscriptionForm({
   consumerId: string;
   onCreated: (subscription: Subscription) => void;
 }) {
+  const { t } = useTranslation();
   const [adding, setAdding] = useState(false);
   const [rules, setRules] = useState<SubscriptionRule[]>([{ rule: "INCIDENT_TYPE", values: [] }]);
   const [submitting, setSubmitting] = useState(false);
@@ -32,7 +34,7 @@ function CreateSubscriptionForm({
   if (!adding) {
     return (
       <button type="button" onClick={() => setAdding(true)} className="text-sm font-medium text-slate-700 underline">
-        Add subscription
+        {t.subscriptions.addSubscription}
       </button>
     );
   }
@@ -46,7 +48,7 @@ function CreateSubscriptionForm({
       setAdding(false);
       setRules([{ rule: "INCIDENT_TYPE", values: [] }]);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "An unexpected error occurred.");
+      setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     } finally {
       setSubmitting(false);
     }
@@ -67,14 +69,14 @@ function CreateSubscriptionForm({
           onClick={() => void handleCreate()}
           className="rounded bg-slate-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
         >
-          {submitting ? "Creating..." : "Create subscription"}
+          {submitting ? t.subscriptions.creating : t.subscriptions.createSubscription}
         </button>
         <button
           type="button"
           onClick={() => setAdding(false)}
           className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-700"
         >
-          Cancel
+          {t.common.cancel}
         </button>
       </div>
     </div>
@@ -82,6 +84,7 @@ function CreateSubscriptionForm({
 }
 
 export function Subscriptions() {
+  const { t } = useTranslation();
   const [consumerIdInput, setConsumerIdInput] = useState("");
   const [newConsumerName, setNewConsumerName] = useState("");
   const [newConsumerType, setNewConsumerType] = useState<ConsumerType>("ORGANIZATION");
@@ -103,7 +106,7 @@ export function Subscriptions() {
     try {
       setSubscriptions(await listSubscriptionsForConsumer(token, consumerId));
     } catch (cause) {
-      setDataError(cause instanceof ApiError ? cause.message : "An unexpected error occurred.");
+      setDataError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     }
     try {
       setDeliveryPreference(await getDeliveryPreference(token, consumerId));
@@ -111,7 +114,7 @@ export function Subscriptions() {
       if (cause instanceof ApiError && cause.code === "DELIVERY_PREFERENCE_NOT_FOUND") {
         setDeliveryPreference(null);
       } else {
-        setDataError(cause instanceof ApiError ? cause.message : "An unexpected error occurred.");
+        setDataError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
       }
     }
     setLoadingData(false);
@@ -125,7 +128,7 @@ export function Subscriptions() {
       setConsumer(found);
       await loadConsumerData(found.consumer_id);
     } catch (cause) {
-      setLookupError(cause instanceof ApiError ? cause.message : "An unexpected error occurred.");
+      setLookupError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     }
   }
 
@@ -138,7 +141,7 @@ export function Subscriptions() {
       setNewConsumerName("");
       await loadConsumerData(created.consumer_id);
     } catch (cause) {
-      setLookupError(cause instanceof ApiError ? cause.message : "An unexpected error occurred.");
+      setLookupError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     }
   }
 
@@ -151,14 +154,14 @@ export function Subscriptions() {
 
   return (
     <div>
-      <h2 className="mb-4 text-base font-semibold text-slate-900">Subscriptions</h2>
+      <h2 className="mb-4 text-base font-semibold text-slate-900">{t.subscriptions.heading}</h2>
 
       {!consumer ? (
         <div className="grid gap-6 sm:grid-cols-2">
           <form onSubmit={(event) => void handleLookup(event)} className="rounded border border-slate-200 p-4">
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">Look up a consumer</h3>
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.subscriptions.lookupHeading}</h3>
             <label className="mb-2 block text-sm">
-              <span className="mb-1 block text-slate-700">Consumer id</span>
+              <span className="mb-1 block text-slate-700">{t.subscriptions.consumerId}</span>
               <input
                 required
                 value={consumerIdInput}
@@ -167,7 +170,7 @@ export function Subscriptions() {
               />
             </label>
             <button type="submit" className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white">
-              Load
+              {t.subscriptions.load}
             </button>
           </form>
 
@@ -175,9 +178,9 @@ export function Subscriptions() {
             onSubmit={(event) => void handleCreateConsumer(event)}
             className="rounded border border-slate-200 p-4"
           >
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">Register a new consumer</h3>
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.subscriptions.registerHeading}</h3>
             <label className="mb-2 block text-sm">
-              <span className="mb-1 block text-slate-700">Name</span>
+              <span className="mb-1 block text-slate-700">{t.subscriptions.name}</span>
               <input
                 required
                 value={newConsumerName}
@@ -186,18 +189,18 @@ export function Subscriptions() {
               />
             </label>
             <label className="mb-2 block text-sm">
-              <span className="mb-1 block text-slate-700">Type</span>
+              <span className="mb-1 block text-slate-700">{t.subscriptions.type}</span>
               <select
                 value={newConsumerType}
                 onChange={(event) => setNewConsumerType(event.target.value as ConsumerType)}
                 className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
               >
-                <option value="ORGANIZATION">Organization</option>
-                <option value="CITIZEN">Citizen</option>
+                <option value="ORGANIZATION">{t.subscriptions.typeOrganization}</option>
+                <option value="CITIZEN">{t.subscriptions.typeCitizen}</option>
               </select>
             </label>
             <button type="submit" className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white">
-              Create consumer
+              {t.subscriptions.createConsumer}
             </button>
           </form>
         </div>
@@ -211,7 +214,7 @@ export function Subscriptions() {
               </p>
             </div>
             <button type="button" onClick={switchConsumer} className="text-xs font-medium text-slate-600 underline">
-              Switch consumer
+              {t.subscriptions.switchConsumer}
             </button>
           </div>
 
@@ -222,9 +225,9 @@ export function Subscriptions() {
           )}
 
           <section className="mb-6">
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">Subscriptions</h3>
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.subscriptions.subscriptionsHeading}</h3>
             {loadingData ? (
-              <p className="text-sm text-slate-500">Loading...</p>
+              <p className="text-sm text-slate-500">{t.subscriptions.loading}</p>
             ) : (
               subscriptions.map((subscription) => (
                 <SubscriptionCard
@@ -247,9 +250,9 @@ export function Subscriptions() {
           </section>
 
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">Delivery preference</h3>
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.subscriptions.deliveryPreferenceHeading}</h3>
             {!loadingData && !deliveryPreference && (
-              <p className="mb-2 text-sm text-slate-500">No delivery preference is set yet.</p>
+              <p className="mb-2 text-sm text-slate-500">{t.subscriptions.noDeliveryPreference}</p>
             )}
             {!loadingData && (
               <DeliveryPreferenceForm

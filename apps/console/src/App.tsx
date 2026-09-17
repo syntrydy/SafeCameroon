@@ -10,6 +10,7 @@ import { DeliveryList } from "./pages/deliveries/DeliveryList";
 import { Login } from "./pages/Login";
 import { ReviewQueue } from "./pages/review-queue/ReviewQueue";
 import { Subscriptions } from "./pages/subscriptions/Subscriptions";
+import { LanguageProvider } from "./i18n/LanguageContext";
 
 function ProtectedLayout() {
   return (
@@ -23,18 +24,20 @@ function ProtectedLayout() {
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route element={<ProtectedLayout />}>
-        <Route path="/" element={<ReviewQueue />} />
-        <Route path="/cases/:id" element={<CaseDetail />} />
-        <Route path="/alerts" element={<AlertList />} />
-        <Route path="/alerts/:id" element={<AlertPreview />} />
-        <Route path="/alerts/:id/deliveries" element={<DeliveryList />} />
-        <Route path="/deliveries/:id" element={<DeliveryDetail />} />
-        <Route path="/subscriptions" element={<Subscriptions />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <LanguageProvider>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route element={<ProtectedLayout />}>
+          <Route path="/" element={<ReviewQueue />} />
+          <Route path="/cases/:id" element={<CaseDetail />} />
+          <Route path="/alerts" element={<AlertList />} />
+          <Route path="/alerts/:id" element={<AlertPreview />} />
+          <Route path="/alerts/:id/deliveries" element={<DeliveryList />} />
+          <Route path="/deliveries/:id" element={<DeliveryDetail />} />
+          <Route path="/subscriptions" element={<Subscriptions />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </LanguageProvider>
   );
 }

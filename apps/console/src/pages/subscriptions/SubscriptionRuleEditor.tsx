@@ -1,4 +1,6 @@
 import type { Comparison, SubscriptionRule } from "../../api/subscriptions";
+import { useTranslation } from "../../i18n/LanguageContext";
+import type { Translations } from "../../i18n/translations";
 
 const INCIDENT_TYPES = ["MISSING_CHILD", "OTHER_PROTECTION_INCIDENT"] as const;
 const EVENT_TYPES = [
@@ -12,13 +14,16 @@ const EVENT_TYPES = [
   "CASE_REJECTED",
 ] as const;
 const SEVERITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
-const COMPARISONS: { value: Comparison; label: string }[] = [
-  { value: "GREATER_THAN", label: "> greater than" },
-  { value: "GREATER_THAN_OR_EQUAL", label: ">= greater than or equal" },
-  { value: "EQUAL", label: "== equal" },
-  { value: "LESS_THAN_OR_EQUAL", label: "<= less than or equal" },
-  { value: "LESS_THAN", label: "< less than" },
-];
+
+function comparisons(t: Translations): { value: Comparison; label: string }[] {
+  return [
+    { value: "GREATER_THAN", label: t.ruleEditor.comparisonGreaterThan },
+    { value: "GREATER_THAN_OR_EQUAL", label: t.ruleEditor.comparisonGreaterThanOrEqual },
+    { value: "EQUAL", label: t.ruleEditor.comparisonEqual },
+    { value: "LESS_THAN_OR_EQUAL", label: t.ruleEditor.comparisonLessThanOrEqual },
+    { value: "LESS_THAN", label: t.ruleEditor.comparisonLessThan },
+  ];
+}
 
 function defaultRuleFor(ruleType: SubscriptionRule["rule"]): SubscriptionRule {
   switch (ruleType) {
@@ -43,6 +48,8 @@ interface SubscriptionRuleEditorProps {
 }
 
 export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEditorProps) {
+  const { t } = useTranslation();
+
   function updateRule(index: number, rule: SubscriptionRule) {
     onChange(rules.map((existing, i) => (i === index ? rule : existing)));
   }
@@ -62,17 +69,17 @@ export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEdit
               onChange={(event) => updateRule(index, defaultRuleFor(event.target.value as SubscriptionRule["rule"]))}
               className="rounded border border-slate-300 px-2 py-1 text-sm"
             >
-              <option value="INCIDENT_TYPE">Incident type</option>
-              <option value="SEVERITY">Severity</option>
-              <option value="EVENT_TYPE">Event type</option>
-              <option value="GEOGRAPHY">Geography</option>
+              <option value="INCIDENT_TYPE">{t.ruleEditor.ruleIncidentType}</option>
+              <option value="SEVERITY">{t.ruleEditor.ruleSeverity}</option>
+              <option value="EVENT_TYPE">{t.ruleEditor.ruleEventType}</option>
+              <option value="GEOGRAPHY">{t.ruleEditor.ruleGeography}</option>
             </select>
             <button
               type="button"
               onClick={() => removeRule(index)}
               className="text-xs font-medium text-red-700 underline"
             >
-              Remove
+              {t.ruleEditor.remove}
             </button>
           </div>
 
@@ -99,7 +106,7 @@ export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEdit
                 onChange={(event) => updateRule(index, { ...rule, operator: event.target.value as Comparison })}
                 className="rounded border border-slate-300 px-2 py-1"
               >
-                {COMPARISONS.map((option) => (
+                {comparisons(t).map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -142,7 +149,7 @@ export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEdit
               aria-label={`Rule ${index + 1} area`}
               value={rule.area}
               onChange={(event) => updateRule(index, { ...rule, area: event.target.value })}
-              placeholder="e.g. Douala"
+              placeholder={t.ruleEditor.geographyPlaceholder}
               className="w-full max-w-xs rounded border border-slate-300 px-2 py-1 text-sm"
             />
           )}
@@ -154,7 +161,7 @@ export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEdit
         onClick={() => onChange([...rules, defaultRuleFor("INCIDENT_TYPE")])}
         className="text-sm font-medium text-slate-700 underline"
       >
-        Add rule
+        {t.ruleEditor.addRule}
       </button>
     </div>
   );

@@ -4,8 +4,10 @@ import { useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { getDelivery, type DeliveryDetail as DeliveryDetailData } from "../../api/deliveries";
 import { useAuth } from "../../auth/AuthContext";
+import { useTranslation } from "../../i18n/LanguageContext";
 
 export function DeliveryDetail() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const { session } = useAuth();
   // Safe: this page only renders inside <RequireAuth>.
@@ -21,12 +23,12 @@ export function DeliveryDetail() {
     setError(null);
     getDelivery(token, id)
       .then(setDelivery)
-      .catch((cause) => setError(cause instanceof ApiError ? cause.message : "An unexpected error occurred."))
+      .catch((cause) => setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError))
       .finally(() => setLoading(false));
-  }, [token, id]);
+  }, [token, id, t]);
 
   if (loading) {
-    return <p className="text-sm text-slate-500">Loading delivery...</p>;
+    return <p className="text-sm text-slate-500">{t.deliveryDetail.loading}</p>;
   }
 
   if (error && !delivery) {
@@ -43,34 +45,36 @@ export function DeliveryDetail() {
 
   return (
     <div>
-      <h2 className="mb-4 text-base font-semibold text-slate-900">Delivery {delivery.delivery_id.slice(0, 8)}</h2>
+      <h2 className="mb-4 text-base font-semibold text-slate-900">
+        {t.deliveryDetail.heading(delivery.delivery_id.slice(0, 8))}
+      </h2>
 
       <dl className="mb-6 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
-        <dt className="text-slate-500">Channel</dt>
+        <dt className="text-slate-500">{t.deliveryDetail.channel}</dt>
         <dd className="text-slate-900">{delivery.channel}</dd>
-        <dt className="text-slate-500">Endpoint</dt>
+        <dt className="text-slate-500">{t.deliveryDetail.endpoint}</dt>
         <dd className="text-slate-900">{delivery.endpoint_address}</dd>
-        <dt className="text-slate-500">Tier</dt>
+        <dt className="text-slate-500">{t.deliveryDetail.tier}</dt>
         <dd className="text-slate-900">{delivery.tier}</dd>
-        <dt className="text-slate-500">Status</dt>
+        <dt className="text-slate-500">{t.deliveryDetail.status}</dt>
         <dd className="text-slate-900">{delivery.status.replace(/_/g, " ")}</dd>
-        <dt className="text-slate-500">Attempts</dt>
+        <dt className="text-slate-500">{t.deliveryDetail.attempts}</dt>
         <dd className="text-slate-900">
           {delivery.attempt_count} / {delivery.max_attempts}
         </dd>
       </dl>
 
       <section>
-        <h3 className="mb-2 text-sm font-semibold text-slate-900">Attempt history</h3>
+        <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.deliveryDetail.attemptHistory}</h3>
         {delivery.attempts.length === 0 ? (
-          <p className="text-sm text-slate-500">No attempts have been made yet.</p>
+          <p className="text-sm text-slate-500">{t.deliveryDetail.noAttempts}</p>
         ) : (
           <table className="w-full border-collapse text-left">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
-                <th className="py-2 pr-4">#</th>
-                <th className="py-2 pr-4">Outcome</th>
-                <th className="py-2 pr-4">Detail</th>
+                <th className="py-2 pr-4">{t.deliveryDetail.colNumber}</th>
+                <th className="py-2 pr-4">{t.deliveryDetail.colOutcome}</th>
+                <th className="py-2 pr-4">{t.deliveryDetail.colDetail}</th>
               </tr>
             </thead>
             <tbody>
@@ -89,10 +93,10 @@ export function DeliveryDetail() {
                   <td className="py-2 pr-4 text-sm text-slate-700">
                     {attempt.outcome === "SENT"
                       ? attempt.provider_message_id
-                        ? `Provider message id: ${attempt.provider_message_id}`
+                        ? t.deliveryDetail.providerMessageId(attempt.provider_message_id)
                         : "—"
-                      : `${attempt.failure_reason ?? "Unknown failure"} (${
-                          attempt.retryable ? "retryable" : "permanent"
+                      : `${attempt.failure_reason ?? t.deliveryDetail.unknownFailure} (${
+                          attempt.retryable ? t.deliveryDetail.retryable : t.deliveryDetail.permanent
                         })`}
                   </td>
                 </tr>

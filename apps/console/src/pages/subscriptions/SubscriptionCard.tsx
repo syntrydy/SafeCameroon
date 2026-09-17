@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { ApiError } from "../../api/client";
 import { updateSubscription, type Subscription, type SubscriptionRule } from "../../api/subscriptions";
+import { useTranslation } from "../../i18n/LanguageContext";
 import { describeRule } from "./describeRule";
 import { SubscriptionRuleEditor } from "./SubscriptionRuleEditor";
 
@@ -12,6 +13,7 @@ interface SubscriptionCardProps {
 }
 
 export function SubscriptionCard({ token, subscription, onUpdated }: SubscriptionCardProps) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [rules, setRules] = useState<SubscriptionRule[]>(subscription.rules);
   const [saving, setSaving] = useState(false);
@@ -25,7 +27,7 @@ export function SubscriptionCard({ token, subscription, onUpdated }: Subscriptio
       onUpdated(updated);
       setEditing(false);
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "An unexpected error occurred.");
+      setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     } finally {
       setSaving(false);
     }
@@ -46,7 +48,7 @@ export function SubscriptionCard({ token, subscription, onUpdated }: Subscriptio
             }}
             className="text-xs font-medium text-slate-600 underline"
           >
-            Edit
+            {t.subscriptionCard.edit}
           </button>
         )}
       </div>
@@ -66,21 +68,21 @@ export function SubscriptionCard({ token, subscription, onUpdated }: Subscriptio
               onClick={() => void handleSave()}
               className="rounded bg-slate-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
             >
-              {saving ? "Saving..." : "Save changes"}
+              {saving ? t.subscriptionCard.saving : t.subscriptionCard.saveChanges}
             </button>
             <button
               type="button"
               onClick={() => setEditing(false)}
               className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-700"
             >
-              Cancel
+              {t.subscriptionCard.cancel}
             </button>
           </div>
         </div>
       ) : (
         <ul className="text-sm text-slate-700">
           {subscription.rules.map((rule, index) => (
-            <li key={index}>{describeRule(rule)}</li>
+            <li key={index}>{describeRule(rule, t)}</li>
           ))}
         </ul>
       )}

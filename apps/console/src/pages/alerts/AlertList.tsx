@@ -4,17 +4,19 @@ import { Link } from "react-router-dom";
 import { listAlerts, type Alert, type AlertStatus } from "../../api/alerts";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
-
-const STATUS_FILTERS: { value: AlertStatus | "ALL"; label: string }[] = [
-  { value: "ALL", label: "All" },
-  { value: "ACTIVE", label: "Active" },
-  { value: "CANCELLED", label: "Cancelled" },
-];
+import { useTranslation } from "../../i18n/LanguageContext";
 
 export function AlertList() {
+  const { t } = useTranslation();
   const { session } = useAuth();
   // Safe: this page only renders inside <RequireAuth>.
   const token = session!.token;
+
+  const statusFilters: { value: AlertStatus | "ALL"; label: string }[] = [
+    { value: "ALL", label: t.alertList.statusAll },
+    { value: "ACTIVE", label: t.alertList.statusActive },
+    { value: "CANCELLED", label: t.alertList.statusCancelled },
+  ];
 
   const [statusFilter, setStatusFilter] = useState<AlertStatus | "ALL">("ACTIVE");
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -27,11 +29,11 @@ export function AlertList() {
     try {
       setAlerts(await listAlerts(token, { status: statusFilter === "ALL" ? undefined : statusFilter }));
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : "An unexpected error occurred.");
+      setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     } finally {
       setLoading(false);
     }
-  }, [token, statusFilter]);
+  }, [token, statusFilter, t]);
 
   useEffect(() => {
     void load();
@@ -40,15 +42,15 @@ export function AlertList() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-slate-900">Alerts</h2>
+        <h2 className="text-base font-semibold text-slate-900">{t.alertList.heading}</h2>
         <label className="text-sm text-slate-600">
-          Status:{" "}
+          {t.alertList.statusLabel}{" "}
           <select
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value as AlertStatus | "ALL")}
             className="ml-2 rounded border border-slate-300 px-2 py-1 text-sm"
           >
-            {STATUS_FILTERS.map((filter) => (
+            {statusFilters.map((filter) => (
               <option key={filter.value} value={filter.value}>
                 {filter.label}
               </option>
@@ -64,18 +66,18 @@ export function AlertList() {
       )}
 
       {loading ? (
-        <p className="text-sm text-slate-500">Loading alerts...</p>
+        <p className="text-sm text-slate-500">{t.alertList.loading}</p>
       ) : alerts.length === 0 ? (
-        <p className="text-sm text-slate-500">No alerts match this filter.</p>
+        <p className="text-sm text-slate-500">{t.alertList.noAlerts}</p>
       ) : (
         <table className="w-full border-collapse text-left">
           <thead>
             <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
-              <th className="py-2 pr-4">Alert</th>
-              <th className="py-2 pr-4">Severity</th>
-              <th className="py-2 pr-4">Visibility</th>
-              <th className="py-2 pr-4">Status</th>
-              <th className="py-2 pr-4">Target geography</th>
+              <th className="py-2 pr-4">{t.alertList.colAlert}</th>
+              <th className="py-2 pr-4">{t.alertList.colSeverity}</th>
+              <th className="py-2 pr-4">{t.alertList.colVisibility}</th>
+              <th className="py-2 pr-4">{t.alertList.colStatus}</th>
+              <th className="py-2 pr-4">{t.alertList.colTargetGeography}</th>
             </tr>
           </thead>
           <tbody>

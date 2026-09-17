@@ -2,18 +2,7 @@ import { useState } from "preact/hooks";
 
 import type { AlertSubscriptionRules, IncidentType, Severity } from "../api/subscriptions";
 import { CAMEROON_TOWNS } from "../domain/cameroonTowns";
-
-const INCIDENT_TYPE_OPTIONS: { value: IncidentType; label: string }[] = [
-  { value: "MISSING_CHILD", label: "Missing child" },
-  { value: "OTHER_PROTECTION_INCIDENT", label: "Other protection incident" },
-];
-
-const SEVERITY_OPTIONS: { value: Severity; label: string }[] = [
-  { value: "LOW", label: "Low and above" },
-  { value: "MEDIUM", label: "Medium and above" },
-  { value: "HIGH", label: "High and above" },
-  { value: "CRITICAL", label: "Critical only" },
-];
+import { useTranslation } from "../i18n/LanguageContext";
 
 interface AlertRulesFormProps {
   initialRules?: AlertSubscriptionRules;
@@ -34,6 +23,7 @@ export function AlertRulesForm({
   submitLabel,
   onSubmit,
 }: AlertRulesFormProps) {
+  const { t } = useTranslation();
   const [incidentTypes, setIncidentTypes] = useState<IncidentType[]>(
     initialRules?.incidentTypes ?? DEFAULT_RULES.incidentTypes,
   );
@@ -42,6 +32,17 @@ export function AlertRulesForm({
   );
   const [geography, setGeography] = useState(initialRules?.geography ?? DEFAULT_RULES.geography);
   const [touched, setTouched] = useState(false);
+
+  const incidentTypeOptions: { value: IncidentType; label: string }[] = [
+    { value: "MISSING_CHILD", label: t.alertRules.incidentTypeMissingChild },
+    { value: "OTHER_PROTECTION_INCIDENT", label: t.alertRules.incidentTypeOtherProtection },
+  ];
+  const severityOptions: { value: Severity; label: string }[] = [
+    { value: "LOW", label: t.alertRules.severityLow },
+    { value: "MEDIUM", label: t.alertRules.severityMedium },
+    { value: "HIGH", label: t.alertRules.severityHigh },
+    { value: "CRITICAL", label: t.alertRules.severityCritical },
+  ];
 
   const geographyIsBlank = geography.trim().length === 0;
   const noIncidentTypes = incidentTypes.length === 0;
@@ -66,9 +67,9 @@ export function AlertRulesForm({
   return (
     <form onSubmit={handleSubmit} noValidate>
       <fieldset>
-        <legend className="text-sm font-medium text-slate-300">Alert type</legend>
+        <legend className="text-sm font-medium text-slate-300">{t.alertRules.alertType}</legend>
         <div className="mt-2.5 space-y-2">
-          {INCIDENT_TYPE_OPTIONS.map((option) => (
+          {incidentTypeOptions.map((option) => (
             <label
               key={option.value}
               className="flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3.5 py-2.5 text-sm text-slate-300"
@@ -84,13 +85,13 @@ export function AlertRulesForm({
           ))}
         </div>
         {touched && noIncidentTypes && (
-          <p className="mt-1 text-sm text-red-400">Choose at least one alert type.</p>
+          <p className="mt-1 text-sm text-red-400">{t.alertRules.chooseAtLeastOne}</p>
         )}
       </fieldset>
 
       <div className="mt-5">
         <label htmlFor="minimum-severity" className="block text-sm font-medium text-slate-300">
-          Minimum severity
+          {t.alertRules.minimumSeverity}
         </label>
         <select
           id="minimum-severity"
@@ -100,7 +101,7 @@ export function AlertRulesForm({
           }
           className="mt-2.5 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-sm text-white transition-all duration-300 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
         >
-          {SEVERITY_OPTIONS.map((option) => (
+          {severityOptions.map((option) => (
             <option key={option.value} value={option.value} className="bg-slate-900 text-white">
               {option.label}
             </option>
@@ -110,11 +111,9 @@ export function AlertRulesForm({
 
       <div className="mt-5">
         <label htmlFor="geography" className="block text-sm font-medium text-slate-300">
-          Area
+          {t.alertRules.area}
         </label>
-        <p className="mt-1 text-sm text-slate-500">
-          A city, neighborhood, or region name -- e.g. "Douala" or "Bonamoussadi".
-        </p>
+        <p className="mt-1 text-sm text-slate-500">{t.alertRules.areaHelper}</p>
         <input
           id="geography"
           type="text"
@@ -122,7 +121,7 @@ export function AlertRulesForm({
           value={geography}
           onInput={(event) => setGeography((event.target as HTMLInputElement).value)}
           onBlur={() => setTouched(true)}
-          placeholder="Douala"
+          placeholder={t.alertRules.areaPlaceholder}
           className="mt-2.5 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-sm text-white placeholder-slate-500 transition-all duration-300 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
         />
         <datalist id="cameroon-towns">
@@ -131,7 +130,7 @@ export function AlertRulesForm({
           ))}
         </datalist>
         {touched && geographyIsBlank && (
-          <p className="mt-1 text-sm text-red-400">Please enter an area.</p>
+          <p className="mt-1 text-sm text-red-400">{t.alertRules.areaRequired}</p>
         )}
       </div>
 
@@ -140,7 +139,7 @@ export function AlertRulesForm({
         disabled={submitting}
         className="group relative mt-6 w-full overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-3.5 text-base font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:from-emerald-500 hover:to-emerald-600 hover:shadow-xl hover:shadow-emerald-500/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {submitting ? "Saving..." : submitLabel}
+        {submitting ? t.alerts.saving : submitLabel}
       </button>
     </form>
   );

@@ -1,4 +1,5 @@
 import type { Comparison, SubscriptionRule } from "../../api/subscriptions";
+import type { Translations } from "../../i18n/translations";
 
 const OPERATOR_SYMBOLS: Record<Comparison, string> = {
   GREATER_THAN: ">",
@@ -8,15 +9,15 @@ const OPERATOR_SYMBOLS: Record<Comparison, string> = {
   LESS_THAN: "<",
 };
 
-export function describeRule(rule: SubscriptionRule): string {
+export function describeRule(rule: SubscriptionRule, t: Translations): string {
   switch (rule.rule) {
     case "INCIDENT_TYPE":
-      return `Incident type: ${rule.values.join(", ") || "(none selected)"}`;
+      return t.describeRule.incidentType(rule.values.join(", ") || t.describeRule.noneSelected);
     case "SEVERITY":
-      return `Severity ${OPERATOR_SYMBOLS[rule.operator]} ${rule.value}`;
+      return t.describeRule.severity(OPERATOR_SYMBOLS[rule.operator], rule.value);
     case "EVENT_TYPE":
-      return `Event type: ${rule.values.join(", ") || "(none selected)"}`;
+      return t.describeRule.eventType(rule.values.join(", ") || t.describeRule.noneSelected);
     case "GEOGRAPHY":
-      return `Geography: ${rule.area || "(none)"}`;
+      return t.describeRule.geography(rule.area || t.describeRule.none);
   }
 }

@@ -13,6 +13,20 @@ use case is missing children.
 - `apps/console`: TypeScript/React organization console (reviewer/admin, Google-authenticated).
 - `apps/citizen`: public, offline-capable Preact app for anonymously reporting an incident (missing child or another protection incident) and self-subscribing to alerts (no login).
 
+## Internationalization
+
+`apps/citizen` and `apps/console` both support English and French. Language is
+detected once per load from the browser's own language (`navigator.languages`),
+falling back to English for any other language or when running outside a
+browser (tests). There is no manual language switcher -- the browser's setting
+is authoritative. Each app owns its own `src/i18n/` (`locale.ts` detection,
+`translations.ts` a fully-typed `{ en, fr }` dictionary, `LanguageContext.tsx`
+a context/hook pair) rather than sharing one, matching how each app already
+duplicates its other small UI primitives (`Footer`, shield icon) instead of
+introducing a shared package for a two-app monorepo. Adding a UI string means
+adding the key to both languages in that app's `translations.ts` -- the
+`Translations` interface makes a missing key or locale a compile error.
+
 ## Pilot demo
 
 `cargo run -p safe-cameroon-api --bin demo` (needs `DATABASE_URL`; `OPENROUTER_API_KEY`
