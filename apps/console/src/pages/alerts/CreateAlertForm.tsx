@@ -55,18 +55,18 @@ export function CreateAlertForm({ token, caseId, onCreated }: CreateAlertFormPro
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded border border-slate-200 p-4">
-      <h3 className="mb-3 text-sm font-semibold text-slate-900">{t.createAlertForm.heading}</h3>
+    <form onSubmit={handleSubmit} className="rounded border border-white/[0.08] p-4">
+      <h3 className="mb-3 text-sm font-semibold text-white">{t.createAlertForm.heading}</h3>
 
       <label className="mb-3 block text-sm">
-        <span className="mb-1 block font-medium text-slate-700">{t.createAlertForm.severity}</span>
+        <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.severity}</span>
         <select
           value={severity}
           onChange={(event) => setSeverity(event.target.value as Severity)}
-          className="w-full max-w-xs rounded border border-slate-300 px-2 py-1 text-sm"
+          className="w-full max-w-xs rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
         >
           {SEVERITIES.map((option) => (
-            <option key={option} value={option}>
+            <option key={option} value={option} className="bg-slate-900 text-white">
               {option}
             </option>
           ))}
@@ -74,29 +74,29 @@ export function CreateAlertForm({ token, caseId, onCreated }: CreateAlertFormPro
       </label>
 
       <label className="mb-3 block text-sm">
-        <span className="mb-1 block font-medium text-slate-700">{t.createAlertForm.targetGeography}</span>
+        <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.targetGeography}</span>
         <input
           required
           value={targetGeography}
           onChange={(event) => setTargetGeography(event.target.value)}
           placeholder={t.createAlertForm.targetGeographyPlaceholder}
-          className="w-full max-w-xs rounded border border-slate-300 px-2 py-1 text-sm"
+          className="w-full max-w-xs rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
         />
       </label>
 
       {MISSING_CHILD_COMMUNITY_FIELDS.map((field) => (
         <label key={field} className="mb-3 block text-sm">
-          <span className="mb-1 block font-medium text-slate-700">{labels[field]}</span>
+          <span className="mb-1 block font-medium text-slate-300">{labels[field]}</span>
           <input
             value={fieldValues[field] ?? ""}
             onChange={(event) => setFieldValues((current) => ({ ...current, [field]: event.target.value }))}
-            className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+            className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
           />
         </label>
       ))}
 
       {error && (
-        <p role="alert" className="mb-3 text-sm text-red-700">
+        <p role="alert" className="mb-3 text-sm text-red-300">
           {error}
         </p>
       )}
@@ -104,7 +104,7 @@ export function CreateAlertForm({ token, caseId, onCreated }: CreateAlertFormPro
       <button
         type="submit"
         disabled={submitting}
-        className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+        className="rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {submitting ? t.createAlertForm.creating : t.createAlertForm.createAlert}
       </button>

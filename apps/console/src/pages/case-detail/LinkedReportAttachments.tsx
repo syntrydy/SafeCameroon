@@ -50,7 +50,7 @@ export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachm
     <li className="py-2">
       <div className="flex items-center gap-2">
         <span className="font-mono text-xs text-slate-500">{reportId.slice(0, 8)}</span>
-        <button type="button" onClick={() => void toggleExpanded()} className="text-xs font-medium text-slate-600 underline">
+        <button type="button" onClick={() => void toggleExpanded()} className="text-xs font-medium text-slate-400 underline">
           {expanded ? t.linkedAttachments.hideAttachments : t.linkedAttachments.showAttachments}
         </button>
       </div>
@@ -59,7 +59,7 @@ export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachm
         <div className="mt-2 pl-4">
           {loading && <p className="text-xs text-slate-500">{t.linkedAttachments.loading}</p>}
           {error && (
-            <p role="alert" className="text-xs text-red-700">
+            <p role="alert" className="text-xs text-red-300">
               {error}
             </p>
           )}
@@ -69,14 +69,14 @@ export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachm
           {attachments && attachments.length > 0 && (
             <ul>
               {attachments.map((attachment) => (
-                <li key={attachment.attachment_id} className="mb-1 text-xs text-slate-700">
+                <li key={attachment.attachment_id} className="mb-1 text-xs text-slate-300">
                   {attachment.content_type} ({t.linkedAttachments.sizeBytes(attachment.size_bytes)}){" "}
                   {downloadUrls[attachment.attachment_id] ? (
                     <a
                       href={downloadUrls[attachment.attachment_id]}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-slate-900 underline"
+                      className="text-white underline"
                     >
                       {t.linkedAttachments.open}
                     </a>
@@ -84,7 +84,7 @@ export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachm
                     <button
                       type="button"
                       onClick={() => void getDownloadUrl(attachment.attachment_id)}
-                      className="text-slate-600 underline"
+                      className="text-slate-400 underline"
                     >
                       {t.linkedAttachments.getDownloadLink}
                     </button>

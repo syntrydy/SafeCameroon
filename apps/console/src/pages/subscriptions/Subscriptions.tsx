@@ -33,7 +33,7 @@ function CreateSubscriptionForm({
 
   if (!adding) {
     return (
-      <button type="button" onClick={() => setAdding(true)} className="text-sm font-medium text-slate-700 underline">
+      <button type="button" onClick={() => setAdding(true)} className="text-sm font-medium text-slate-300 underline">
         {t.subscriptions.addSubscription}
       </button>
     );
@@ -55,10 +55,10 @@ function CreateSubscriptionForm({
   }
 
   return (
-    <div className="rounded border border-slate-200 p-3">
+    <div className="rounded border border-white/[0.08] p-3">
       <SubscriptionRuleEditor rules={rules} onChange={setRules} />
       {error && (
-        <p role="alert" className="mt-2 text-sm text-red-700">
+        <p role="alert" className="mt-2 text-sm text-red-300">
           {error}
         </p>
       )}
@@ -67,14 +67,14 @@ function CreateSubscriptionForm({
           type="button"
           disabled={submitting}
           onClick={() => void handleCreate()}
-          className="rounded bg-slate-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+          className="rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1 text-xs font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? t.subscriptions.creating : t.subscriptions.createSubscription}
         </button>
         <button
           type="button"
           onClick={() => setAdding(false)}
-          className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-700"
+          className="rounded-lg border border-white/[0.08] px-3 py-1 text-xs text-slate-300 hover:bg-white/[0.05]"
         >
           {t.common.cancel}
         </button>
@@ -154,78 +154,78 @@ export function Subscriptions() {
 
   return (
     <div>
-      <h2 className="mb-4 text-base font-semibold text-slate-900">{t.subscriptions.heading}</h2>
+      <h2 className="mb-4 text-base font-semibold text-white">{t.subscriptions.heading}</h2>
 
       {!consumer ? (
         <div className="grid gap-6 sm:grid-cols-2">
-          <form onSubmit={(event) => void handleLookup(event)} className="rounded border border-slate-200 p-4">
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.subscriptions.lookupHeading}</h3>
+          <form onSubmit={(event) => void handleLookup(event)} className="rounded border border-white/[0.08] p-4">
+            <h3 className="mb-2 text-sm font-semibold text-white">{t.subscriptions.lookupHeading}</h3>
             <label className="mb-2 block text-sm">
-              <span className="mb-1 block text-slate-700">{t.subscriptions.consumerId}</span>
+              <span className="mb-1 block text-slate-300">{t.subscriptions.consumerId}</span>
               <input
                 required
                 value={consumerIdInput}
                 onChange={(event) => setConsumerIdInput(event.target.value)}
-                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </label>
-            <button type="submit" className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white">
+            <button type="submit" className="rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600">
               {t.subscriptions.load}
             </button>
           </form>
 
           <form
             onSubmit={(event) => void handleCreateConsumer(event)}
-            className="rounded border border-slate-200 p-4"
+            className="rounded border border-white/[0.08] p-4"
           >
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.subscriptions.registerHeading}</h3>
+            <h3 className="mb-2 text-sm font-semibold text-white">{t.subscriptions.registerHeading}</h3>
             <label className="mb-2 block text-sm">
-              <span className="mb-1 block text-slate-700">{t.subscriptions.name}</span>
+              <span className="mb-1 block text-slate-300">{t.subscriptions.name}</span>
               <input
                 required
                 value={newConsumerName}
                 onChange={(event) => setNewConsumerName(event.target.value)}
-                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </label>
             <label className="mb-2 block text-sm">
-              <span className="mb-1 block text-slate-700">{t.subscriptions.type}</span>
+              <span className="mb-1 block text-slate-300">{t.subscriptions.type}</span>
               <select
                 value={newConsumerType}
                 onChange={(event) => setNewConsumerType(event.target.value as ConsumerType)}
-                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               >
-                <option value="ORGANIZATION">{t.subscriptions.typeOrganization}</option>
-                <option value="CITIZEN">{t.subscriptions.typeCitizen}</option>
+                <option value="ORGANIZATION" className="bg-slate-900 text-white">{t.subscriptions.typeOrganization}</option>
+                <option value="CITIZEN" className="bg-slate-900 text-white">{t.subscriptions.typeCitizen}</option>
               </select>
             </label>
-            <button type="submit" className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white">
+            <button type="submit" className="rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600">
               {t.subscriptions.createConsumer}
             </button>
           </form>
         </div>
       ) : (
         <div>
-          <div className="mb-4 flex items-center justify-between rounded border border-slate-200 p-3">
+          <div className="mb-4 flex items-center justify-between rounded border border-white/[0.08] p-3">
             <div>
-              <p className="text-sm font-medium text-slate-900">{consumer.name}</p>
+              <p className="text-sm font-medium text-white">{consumer.name}</p>
               <p className="text-xs text-slate-500">
                 {consumer.consumer_type} &middot; {consumer.consumer_id}
               </p>
             </div>
-            <button type="button" onClick={switchConsumer} className="text-xs font-medium text-slate-600 underline">
+            <button type="button" onClick={switchConsumer} className="text-xs font-medium text-slate-400 underline">
               {t.subscriptions.switchConsumer}
             </button>
           </div>
 
           {dataError && (
-            <p role="alert" className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p role="alert" className="mb-4 rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
               {dataError}
             </p>
           )}
 
           <section className="mb-6">
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.subscriptions.subscriptionsHeading}</h3>
+            <h3 className="mb-2 text-sm font-semibold text-white">{t.subscriptions.subscriptionsHeading}</h3>
             {loadingData ? (
               <p className="text-sm text-slate-500">{t.subscriptions.loading}</p>
             ) : (
@@ -250,7 +250,7 @@ export function Subscriptions() {
           </section>
 
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.subscriptions.deliveryPreferenceHeading}</h3>
+            <h3 className="mb-2 text-sm font-semibold text-white">{t.subscriptions.deliveryPreferenceHeading}</h3>
             {!loadingData && !deliveryPreference && (
               <p className="mb-2 text-sm text-slate-500">{t.subscriptions.noDeliveryPreference}</p>
             )}
@@ -267,7 +267,7 @@ export function Subscriptions() {
       )}
 
       {lookupError && (
-        <p role="alert" className="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="mt-4 rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
           {lookupError}
         </p>
       )}

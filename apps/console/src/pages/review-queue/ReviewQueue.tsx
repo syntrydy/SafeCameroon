@@ -63,8 +63,8 @@ export function ReviewQueue() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-slate-900">{t.reviewQueue.heading}</h2>
-        <label className="text-sm text-slate-600">
+        <h2 className="text-base font-semibold text-white">{t.reviewQueue.heading}</h2>
+        <label className="text-sm text-slate-400">
           {t.reviewQueue.statusLabel}{" "}
           <select
             value={statusFilter}
@@ -72,10 +72,10 @@ export function ReviewQueue() {
               setActionMessage(null);
               setStatusFilter(event.target.value as ReportStatus | "ALL");
             }}
-            className="ml-2 rounded border border-slate-300 px-2 py-1 text-sm"
+            className="ml-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
           >
             {statusFilters.map((filter) => (
-              <option key={filter.value} value={filter.value}>
+              <option key={filter.value} value={filter.value} className="bg-slate-900 text-white">
                 {filter.label}
               </option>
             ))}
@@ -84,7 +84,7 @@ export function ReviewQueue() {
       </div>
 
       {actionMessage && (
-        <p role="status" className="mb-4 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+        <p role="status" className="mb-4 rounded border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
           {actionMessage.text}{" "}
           <Link to={`/cases/${actionMessage.caseId}`} className="underline">
             {t.reviewQueue.viewCase}
@@ -93,7 +93,7 @@ export function ReviewQueue() {
       )}
 
       {error && (
-        <p role="alert" className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="mb-4 rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
           {error}
         </p>
       )}
@@ -105,7 +105,7 @@ export function ReviewQueue() {
       ) : (
         <table className="w-full border-collapse text-left">
           <thead>
-            <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+            <tr className="border-b border-white/[0.08] text-xs uppercase text-slate-500">
               <th className="py-2 pr-4">{t.reviewQueue.colReport}</th>
               <th className="py-2 pr-4">{t.reviewQueue.colChannel}</th>
               <th className="py-2 pr-4">{t.reviewQueue.colStatus}</th>

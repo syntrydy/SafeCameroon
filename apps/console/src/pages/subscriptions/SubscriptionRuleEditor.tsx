@@ -85,23 +85,23 @@ export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEdit
   return (
     <div>
       {rules.map((rule, index) => (
-        <div key={index} className="mb-3 rounded border border-slate-200 p-3">
+        <div key={index} className="mb-3 rounded border border-white/[0.08] p-3">
           <div className="mb-2 flex items-center justify-between">
             <select
               aria-label={`Rule ${index + 1} type`}
               value={rule.rule}
               onChange={(event) => updateRule(index, defaultRuleFor(event.target.value as SubscriptionRule["rule"]))}
-              className="rounded border border-slate-300 px-2 py-1 text-sm"
+              className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
             >
-              <option value="INCIDENT_TYPE">{t.ruleEditor.ruleIncidentType}</option>
-              <option value="SEVERITY">{t.ruleEditor.ruleSeverity}</option>
-              <option value="EVENT_TYPE">{t.ruleEditor.ruleEventType}</option>
-              <option value="GEOGRAPHY">{t.ruleEditor.ruleGeography}</option>
+              <option value="INCIDENT_TYPE" className="bg-slate-900 text-white">{t.ruleEditor.ruleIncidentType}</option>
+              <option value="SEVERITY" className="bg-slate-900 text-white">{t.ruleEditor.ruleSeverity}</option>
+              <option value="EVENT_TYPE" className="bg-slate-900 text-white">{t.ruleEditor.ruleEventType}</option>
+              <option value="GEOGRAPHY" className="bg-slate-900 text-white">{t.ruleEditor.ruleGeography}</option>
             </select>
             <button
               type="button"
               onClick={() => removeRule(index)}
-              className="text-xs font-medium text-red-700 underline"
+              className="text-xs font-medium text-red-300 underline"
             >
               {t.ruleEditor.remove}
             </button>
@@ -128,10 +128,10 @@ export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEdit
                 aria-label={`Rule ${index + 1} operator`}
                 value={rule.operator}
                 onChange={(event) => updateRule(index, { ...rule, operator: event.target.value as Comparison })}
-                className="rounded border border-slate-300 px-2 py-1"
+                className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-white focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               >
                 {comparisons(t).map((option) => (
-                  <option key={option.value} value={option.value}>
+                  <option key={option.value} value={option.value} className="bg-slate-900 text-white">
                     {option.label}
                   </option>
                 ))}
@@ -142,10 +142,10 @@ export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEdit
                 onChange={(event) =>
                   updateRule(index, { ...rule, value: event.target.value as (typeof SEVERITIES)[number] })
                 }
-                className="rounded border border-slate-300 px-2 py-1"
+                className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-white focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               >
                 {SEVERITIES.map((value) => (
-                  <option key={value} value={value}>
+                  <option key={value} value={value} className="bg-slate-900 text-white">
                     {value}
                   </option>
                 ))}
@@ -175,14 +175,14 @@ export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEdit
                   {rule.areas.map((area, areaIndex) => (
                     <span
                       key={areaIndex}
-                      className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-xs text-slate-700"
+                      className="inline-flex items-center gap-1 rounded bg-white/[0.08] px-2 py-1 text-xs text-slate-300"
                     >
                       {area}
                       <button
                         type="button"
                         onClick={() => removeGeographyArea(index, areaIndex)}
                         aria-label={t.ruleEditor.removeArea(area)}
-                        className="text-slate-500 hover:text-red-700"
+                        className="text-slate-500 hover:text-red-300"
                       >
                         &times;
                       </button>
@@ -204,12 +204,12 @@ export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEdit
                     }
                   }}
                   placeholder={t.ruleEditor.geographyPlaceholder}
-                  className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                  className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                 />
                 <button
                   type="button"
                   onClick={() => addGeographyArea(index)}
-                  className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                  className="rounded-lg border border-white/[0.08] px-2 py-1 text-xs text-slate-300 hover:bg-white/[0.05]"
                 >
                   {t.ruleEditor.addArea}
                 </button>
@@ -222,7 +222,7 @@ export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEdit
       <button
         type="button"
         onClick={() => onChange([...rules, defaultRuleFor("INCIDENT_TYPE")])}
-        className="text-sm font-medium text-slate-700 underline"
+        className="text-sm font-medium text-slate-300 underline"
       >
         {t.ruleEditor.addRule}
       </button>

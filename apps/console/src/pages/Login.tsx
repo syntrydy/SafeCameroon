@@ -211,7 +211,7 @@ export function Login() {
 
             <div className="mt-8 space-y-3 text-center">
               <p className="text-xs text-slate-500">{t.login.accessLimited}</p>
-              <Footer variant="dark" />
+              <Footer />
             </div>
           </div>
         </div>

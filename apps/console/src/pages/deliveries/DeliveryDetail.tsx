@@ -33,7 +33,7 @@ export function DeliveryDetail() {
 
   if (error && !delivery) {
     return (
-      <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+      <p role="alert" className="rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
         {error}
       </p>
     );
@@ -45,33 +45,33 @@ export function DeliveryDetail() {
 
   return (
     <div>
-      <h2 className="mb-4 text-base font-semibold text-slate-900">
+      <h2 className="mb-4 text-base font-semibold text-white">
         {t.deliveryDetail.heading(delivery.delivery_id.slice(0, 8))}
       </h2>
 
       <dl className="mb-6 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-slate-500">{t.deliveryDetail.channel}</dt>
-        <dd className="text-slate-900">{delivery.channel}</dd>
+        <dd className="text-white">{delivery.channel}</dd>
         <dt className="text-slate-500">{t.deliveryDetail.endpoint}</dt>
-        <dd className="text-slate-900">{delivery.endpoint_address}</dd>
+        <dd className="text-white">{delivery.endpoint_address}</dd>
         <dt className="text-slate-500">{t.deliveryDetail.tier}</dt>
-        <dd className="text-slate-900">{delivery.tier}</dd>
+        <dd className="text-white">{delivery.tier}</dd>
         <dt className="text-slate-500">{t.deliveryDetail.status}</dt>
-        <dd className="text-slate-900">{delivery.status.replace(/_/g, " ")}</dd>
+        <dd className="text-white">{delivery.status.replace(/_/g, " ")}</dd>
         <dt className="text-slate-500">{t.deliveryDetail.attempts}</dt>
-        <dd className="text-slate-900">
+        <dd className="text-white">
           {delivery.attempt_count} / {delivery.max_attempts}
         </dd>
       </dl>
 
       <section>
-        <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.deliveryDetail.attemptHistory}</h3>
+        <h3 className="mb-2 text-sm font-semibold text-white">{t.deliveryDetail.attemptHistory}</h3>
         {delivery.attempts.length === 0 ? (
           <p className="text-sm text-slate-500">{t.deliveryDetail.noAttempts}</p>
         ) : (
           <table className="w-full border-collapse text-left">
             <thead>
-              <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+              <tr className="border-b border-white/[0.08] text-xs uppercase text-slate-500">
                 <th className="py-2 pr-4">{t.deliveryDetail.colNumber}</th>
                 <th className="py-2 pr-4">{t.deliveryDetail.colOutcome}</th>
                 <th className="py-2 pr-4">{t.deliveryDetail.colDetail}</th>
@@ -79,18 +79,18 @@ export function DeliveryDetail() {
             </thead>
             <tbody>
               {delivery.attempts.map((attempt) => (
-                <tr key={attempt.attempt_number} className="border-b border-slate-100">
-                  <td className="py-2 pr-4 text-sm text-slate-700">{attempt.attempt_number}</td>
+                <tr key={attempt.attempt_number} className="border-b border-white/[0.06]">
+                  <td className="py-2 pr-4 text-sm text-slate-300">{attempt.attempt_number}</td>
                   <td className="py-2 pr-4">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${
-                        attempt.outcome === "SENT" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"
+                        attempt.outcome === "SENT" ? "bg-emerald-500/10 text-emerald-300" : "bg-red-500/10 text-red-300"
                       }`}
                     >
                       {attempt.outcome}
                     </span>
                   </td>
-                  <td className="py-2 pr-4 text-sm text-slate-700">
+                  <td className="py-2 pr-4 text-sm text-slate-300">
                     {attempt.outcome === "SENT"
                       ? attempt.provider_message_id
                         ? t.deliveryDetail.providerMessageId(attempt.provider_message_id)

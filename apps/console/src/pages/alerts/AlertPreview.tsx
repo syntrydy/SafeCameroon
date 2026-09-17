@@ -71,7 +71,7 @@ export function AlertPreview() {
 
   if (error && !alert) {
     return (
-      <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+      <p role="alert" className="rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
         {error}
       </p>
     );
@@ -85,7 +85,7 @@ export function AlertPreview() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-slate-900">
+          <h2 className="text-base font-semibold text-white">
             {t.alertPreview.heading(alert.alert_id.slice(0, 8))}
           </h2>
           <p className="text-sm text-slate-500">
@@ -95,7 +95,7 @@ export function AlertPreview() {
         </div>
         <span
           className={`rounded px-2 py-1 text-xs font-medium ${
-            alert.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"
+            alert.status === "ACTIVE" ? "bg-emerald-500/10 text-emerald-300" : "bg-white/[0.08] text-slate-400"
           }`}
         >
           {alert.status === "ACTIVE" ? t.alertPreview.statusActive : t.alertPreview.statusCancelled}
@@ -103,27 +103,27 @@ export function AlertPreview() {
       </div>
 
       {actionMessage && (
-        <p role="status" className="mb-4 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+        <p role="status" className="mb-4 rounded border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
           {actionMessage}
         </p>
       )}
       {error && (
-        <p role="alert" className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="mb-4 rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
           {error}
         </p>
       )}
 
       <dl className="mb-6 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-slate-500">{t.alertPreview.targetGeography}</dt>
-        <dd className="text-slate-900">{alert.target_geography}</dd>
+        <dd className="text-white">{alert.target_geography}</dd>
         <dt className="text-slate-500">{t.alertPreview.caseLabel}</dt>
-        <dd className="text-slate-900">{alert.case_id.slice(0, 8)}</dd>
+        <dd className="text-white">{alert.case_id.slice(0, 8)}</dd>
         <dt className="text-slate-500">{t.alertPreview.policyLabel}</dt>
-        <dd className="text-slate-900">
+        <dd className="text-white">
           {alert.policy_id} v{alert.policy_version}
         </dd>
         <dt className="text-slate-500">{t.alertPreview.deliveriesLabel}</dt>
-        <dd className="text-slate-900">
+        <dd className="text-white">
           <Link to={`/alerts/${alert.alert_id}/deliveries`} className="underline">
             {t.alertPreview.viewDeliveries}
           </Link>
@@ -131,7 +131,7 @@ export function AlertPreview() {
       </dl>
 
       <section className="mb-6">
-        <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.alertPreview.safeProjection}</h3>
+        <h3 className="mb-2 text-sm font-semibold text-white">{t.alertPreview.safeProjection}</h3>
         {alert.fields.length === 0 ? (
           <p className="text-sm text-slate-500">{t.alertPreview.noFields}</p>
         ) : (
@@ -139,7 +139,7 @@ export function AlertPreview() {
             {alert.fields.map((field) => (
               <div key={field.field} className="contents">
                 <dt className="text-slate-500">{field.field.replace(/_/g, " ")}</dt>
-                <dd className="text-slate-900">{field.value}</dd>
+                <dd className="text-white">{field.value}</dd>
               </div>
             ))}
           </dl>
@@ -151,7 +151,7 @@ export function AlertPreview() {
           type="button"
           disabled={cancelling}
           onClick={() => void handleCancel()}
-          className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 disabled:opacity-50"
+          className="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-300 disabled:opacity-50"
         >
           {t.alertPreview.cancelAlert}
         </button>

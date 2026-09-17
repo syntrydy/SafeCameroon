@@ -54,14 +54,14 @@ export function DeliveryPreferenceForm({ token, consumerId, initial, onSaved }: 
   return (
     <form onSubmit={handleSubmit}>
       <label className="mb-3 block text-sm">
-        <span className="mb-1 block font-medium text-slate-700">{t.deliveryPreferenceForm.strategy}</span>
+        <span className="mb-1 block font-medium text-slate-300">{t.deliveryPreferenceForm.strategy}</span>
         <select
           value={strategy}
           onChange={(event) => setStrategy(event.target.value as DeliveryStrategy)}
-          className="rounded border border-slate-300 px-2 py-1 text-sm"
+          className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
         >
           {strategies.map((option) => (
-            <option key={option.value} value={option.value}>
+            <option key={option.value} value={option.value} className="bg-slate-900 text-white">
               {option.label}
             </option>
           ))}
@@ -74,10 +74,10 @@ export function DeliveryPreferenceForm({ token, consumerId, initial, onSaved }: 
             aria-label={t.deliveryPreferenceForm.channelLabel(index + 1)}
             value={endpoint.channel}
             onChange={(event) => updateChannel(index, { ...endpoint, channel: event.target.value as ChannelType })}
-            className="rounded border border-slate-300 px-2 py-1 text-sm"
+            className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
           >
             {CHANNELS.map((channel) => (
-              <option key={channel} value={channel}>
+              <option key={channel} value={channel} className="bg-slate-900 text-white">
                 {channel}
               </option>
             ))}
@@ -87,12 +87,12 @@ export function DeliveryPreferenceForm({ token, consumerId, initial, onSaved }: 
             value={endpoint.address}
             onChange={(event) => updateChannel(index, { ...endpoint, address: event.target.value })}
             placeholder={t.deliveryPreferenceForm.addressPlaceholder}
-            className="rounded border border-slate-300 px-2 py-1 text-sm"
+            className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
           />
           <button
             type="button"
             onClick={() => setChannels((current) => current.filter((_, i) => i !== index))}
-            className="text-xs font-medium text-red-700 underline"
+            className="text-xs font-medium text-red-300 underline"
           >
             {t.common.remove}
           </button>
@@ -102,13 +102,13 @@ export function DeliveryPreferenceForm({ token, consumerId, initial, onSaved }: 
       <button
         type="button"
         onClick={() => setChannels((current) => [...current, { channel: "WHATSAPP", address: "" }])}
-        className="mb-3 block text-sm font-medium text-slate-700 underline"
+        className="mb-3 block text-sm font-medium text-slate-300 underline"
       >
         {t.deliveryPreferenceForm.addChannel}
       </button>
 
       {error && (
-        <p role="alert" className="mb-3 text-sm text-red-700">
+        <p role="alert" className="mb-3 text-sm text-red-300">
           {error}
         </p>
       )}
@@ -116,7 +116,7 @@ export function DeliveryPreferenceForm({ token, consumerId, initial, onSaved }: 
       <button
         type="submit"
         disabled={submitting}
-        className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+        className="rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {submitting ? t.deliveryPreferenceForm.saving : t.deliveryPreferenceForm.saveDeliveryPreference}
       </button>
