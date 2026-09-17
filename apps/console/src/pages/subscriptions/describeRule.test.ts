@@ -25,7 +25,13 @@ describe("describeRule", () => {
   });
 
   it("describes a geography rule", () => {
-    expect(describeRule({ rule: "GEOGRAPHY", area: "Douala" }, t)).toBe("Geography: Douala");
+    expect(describeRule({ rule: "GEOGRAPHY", areas: ["Douala"] }, t)).toBe("Geography: Douala");
+  });
+
+  it("describes a geography rule with multiple areas", () => {
+    expect(describeRule({ rule: "GEOGRAPHY", areas: ["Douala", "Yaounde"] }, t)).toBe(
+      "Geography: Douala, Yaounde",
+    );
   });
 
   it("falls back to a placeholder for an empty multi-value rule", () => {

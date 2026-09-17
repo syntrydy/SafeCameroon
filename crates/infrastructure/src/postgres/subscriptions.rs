@@ -30,9 +30,9 @@ fn rule_to_json(rule: &SubscriptionRule) -> Value {
             "rule": "EVENT_TYPE",
             "values": values,
         }),
-        SubscriptionRule::Geography(area) => json!({
+        SubscriptionRule::Geography(areas) => json!({
             "rule": "GEOGRAPHY",
-            "area": area.as_str(),
+            "areas": areas.iter().map(GeoArea::as_str).collect::<Vec<_>>(),
         }),
         SubscriptionRule::Visibility(values) => json!({
             "rule": "VISIBILITY",
@@ -70,14 +70,43 @@ fn rule_from_json(value: &Value) -> SubscriptionRule {
             serde_json::from_value::<Vec<CaseEventType>>(value["values"].clone())
                 .expect("subscriptions.rules EVENT_TYPE values are written by this repository"),
         ),
-        "GEOGRAPHY" => SubscriptionRule::Geography(
-            GeoArea::new(
-                value["area"]
-                    .as_str()
-                    .expect("subscriptions.rules GEOGRAPHY entries carry an \"area\" string"),
+        "GEOGRAPHY" => {
+            // Rows written before multi-area support carried a single
+            // "area" string; rows written since carry an "areas" array.
+            // Reading both keeps old, already-persisted subscriptions
+            // working without a backfill migration.
+            let area_names: Vec<String> = if let Some(areas) = value["areas"].as_array() {
+                areas
+                    .iter()
+                    .map(|area| {
+                        area.as_str()
+                            .expect(
+                                "subscriptions.rules GEOGRAPHY areas entries are strings",
+                            )
+                            .to_owned()
+                    })
+                    .collect()
+            } else {
+                vec![
+                    value["area"]
+                        .as_str()
+                        .expect(
+                            "subscriptions.rules GEOGRAPHY entries carry an \"area\" or \"areas\" field",
+                        )
+                        .to_owned(),
+                ]
+            };
+            SubscriptionRule::Geography(
+                area_names
+                    .into_iter()
+                    .map(|name| {
+                        GeoArea::new(name).expect(
+                            "subscriptions.rules GEOGRAPHY areas are written non-blank by this repository",
+                        )
+                    })
+                    .collect(),
             )
-            .expect("subscriptions.rules GEOGRAPHY area is written non-blank by this repository"),
-        ),
+        }
         "VISIBILITY" => SubscriptionRule::Visibility(
             serde_json::from_value::<Vec<AlertVisibility>>(value["values"].clone())
                 .expect("subscriptions.rules VISIBILITY values are written by this repository"),

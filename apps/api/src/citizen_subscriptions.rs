@@ -100,7 +100,7 @@ pub struct PushSubscriptionKeys {
 pub struct CreateCitizenSubscriptionRequest {
     incident_types: Vec<IncidentType>,
     minimum_severity: Severity,
-    geography: String,
+    geography: Vec<String>,
     push_subscription: PushSubscriptionInput,
 }
 
@@ -205,18 +205,20 @@ async fn authorize_citizen_subscription(
 pub struct CitizenSubscriptionRulesResponse {
     incident_types: Vec<IncidentType>,
     minimum_severity: Severity,
-    geography: String,
+    geography: Vec<String>,
 }
 
 fn rules_response(subscription: &Subscription) -> CitizenSubscriptionRulesResponse {
     let mut incident_types = Vec::new();
     let mut minimum_severity = Severity::Low;
-    let mut geography = String::new();
+    let mut geography = Vec::new();
     for rule in subscription.rules() {
         match rule {
             SubscriptionRule::IncidentType(values) => incident_types = values.clone(),
             SubscriptionRule::Severity { value, .. } => minimum_severity = *value,
-            SubscriptionRule::Geography(area) => geography = area.as_str().to_owned(),
+            SubscriptionRule::Geography(areas) => {
+                geography = areas.iter().map(|area| area.as_str().to_owned()).collect()
+            }
             SubscriptionRule::EventType(_) | SubscriptionRule::Visibility(_) => {}
         }
     }
@@ -247,7 +249,7 @@ pub async fn get_citizen_subscription(
 pub struct UpdateCitizenSubscriptionRequest {
     incident_types: Vec<IncidentType>,
     minimum_severity: Severity,
-    geography: String,
+    geography: Vec<String>,
     push_subscription: Option<PushSubscriptionInput>,
 }
 
@@ -272,8 +274,17 @@ pub async fn update_citizen_subscription(
             request_id,
         ));
     }
-    let geo_area = GeoArea::new(request.geography)
-        .map_err(|_| invalid_request(CitizenSubscriptionError::InvalidGeography, request_id))?;
+    let geo_areas: Vec<GeoArea> = request
+        .geography
+        .iter()
+        .filter_map(|area| GeoArea::new(area).ok())
+        .collect();
+    if geo_areas.is_empty() {
+        return Err(invalid_request(
+            CitizenSubscriptionError::InvalidGeography,
+            request_id,
+        ));
+    }
 
     let rules = vec![
         SubscriptionRule::IncidentType(request.incident_types),
@@ -281,7 +292,7 @@ pub async fn update_citizen_subscription(
             operator: Comparison::GreaterThanOrEqual,
             value: request.minimum_severity,
         },
-        SubscriptionRule::Geography(geo_area),
+        SubscriptionRule::Geography(geo_areas),
         SubscriptionRule::Visibility(
             safe_cameroon_application::citizen_subscription::CITIZEN_ALERT_VISIBILITIES.to_vec(),
         ),

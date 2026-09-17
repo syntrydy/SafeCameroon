@@ -67,7 +67,7 @@ impl fmt::Display for CitizenSubscriptionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyIncidentTypes => write!(f, "at least one incident type must be selected"),
-            Self::InvalidGeography => write!(f, "geography cannot be blank"),
+            Self::InvalidGeography => write!(f, "at least one non-blank area must be selected"),
             Self::InvalidPushSubscription => write!(f, "push subscription cannot be blank"),
         }
     }
@@ -90,7 +90,10 @@ impl From<EmptyChannelEndpointAddress> for CitizenSubscriptionError {
 pub struct CitizenSubscriptionRequest {
     pub incident_types: Vec<IncidentType>,
     pub minimum_severity: Severity,
-    pub geography: String,
+    /// One or more areas, OR'd together (matches if the alert intersects
+    /// any of them). Blank entries are dropped; at least one non-blank area
+    /// must remain.
+    pub geography: Vec<String>,
     /// The browser's `PushSubscription`, already validated and re-serialized
     /// to canonical JSON by the caller (`apps/api/src/citizen_subscriptions.rs`)
     /// -- kept a plain `String` here so this crate never depends on a
@@ -113,7 +116,14 @@ pub fn prepare_citizen_subscription(
     if request.incident_types.is_empty() {
         return Err(CitizenSubscriptionError::EmptyIncidentTypes);
     }
-    let geo_area = GeoArea::new(request.geography)?;
+    let geo_areas: Vec<GeoArea> = request
+        .geography
+        .iter()
+        .filter_map(|area| GeoArea::new(area).ok())
+        .collect();
+    if geo_areas.is_empty() {
+        return Err(CitizenSubscriptionError::InvalidGeography);
+    }
     let endpoint = ChannelEndpoint::new(ChannelType::Push, request.push_subscription_json)?;
 
     let consumer =
@@ -135,7 +145,7 @@ pub fn prepare_citizen_subscription(
             operator: Comparison::GreaterThanOrEqual,
             value: request.minimum_severity,
         },
-        SubscriptionRule::Geography(geo_area),
+        SubscriptionRule::Geography(geo_areas),
         SubscriptionRule::Visibility(CITIZEN_ALERT_VISIBILITIES.to_vec()),
     ];
     let subscription = Subscription::new(SubscriptionId::new(), consumer.id(), 1, rules)
@@ -161,7 +171,7 @@ mod tests {
         CitizenSubscriptionRequest {
             incident_types: vec![IncidentType::MissingChild],
             minimum_severity: Severity::High,
-            geography: "Douala".into(),
+            geography: vec!["Douala".into()],
             push_subscription_json:
                 r#"{"endpoint":"https://push.example/abc","keys":{"p256dh":"key","auth":"secret"}}"#
                     .into(),
@@ -214,11 +224,32 @@ mod tests {
     #[test]
     fn rejects_blank_geography() {
         let mut request = valid_request();
-        request.geography = "   ".into();
+        request.geography = vec!["   ".into()];
         assert_eq!(
             prepare_citizen_subscription(request).unwrap_err(),
             CitizenSubscriptionError::InvalidGeography
         );
+    }
+
+    #[test]
+    fn rejects_an_empty_geography_list() {
+        let mut request = valid_request();
+        request.geography = vec![];
+        assert_eq!(
+            prepare_citizen_subscription(request).unwrap_err(),
+            CitizenSubscriptionError::InvalidGeography
+        );
+    }
+
+    #[test]
+    fn accepts_multiple_areas_and_drops_blank_entries() {
+        let mut request = valid_request();
+        request.geography = vec!["Douala".into(), "  ".into(), "Yaounde".into()];
+        let prepared = prepare_citizen_subscription(request).unwrap();
+        assert!(prepared.subscription.rules().iter().any(|rule| matches!(
+            rule,
+            SubscriptionRule::Geography(areas) if areas.len() == 2
+        )));
     }
 
     #[test]

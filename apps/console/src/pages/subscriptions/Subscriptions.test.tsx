@@ -171,7 +171,7 @@ describe("Subscriptions", () => {
         subscription_id: "ffffffff-6666-6666-6666-666666666666",
         consumer_id: CONSUMER.consumer_id,
         version: 1,
-        rules: [{ rule: "GEOGRAPHY", area: "Douala" }],
+        rules: [{ rule: "GEOGRAPHY", areas: ["Douala"] }],
       },
     ];
     const user = await loginAndReachSubscriptions();
@@ -180,13 +180,32 @@ describe("Subscriptions", () => {
     await screen.findByText("Geography: Douala");
 
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    await user.clear(screen.getByLabelText("Rule 1 area"));
+    await user.click(screen.getByRole("button", { name: "Remove Douala" }));
     await user.type(screen.getByLabelText("Rule 1 area"), "Yaounde");
+    await user.click(screen.getByRole("button", { name: "Add" }));
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => {
       expect(screen.getByText("Geography: Yaounde")).toBeInTheDocument();
     });
+  });
+
+  it("adds multiple areas to a geography rule", async () => {
+    subscriptions = [];
+    const user = await loginAndReachSubscriptions();
+    await user.type(screen.getByLabelText("Consumer id"), CONSUMER.consumer_id);
+    await user.click(screen.getByRole("button", { name: "Load" }));
+    await screen.findByText("Douala Police");
+
+    await user.click(screen.getByRole("button", { name: "Add subscription" }));
+    await user.selectOptions(screen.getByLabelText("Rule 1 type"), "GEOGRAPHY");
+    await user.type(screen.getByLabelText("Rule 1 area"), "Douala");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    await user.type(screen.getByLabelText("Rule 1 area"), "Yaounde");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    await user.click(screen.getByRole("button", { name: "Create subscription" }));
+
+    await screen.findByText("Geography: Douala, Yaounde");
   });
 
   it("sets a delivery preference", async () => {

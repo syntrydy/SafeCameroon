@@ -231,7 +231,7 @@ async fn main() {
                 operator: Comparison::GreaterThanOrEqual,
                 value: Severity::Low,
             },
-            SubscriptionRule::Geography(GeoArea::new("Douala").unwrap()),
+            SubscriptionRule::Geography(vec![GeoArea::new("Douala").unwrap()]),
         ],
     )
     .unwrap();
@@ -264,7 +264,7 @@ async fn main() {
                 operator: Comparison::GreaterThanOrEqual,
                 value: Severity::Medium,
             },
-            SubscriptionRule::Geography(GeoArea::new("Bonamoussadi").unwrap()),
+            SubscriptionRule::Geography(vec![GeoArea::new("Bonamoussadi").unwrap()]),
         ],
     )
     .unwrap();
@@ -303,7 +303,7 @@ async fn main() {
                 operator: Comparison::GreaterThanOrEqual,
                 value: Severity::High,
             },
-            SubscriptionRule::Geography(GeoArea::new("Yaounde").unwrap()),
+            SubscriptionRule::Geography(vec![GeoArea::new("Yaounde").unwrap()]),
         ],
     )
     .unwrap();
@@ -328,7 +328,7 @@ async fn main() {
     let citizen_prepared = prepare_citizen_subscription(CitizenSubscriptionRequest {
         incident_types: vec![IncidentType::MissingChild],
         minimum_severity: Severity::High,
-        geography: "Douala".into(),
+        geography: vec!["Douala".into()],
         push_subscription_json: r#"{"endpoint":"https://example-push.invalid/demo","keys":{"p256dh":"demo","auth":"demo"}}"#.into(),
     })
     .expect("citizen request is valid");

@@ -221,6 +221,8 @@ export interface Translations {
     remove: string;
     addRule: string;
     geographyPlaceholder: string;
+    addArea: string;
+    removeArea: (area: string) => string;
     comparisonGreaterThan: string;
     comparisonGreaterThanOrEqual: string;
     comparisonEqual: string;
@@ -473,6 +475,8 @@ export const translations: Record<Locale, Translations> = {
       remove: "Remove",
       addRule: "Add rule",
       geographyPlaceholder: "e.g. Douala",
+      addArea: "Add",
+      removeArea: (area) => `Remove ${area}`,
       comparisonGreaterThan: "> greater than",
       comparisonGreaterThanOrEqual: ">= greater than or equal",
       comparisonEqual: "== equal",
@@ -725,6 +729,8 @@ export const translations: Record<Locale, Translations> = {
       remove: "Retirer",
       addRule: "Ajouter une règle",
       geographyPlaceholder: "ex. Douala",
+      addArea: "Ajouter",
+      removeArea: (area) => `Retirer ${area}`,
       comparisonGreaterThan: "> supérieur à",
       comparisonGreaterThanOrEqual: ">= supérieur ou égal à",
       comparisonEqual: "== égal à",
