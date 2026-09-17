@@ -95,7 +95,7 @@ export function CaseDetail() {
 
   if (error && !caseData) {
     return (
-      <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+      <p role="alert" className="rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
         {error}
       </p>
     );
@@ -109,25 +109,25 @@ export function CaseDetail() {
     <div>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-slate-900">
+          <h2 className="text-base font-semibold text-white">
             {t.caseDetail.heading(caseData.case_id.slice(0, 8))}
           </h2>
           <p className="text-sm text-slate-500">
             {caseData.incident_type.replace(/_/g, " ")} &middot; {t.caseDetail.version(caseData.version)}
           </p>
         </div>
-        <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+        <span className="rounded bg-white/[0.08] px-2 py-1 text-xs font-medium text-slate-300">
           {labels[caseData.status]}
         </span>
       </div>
 
       {actionMessage && (
-        <p role="status" className="mb-4 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+        <p role="status" className="mb-4 rounded border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
           {actionMessage}
         </p>
       )}
       {error && (
-        <p role="alert" className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="mb-4 rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
           {error}
         </p>
       )}
@@ -139,7 +139,7 @@ export function CaseDetail() {
             type="button"
             disabled={pendingTransition !== null}
             onClick={() => void handleTransition(status)}
-            className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t.caseDetail.markStatus(labels[status])}
           </button>
@@ -147,11 +147,11 @@ export function CaseDetail() {
       </div>
 
       <section className="mb-6">
-        <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.caseDetail.linkedReports}</h3>
+        <h3 className="mb-2 text-sm font-semibold text-white">{t.caseDetail.linkedReports}</h3>
         {caseData.report_ids.length === 0 ? (
           <p className="text-sm text-slate-500">{t.caseDetail.noLinkedReports}</p>
         ) : (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-white/[0.06]">
             {caseData.report_ids.map((reportId) => (
               <LinkedReportAttachments key={reportId} token={token} reportId={reportId} />
             ))}
@@ -170,10 +170,10 @@ export function CaseDetail() {
       )}
 
       <section>
-        <h3 className="mb-2 text-sm font-semibold text-slate-900">{t.caseDetail.history}</h3>
-        <ul className="divide-y divide-slate-100">
+        <h3 className="mb-2 text-sm font-semibold text-white">{t.caseDetail.history}</h3>
+        <ul className="divide-y divide-white/[0.06]">
           {events.map((event) => (
-            <li key={event.id} className="py-2 text-sm text-slate-700">
+            <li key={event.id} className="py-2 text-sm text-slate-300">
               <span className="font-medium">{event.event_type.replace(/_/g, " ")}</span>{" "}
               <span className="text-slate-500">{new Date(event.occurred_at).toLocaleString()}</span>
             </li>

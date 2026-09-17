@@ -7,12 +7,12 @@ import { useAuth } from "../../auth/AuthContext";
 import { useTranslation } from "../../i18n/LanguageContext";
 
 const STATUS_STYLES: Record<DeliveryStatus, string> = {
-  QUEUED: "bg-slate-200 text-slate-600",
-  SENDING: "bg-blue-100 text-blue-800",
-  SENT: "bg-blue-100 text-blue-800",
-  DELIVERED: "bg-emerald-100 text-emerald-800",
-  RETRYING: "bg-amber-100 text-amber-800",
-  FAILED_PERMANENTLY: "bg-red-100 text-red-800",
+  QUEUED: "bg-white/[0.08] text-slate-400",
+  SENDING: "bg-blue-500/10 text-blue-300",
+  SENT: "bg-blue-500/10 text-blue-300",
+  DELIVERED: "bg-emerald-500/10 text-emerald-300",
+  RETRYING: "bg-amber-500/10 text-amber-300",
+  FAILED_PERMANENTLY: "bg-red-500/10 text-red-300",
 };
 
 export function DeliveryList() {
@@ -38,12 +38,12 @@ export function DeliveryList() {
 
   return (
     <div>
-      <h2 className="mb-4 text-base font-semibold text-slate-900">
+      <h2 className="mb-4 text-base font-semibold text-white">
         {t.deliveryList.heading(id?.slice(0, 8) ?? "")}
       </h2>
 
       {error && (
-        <p role="alert" className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="mb-4 rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
           {error}
         </p>
       )}
@@ -55,7 +55,7 @@ export function DeliveryList() {
       ) : (
         <table className="w-full border-collapse text-left">
           <thead>
-            <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+            <tr className="border-b border-white/[0.08] text-xs uppercase text-slate-500">
               <th className="py-2 pr-4">{t.deliveryList.colDelivery}</th>
               <th className="py-2 pr-4">{t.deliveryList.colChannel}</th>
               <th className="py-2 pr-4">{t.deliveryList.colTier}</th>
@@ -65,23 +65,23 @@ export function DeliveryList() {
           </thead>
           <tbody>
             {deliveries.map((delivery) => (
-              <tr key={delivery.delivery_id} className="border-b border-slate-100">
+              <tr key={delivery.delivery_id} className="border-b border-white/[0.06]">
                 <td className="py-2 pr-4">
                   <Link
                     to={`/deliveries/${delivery.delivery_id}`}
-                    className="font-mono text-xs text-slate-700 underline"
+                    className="font-mono text-xs text-slate-300 underline"
                   >
                     {delivery.delivery_id.slice(0, 8)}
                   </Link>
                 </td>
-                <td className="py-2 pr-4 text-sm text-slate-700">{delivery.channel}</td>
-                <td className="py-2 pr-4 text-sm text-slate-700">{delivery.tier}</td>
+                <td className="py-2 pr-4 text-sm text-slate-300">{delivery.channel}</td>
+                <td className="py-2 pr-4 text-sm text-slate-300">{delivery.tier}</td>
                 <td className="py-2 pr-4">
                   <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[delivery.status]}`}>
                     {delivery.status.replace(/_/g, " ")}
                   </span>
                 </td>
-                <td className="py-2 pr-4 text-sm text-slate-700">
+                <td className="py-2 pr-4 text-sm text-slate-300">
                   {delivery.attempt_count} / {delivery.max_attempts}
                 </td>
               </tr>

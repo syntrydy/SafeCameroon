@@ -27,7 +27,7 @@ function ExtractionFields({ fields, t }: { fields: Extraction["fields"]; t: Tran
       {present.map(({ key, label }) => (
         <Fragment key={key}>
           <span className="font-medium text-slate-500">{label}</span>
-          <span className="text-slate-700">{fields[key]}</span>
+          <span className="text-slate-300">{fields[key]}</span>
         </Fragment>
       ))}
     </div>
@@ -78,7 +78,7 @@ export function ExtractionPanel({ token, reportId }: { token: string; reportId: 
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-2 text-xs font-medium text-indigo-700 underline"
+        className="mt-2 text-xs font-medium text-indigo-400 underline"
       >
         {t.extraction.toggle}
       </button>
@@ -86,9 +86,9 @@ export function ExtractionPanel({ token, reportId }: { token: string; reportId: 
   }
 
   return (
-    <div className="mt-2 rounded border border-indigo-100 bg-indigo-50/50 p-2">
+    <div className="mt-2 rounded border border-indigo-500/20 bg-indigo-500/10 p-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-indigo-900">{t.extraction.toggle}</span>
+        <span className="text-xs font-semibold text-indigo-300">{t.extraction.toggle}</span>
         <button
           type="button"
           disabled={extracting}
@@ -101,7 +101,7 @@ export function ExtractionPanel({ token, reportId }: { token: string; reportId: 
       <p className="mt-1 text-xs text-slate-500">{t.extraction.disclaimer}</p>
 
       {error && (
-        <p role="alert" className="mt-2 text-xs text-red-700">
+        <p role="alert" className="mt-2 text-xs text-red-300">
           {error}
         </p>
       )}
@@ -114,7 +114,7 @@ export function ExtractionPanel({ token, reportId }: { token: string; reportId: 
 
       <ul className="mt-2 space-y-2">
         {extractions.map((extraction, index) => (
-          <li key={index} className="rounded bg-white p-2 shadow-sm">
+          <li key={index} className="rounded bg-white/[0.05] p-2">
             <ExtractionFields fields={extraction.fields} t={t} />
             <p className="mt-1 text-[10px] text-slate-400">
               {extraction.provider.toLowerCase()}/{extraction.model}

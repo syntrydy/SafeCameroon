@@ -42,16 +42,16 @@ export function AlertList() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-slate-900">{t.alertList.heading}</h2>
-        <label className="text-sm text-slate-600">
+        <h2 className="text-base font-semibold text-white">{t.alertList.heading}</h2>
+        <label className="text-sm text-slate-400">
           {t.alertList.statusLabel}{" "}
           <select
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value as AlertStatus | "ALL")}
-            className="ml-2 rounded border border-slate-300 px-2 py-1 text-sm"
+            className="ml-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
           >
             {statusFilters.map((filter) => (
-              <option key={filter.value} value={filter.value}>
+              <option key={filter.value} value={filter.value} className="bg-slate-900 text-white">
                 {filter.label}
               </option>
             ))}
@@ -60,7 +60,7 @@ export function AlertList() {
       </div>
 
       {error && (
-        <p role="alert" className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="mb-4 rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
           {error}
         </p>
       )}
@@ -72,7 +72,7 @@ export function AlertList() {
       ) : (
         <table className="w-full border-collapse text-left">
           <thead>
-            <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+            <tr className="border-b border-white/[0.08] text-xs uppercase text-slate-500">
               <th className="py-2 pr-4">{t.alertList.colAlert}</th>
               <th className="py-2 pr-4">{t.alertList.colSeverity}</th>
               <th className="py-2 pr-4">{t.alertList.colVisibility}</th>
@@ -82,16 +82,16 @@ export function AlertList() {
           </thead>
           <tbody>
             {alerts.map((alert) => (
-              <tr key={alert.alert_id} className="border-b border-slate-100">
+              <tr key={alert.alert_id} className="border-b border-white/[0.06]">
                 <td className="py-2 pr-4">
-                  <Link to={`/alerts/${alert.alert_id}`} className="font-mono text-xs text-slate-700 underline">
+                  <Link to={`/alerts/${alert.alert_id}`} className="font-mono text-xs text-slate-300 underline">
                     {alert.alert_id.slice(0, 8)}
                   </Link>
                 </td>
-                <td className="py-2 pr-4 text-sm text-slate-700">{alert.severity}</td>
-                <td className="py-2 pr-4 text-sm text-slate-700">{alert.visibility}</td>
-                <td className="py-2 pr-4 text-sm text-slate-700">{alert.status}</td>
-                <td className="py-2 pr-4 text-sm text-slate-700">{alert.target_geography}</td>
+                <td className="py-2 pr-4 text-sm text-slate-300">{alert.severity}</td>
+                <td className="py-2 pr-4 text-sm text-slate-300">{alert.visibility}</td>
+                <td className="py-2 pr-4 text-sm text-slate-300">{alert.status}</td>
+                <td className="py-2 pr-4 text-sm text-slate-300">{alert.target_geography}</td>
               </tr>
             ))}
           </tbody>

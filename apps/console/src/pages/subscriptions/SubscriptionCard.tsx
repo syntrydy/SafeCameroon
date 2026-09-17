@@ -34,7 +34,7 @@ export function SubscriptionCard({ token, subscription, onUpdated }: Subscriptio
   }
 
   return (
-    <div className="mb-3 rounded border border-slate-200 p-3">
+    <div className="mb-3 rounded border border-white/[0.08] p-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="font-mono text-xs text-slate-500">
           {subscription.subscription_id.slice(0, 8)} (v{subscription.version})
@@ -46,7 +46,7 @@ export function SubscriptionCard({ token, subscription, onUpdated }: Subscriptio
               setRules(subscription.rules);
               setEditing(true);
             }}
-            className="text-xs font-medium text-slate-600 underline"
+            className="text-xs font-medium text-slate-400 underline"
           >
             {t.subscriptionCard.edit}
           </button>
@@ -57,7 +57,7 @@ export function SubscriptionCard({ token, subscription, onUpdated }: Subscriptio
         <div>
           <SubscriptionRuleEditor rules={rules} onChange={setRules} />
           {error && (
-            <p role="alert" className="mt-2 text-sm text-red-700">
+            <p role="alert" className="mt-2 text-sm text-red-300">
               {error}
             </p>
           )}
@@ -66,21 +66,21 @@ export function SubscriptionCard({ token, subscription, onUpdated }: Subscriptio
               type="button"
               disabled={saving}
               onClick={() => void handleSave()}
-              className="rounded bg-slate-900 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+              className="rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1 text-xs font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? t.subscriptionCard.saving : t.subscriptionCard.saveChanges}
             </button>
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-700"
+              className="rounded-lg border border-white/[0.08] px-3 py-1 text-xs text-slate-300 hover:bg-white/[0.05]"
             >
               {t.subscriptionCard.cancel}
             </button>
           </div>
         </div>
       ) : (
-        <ul className="text-sm text-slate-700">
+        <ul className="text-sm text-slate-300">
           {subscription.rules.map((rule, index) => (
             <li key={index}>{describeRule(rule, t)}</li>
           ))}
