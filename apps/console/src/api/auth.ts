@@ -5,6 +5,7 @@ export interface LoginResponse {
   token: string;
   expires_in_seconds: number;
   reviewer_id: string;
+  email: string;
 }
 
 export function loginWithGoogle(idToken: string): Promise<LoginResponse> {

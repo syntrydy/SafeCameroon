@@ -26,6 +26,7 @@ const LOGIN_RESPONSE = {
   token: "a-session-token",
   expires_in_seconds: 3600,
   reviewer_id: "reviewer-1",
+  email: "reviewer@example.test",
 };
 
 const CASE_ID = "aaaaaaaa-1111-1111-1111-111111111111";

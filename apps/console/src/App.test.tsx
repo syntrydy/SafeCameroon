@@ -38,6 +38,7 @@ const LOGIN_RESPONSE = {
   token: "a-session-token",
   expires_in_seconds: 3600,
   reviewer_id: "22222222-2222-2222-2222-222222222222",
+  email: "reviewer@example.test",
 };
 
 /** Routes a mocked fetch by method + path so login (and the review queue it
@@ -83,7 +84,7 @@ describe("console auth flow", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Review queue" })).toBeInTheDocument();
     });
-    expect(screen.getByText(`Reviewer ${LOGIN_RESPONSE.reviewer_id}`)).toBeInTheDocument();
+    expect(screen.getByText(`Reviewer ${LOGIN_RESPONSE.email}`)).toBeInTheDocument();
   });
 
   it("shows the backend's error message and request id when the account isn't a registered reviewer", async () => {
