@@ -41,6 +41,7 @@ export interface Translations {
   footer: {
     tagline: string;
     copyright: (year: number) => string;
+    citizenLink: string;
   };
   reviewQueue: {
     heading: string;
@@ -317,6 +318,7 @@ export const translations: Record<Locale, Translations> = {
     footer: {
       tagline: "Privacy-first civic-protection platform",
       copyright: (year) => `© ${year} ${BRAND_NAME}`,
+      citizenLink: "Report an incident anonymously",
     },
     reviewQueue: {
       heading: "Review queue",
@@ -594,6 +596,7 @@ export const translations: Record<Locale, Translations> = {
     footer: {
       tagline: "Plateforme de protection civile axée sur la confidentialité",
       copyright: (year) => `© ${year} ${BRAND_NAME}`,
+      citizenLink: "Signaler un incident anonymement",
     },
     reviewQueue: {
       heading: "File d'examen",
