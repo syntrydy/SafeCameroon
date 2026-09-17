@@ -1,9 +1,22 @@
 import type { ReactNode } from "react";
 
+import type { Role } from "../api/organizations";
 import { useAuth } from "../auth/AuthContext";
 import { useTranslation } from "../i18n/LanguageContext";
+import type { Translations } from "../i18n/translations";
 import { Footer } from "./Footer";
 import { Sidebar } from "./Sidebar";
+
+function roleLabel(role: Role | undefined, t: Translations): string {
+  switch (role) {
+    case "PLATFORM_ADMIN":
+      return t.layout.platformAdmin;
+    case "ORG_ADMIN":
+      return t.layout.orgAdmin;
+    default:
+      return t.layout.reviewer;
+  }
+}
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
@@ -21,7 +34,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <div className="relative flex flex-1 flex-col overflow-hidden">
         <header className="flex items-center justify-end gap-4 border-b border-white/[0.08] bg-slate-900/60 px-6 py-4 text-sm text-slate-400 backdrop-blur-xl">
           <span>
-            {t.layout.reviewer} {session?.email}
+            {roleLabel(session?.role, t)} {session?.email}
           </span>
           <button
             type="button"

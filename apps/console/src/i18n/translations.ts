@@ -20,6 +20,8 @@ export interface Translations {
     subscriptions: string;
     organizations: string;
     reviewer: string;
+    orgAdmin: string;
+    platformAdmin: string;
     signOut: string;
     collapseSidebar: string;
     expandSidebar: string;
@@ -294,6 +296,8 @@ export const translations: Record<Locale, Translations> = {
       subscriptions: "Subscriptions",
       organizations: "Organizations",
       reviewer: "Reviewer",
+      orgAdmin: "Org admin",
+      platformAdmin: "Admin",
       signOut: "Sign out",
       collapseSidebar: "Collapse sidebar",
       expandSidebar: "Expand sidebar",
@@ -568,6 +572,8 @@ export const translations: Record<Locale, Translations> = {
       subscriptions: "Abonnements",
       organizations: "Organisations",
       reviewer: "Examinateur",
+      orgAdmin: "Administrateur d'organisation",
+      platformAdmin: "Administrateur",
       signOut: "Se déconnecter",
       collapseSidebar: "Réduire la barre latérale",
       expandSidebar: "Agrandir la barre latérale",
