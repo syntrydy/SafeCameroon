@@ -4,6 +4,43 @@ SafeCameroon is a privacy-first civic-protection platform for anonymous incident
 case coordination, controlled alerts, and multi-channel delivery. The first operational
 use case is missing children.
 
+Submitted to the OSF/Andela hackathon under **Track 3: Safety, Reporting & Protection** — see
+[`HACKATHON_SUBMISSION.md`](HACKATHON_SUBMISSION.md) for the full written summary
+(track fit, information sources, trust/accuracy approach, AI tool usage).
+
+## The problem
+
+A bystander who witnesses a missing child or another protection incident often has only two bad
+options: call a number that may not answer, or say nothing because reporting feels risky, slow,
+or anonymous only in theory. On the other side, the organizations best placed to help (police,
+NGOs, schools) have no reliable, targeted way to hear about incidents in their own area of
+responsibility without being flooded by everything everywhere.
+
+## How it works
+
+```text
+Citizen reports anonymously (no account)
+  -> AI suggests structured fields from the free text (a suggestion, never a fact)
+  -> reviewer verifies and opens a case
+  -> reviewer issues a policy-authorized alert at a specific visibility tier
+  -> subscription matching finds every consumer (org or citizen) who should hear about it
+  -> multi-channel delivery, with fallback tiers gated on the primary channel actually failing
+  -> every step is audited and attributable to the actor who caused it
+```
+
+## Why it's different
+
+- **AI never gets the final word.** Extraction output is fully logged with provenance (model,
+  prompt version, requester) but cannot create a case, verify an incident, or issue an alert by
+  itself — a human always does.
+- **Alert visibility is trust-granted, not self-declared.** An organization can only issue the
+  alert visibility tiers the platform has explicitly granted it, so a community-facing alert can
+  never accidentally carry internal-only detail.
+- **The engine is generic; the vertical is the proof.** Incident types, geography matching, and
+  delivery strategy are all domain-modeled to extend beyond one country or one incident class —
+  missing children is the first hard case chosen to prove it end-to-end, not the ceiling of what
+  the platform can do.
+
 ## Repository layout
 
 - `crates/domain`: pure domain types and state-transition rules.
