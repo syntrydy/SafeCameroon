@@ -35,7 +35,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
         <div className="flex items-center gap-4 text-sm text-slate-400">
           <span>
-            {t.layout.reviewer} {session?.reviewerId}
+            {t.layout.reviewer} {session?.email}
           </span>
           <button
             type="button"

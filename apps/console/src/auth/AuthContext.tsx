@@ -4,6 +4,7 @@ import * as authApi from "../api/auth";
 
 export interface Session {
   reviewerId: string;
+  email: string;
   token: string;
 }
 
@@ -24,7 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithGoogle = useCallback(async (idToken: string) => {
     const response = await authApi.loginWithGoogle(idToken);
-    setSession({ reviewerId: response.reviewer_id, token: response.token });
+    setSession({ reviewerId: response.reviewer_id, email: response.email, token: response.token });
   }, []);
 
   const logout = useCallback(async () => {

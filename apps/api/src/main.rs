@@ -1816,6 +1816,45 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn google_login_response_carries_the_reviewers_normalized_email() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let email = format!("Reviewer-{}@Example.Test", Uuid::new_v4());
+
+        let register_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"email": email}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(register_response.status(), StatusCode::CREATED);
+
+        let login_response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/google")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"id_token": email}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(login_response.status(), StatusCode::OK);
+        assert_eq!(
+            json_body(login_response).await["email"],
+            json!(email.to_lowercase())
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
     async fn logout_requires_an_authenticated_session() {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));

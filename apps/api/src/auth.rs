@@ -188,6 +188,7 @@ pub struct LoginResponse {
     token: String,
     expires_in_seconds: u64,
     reviewer_id: Uuid,
+    email: String,
 }
 
 pub async fn google_login(
@@ -250,6 +251,7 @@ pub async fn google_login(
         token: issued.token,
         expires_in_seconds: issued.expires_in.as_secs(),
         reviewer_id,
+        email: normalized_email,
     }))
 }
 
