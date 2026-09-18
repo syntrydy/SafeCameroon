@@ -10,6 +10,8 @@ const ACCEPTED_PHOTO_TYPES: Record<string, PhotoContentType> = {
   "image/webp": "image/webp",
 };
 
+const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
+
 export interface ReportFormPhoto {
   blob: Blob;
   contentType: PhotoContentType;
@@ -59,6 +61,12 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
     const contentType = ACCEPTED_PHOTO_TYPES[file.type];
     if (!contentType) {
       setPhotoError(t.reportForm.photoInvalidType);
+      input.value = "";
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      setPhotoError(t.reportForm.photoTooLarge);
+      input.value = "";
       return;
     }
     setPhotoError(null);
@@ -171,7 +179,6 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
           ref={fileInputRef}
           type="file"
           accept="image/jpeg,image/png,image/webp"
-          capture="environment"
           onChange={handlePhotoChange}
           className="hidden"
         />
