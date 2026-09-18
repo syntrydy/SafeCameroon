@@ -55,6 +55,8 @@ export interface Translations {
     tagline: string;
     copyright: (year: number) => string;
     consoleLink: string;
+    switchToEnglish: string;
+    switchToFrench: string;
   };
   alerts: {
     checking: string;
@@ -155,6 +157,8 @@ export const translations: Record<Locale, Translations> = {
       tagline: "Privacy-first civic-protection platform",
       copyright: (year) => `© ${year} ${BRAND_NAME}`,
       consoleLink: "Organization or reviewer? Sign in to the portal",
+      switchToEnglish: "Switch to English",
+      switchToFrench: "Switch to French",
     },
     alerts: {
       checking: "Checking your alert settings...",
@@ -257,6 +261,8 @@ export const translations: Record<Locale, Translations> = {
       tagline: "Plateforme de protection civile axée sur la confidentialité",
       copyright: (year) => `© ${year} ${BRAND_NAME}`,
       consoleLink: "Organisation ou examinateur ? Connectez-vous au portail",
+      switchToEnglish: "Passer à l'anglais",
+      switchToFrench: "Passer au français",
     },
     alerts: {
       checking: "Vérification de vos paramètres d'alerte...",

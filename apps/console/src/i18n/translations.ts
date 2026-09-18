@@ -43,6 +43,8 @@ export interface Translations {
     tagline: string;
     copyright: (year: number) => string;
     citizenLink: string;
+    switchToEnglish: string;
+    switchToFrench: string;
   };
   reviewQueue: {
     heading: string;
@@ -334,6 +336,8 @@ export const translations: Record<Locale, Translations> = {
       tagline: "Privacy-first civic-protection platform",
       copyright: (year) => `© ${year} ${BRAND_NAME}`,
       citizenLink: "Report an incident anonymously",
+      switchToEnglish: "Switch to English",
+      switchToFrench: "Switch to French",
     },
     reviewQueue: {
       heading: "Review queue",
@@ -626,6 +630,8 @@ export const translations: Record<Locale, Translations> = {
       tagline: "Plateforme de protection civile axée sur la confidentialité",
       copyright: (year) => `© ${year} ${BRAND_NAME}`,
       citizenLink: "Signaler un incident anonymement",
+      switchToEnglish: "Passer à l'anglais",
+      switchToFrench: "Passer au français",
     },
     reviewQueue: {
       heading: "File d'examen",
