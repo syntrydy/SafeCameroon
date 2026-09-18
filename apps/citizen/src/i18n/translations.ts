@@ -12,6 +12,7 @@ export interface Translations {
   reportForm: {
     heading: string;
     subtitle: string;
+    inputModeQuestion: string;
     speakTab: string;
     typeTab: string;
     incidentTypeQuestion: string;
@@ -126,6 +127,7 @@ export const translations: Record<Locale, Translations> = {
     reportForm: {
       heading: "Report an incident",
       subtitle: "No account needed. Sentinel does not collect identity fields from reporters.",
+      inputModeQuestion: "How do you want to report it?",
       speakTab: "Speak",
       typeTab: "Type",
       incidentTypeQuestion: "What kind of report is this?",
@@ -249,6 +251,7 @@ export const translations: Record<Locale, Translations> = {
     reportForm: {
       heading: "Signaler un incident",
       subtitle: "Aucun compte requis. Sentinel ne collecte aucune donnée d'identité auprès des personnes qui signalent.",
+      inputModeQuestion: "Comment souhaitez-vous signaler ceci ?",
       speakTab: "Parler",
       typeTab: "Écrire",
       incidentTypeQuestion: "De quel type de signalement s'agit-il ?",
