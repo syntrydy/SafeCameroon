@@ -161,7 +161,7 @@ export function AlertsPanel() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-white">{t.alerts.signupHeading}</h2>
+      <h1 className="text-xl font-bold text-white">{t.alerts.signupHeading}</h1>
       <p className="mt-1 text-sm text-slate-400">{t.alerts.signupSubtitle}</p>
       <div className="mt-6">
         <AlertRulesForm

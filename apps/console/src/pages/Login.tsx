@@ -113,12 +113,15 @@ export function Login() {
               mounted ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
             }`}
           >
-            <h2 className="text-3xl leading-tight font-semibold text-white xl:text-4xl">
+            {/* Decorative marketing copy beside the real page heading below
+                (login.welcomeBack) -- not a heading itself, so it doesn't
+                appear before that h1 in heading-navigation order. */}
+            <p className="text-3xl leading-tight font-semibold text-white xl:text-4xl">
               {t.login.heroHeadingPrefix}{" "}
               <span className="bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">
                 {t.login.heroHeadingHighlight}
               </span>
-            </h2>
+            </p>
             <p className="mt-4 text-base leading-relaxed text-slate-400">{t.login.heroSubtitle}</p>
             <div className="mt-8 flex items-center gap-6">
               <div className="flex items-center gap-2">

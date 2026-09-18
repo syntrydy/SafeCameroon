@@ -85,12 +85,12 @@ export function Subscriptions() {
 
   return (
     <div>
-      <h2 className="mb-4 text-base font-semibold text-white">{t.subscriptions.heading}</h2>
+      <h1 className="mb-4 text-base font-semibold text-white">{t.subscriptions.heading}</h1>
 
       {!consumer ? (
         <div className="grid gap-6 sm:grid-cols-2">
           <form onSubmit={(event) => void handleLookup(event)} className="rounded border border-white/[0.08] p-4">
-            <h3 className="mb-2 text-sm font-semibold text-white">{t.subscriptions.lookupHeading}</h3>
+            <h2 className="mb-2 text-sm font-semibold text-white">{t.subscriptions.lookupHeading}</h2>
             <label className="mb-2 block text-sm">
               <span className="mb-1 block text-slate-300">{t.subscriptions.consumerId}</span>
               <input
@@ -109,7 +109,7 @@ export function Subscriptions() {
             onSubmit={(event) => void handleCreateConsumer(event)}
             className="rounded border border-white/[0.08] p-4"
           >
-            <h3 className="mb-2 text-sm font-semibold text-white">{t.subscriptions.registerHeading}</h3>
+            <h2 className="mb-2 text-sm font-semibold text-white">{t.subscriptions.registerHeading}</h2>
             <label className="mb-2 block text-sm">
               <span className="mb-1 block text-slate-300">{t.subscriptions.name}</span>
               <input
@@ -156,7 +156,7 @@ export function Subscriptions() {
           )}
 
           <section className="mb-6">
-            <h3 className="mb-2 text-sm font-semibold text-white">{t.subscriptions.subscriptionsHeading}</h3>
+            <h2 className="mb-2 text-sm font-semibold text-white">{t.subscriptions.subscriptionsHeading}</h2>
             {loadingData ? (
               <p className="text-sm text-slate-500">{t.subscriptions.loading}</p>
             ) : (
@@ -181,7 +181,7 @@ export function Subscriptions() {
           </section>
 
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-white">{t.subscriptions.deliveryPreferenceHeading}</h3>
+            <h2 className="mb-2 text-sm font-semibold text-white">{t.subscriptions.deliveryPreferenceHeading}</h2>
             {!loadingData && !deliveryPreference && (
               <p className="mb-2 text-sm text-slate-500">{t.subscriptions.noDeliveryPreference}</p>
             )}
