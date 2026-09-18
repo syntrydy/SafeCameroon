@@ -19,6 +19,7 @@ export interface Translations {
     alerts: string;
     subscriptions: string;
     organizations: string;
+    myOrganization: string;
     reviewer: string;
     orgAdmin: string;
     platformAdmin: string;
@@ -273,6 +274,19 @@ export interface Translations {
     trustGrantsHeading: string;
     saveTrustGrants: string;
     saving: string;
+    inviteOrgAdminHeading: string;
+    inviteOrgAdmin: string;
+  };
+  myOrganization: {
+    heading: string;
+    loading: string;
+    noOrganization: string;
+    goToOrganizations: string;
+    inviteHeading: string;
+    emailLabel: string;
+    emailPlaceholder: string;
+    invite: string;
+    inviting: string;
   };
 }
 
@@ -295,6 +309,7 @@ export const translations: Record<Locale, Translations> = {
       alerts: "Alerts",
       subscriptions: "Subscriptions",
       organizations: "Organizations",
+      myOrganization: "My organization",
       reviewer: "Reviewer",
       orgAdmin: "Org admin",
       platformAdmin: "Admin",
@@ -551,6 +566,19 @@ export const translations: Record<Locale, Translations> = {
       trustGrantsHeading: "Trust grants",
       saveTrustGrants: "Save trust grants",
       saving: "Saving...",
+      inviteOrgAdminHeading: "Invite an org admin",
+      inviteOrgAdmin: "Invite org admin",
+    },
+    myOrganization: {
+      heading: "My organization",
+      loading: "Loading organization...",
+      noOrganization: "You are not a member of any organization.",
+      goToOrganizations: "Go to Organizations",
+      inviteHeading: "Invite a reviewer",
+      emailLabel: "Email",
+      emailPlaceholder: "name@example.org",
+      invite: "Invite",
+      inviting: "Inviting...",
     },
   },
   fr: {
@@ -571,6 +599,7 @@ export const translations: Record<Locale, Translations> = {
       alerts: "Alertes",
       subscriptions: "Abonnements",
       organizations: "Organisations",
+      myOrganization: "Mon organisation",
       reviewer: "Examinateur",
       orgAdmin: "Administrateur d'organisation",
       platformAdmin: "Administrateur",
@@ -829,6 +858,19 @@ export const translations: Record<Locale, Translations> = {
       trustGrantsHeading: "Habilitations de confiance",
       saveTrustGrants: "Enregistrer les habilitations",
       saving: "Enregistrement...",
+      inviteOrgAdminHeading: "Inviter un administrateur d'organisation",
+      inviteOrgAdmin: "Inviter l'administrateur",
+    },
+    myOrganization: {
+      heading: "Mon organisation",
+      loading: "Chargement de l'organisation...",
+      noOrganization: "Vous n'êtes membre d'aucune organisation.",
+      goToOrganizations: "Aller à Organisations",
+      inviteHeading: "Inviter un examinateur",
+      emailLabel: "E-mail",
+      emailPlaceholder: "nom@exemple.org",
+      invite: "Inviter",
+      inviting: "Invitation...",
     },
   },
 };

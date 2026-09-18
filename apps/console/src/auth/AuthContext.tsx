@@ -7,6 +7,7 @@ export interface Session {
   reviewerId: string;
   email: string;
   role: Role;
+  organizationId: string | null;
   token: string;
 }
 
@@ -31,6 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       reviewerId: response.reviewer_id,
       email: response.email,
       role: response.role,
+      organizationId: response.organization_id,
       token: response.token,
     });
   }, []);

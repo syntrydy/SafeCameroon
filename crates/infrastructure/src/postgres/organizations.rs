@@ -5,7 +5,7 @@
 //! question.
 
 use safe_cameroon_domain::{
-    AlertVisibility, IncidentType, Membership, Organization, OrganizationId, Role,
+    AlertVisibility, ConsumerId, IncidentType, Membership, Organization, OrganizationId, Role,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -30,6 +30,9 @@ fn parse_alert_visibilities(values: Vec<String>) -> Vec<AlertVisibility> {
         })
         .collect()
 }
+
+type OrganizationRow = (String, Vec<String>, Vec<String>, Option<Uuid>);
+type OrganizationListRow = (Uuid, String, Vec<String>, Vec<String>, Option<Uuid>);
 
 pub struct MembershipRecord {
     pub reviewer_id: Uuid,
@@ -60,28 +63,31 @@ impl PostgresOrganizationRepository {
         &self,
         organization_id: OrganizationId,
     ) -> Result<Option<Organization>, sqlx::Error> {
-        let row: Option<(String, Vec<String>, Vec<String>)> = sqlx::query_as(
-            "SELECT name, verified_incident_types, verified_alert_visibilities \
+        let row: Option<OrganizationRow> = sqlx::query_as(
+            "SELECT name, verified_incident_types, verified_alert_visibilities, consumer_id \
              FROM organizations WHERE id = $1",
         )
         .bind(organization_id.as_uuid())
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(row.map(|(name, incident_types, visibilities)| {
-            Organization::reconstitute(
-                organization_id,
-                name,
-                parse_incident_types(incident_types),
-                parse_alert_visibilities(visibilities),
-            )
-        }))
+        Ok(
+            row.map(|(name, incident_types, visibilities, consumer_id)| {
+                Organization::reconstitute(
+                    organization_id,
+                    name,
+                    parse_incident_types(incident_types),
+                    parse_alert_visibilities(visibilities),
+                    consumer_id.map(ConsumerId::from_uuid),
+                )
+            }),
+        )
     }
 
     /// Most recently created first, mirroring every other list endpoint.
     pub async fn list(&self, limit: i64, offset: i64) -> Result<Vec<Organization>, sqlx::Error> {
-        let rows: Vec<(Uuid, String, Vec<String>, Vec<String>)> = sqlx::query_as(
-            "SELECT id, name, verified_incident_types, verified_alert_visibilities \
+        let rows: Vec<OrganizationListRow> = sqlx::query_as(
+            "SELECT id, name, verified_incident_types, verified_alert_visibilities, consumer_id \
              FROM organizations ORDER BY created_at DESC LIMIT $1 OFFSET $2",
         )
         .bind(limit)
@@ -91,15 +97,50 @@ impl PostgresOrganizationRepository {
 
         Ok(rows
             .into_iter()
-            .map(|(id, name, incident_types, visibilities)| {
+            .map(|(id, name, incident_types, visibilities, consumer_id)| {
                 Organization::reconstitute(
                     OrganizationId::from_uuid(id),
                     name,
                     parse_incident_types(incident_types),
                     parse_alert_visibilities(visibilities),
+                    consumer_id.map(ConsumerId::from_uuid),
                 )
             })
             .collect())
+    }
+
+    /// Links this organization to the consumer alerts are actually
+    /// delivered through (see `Organization::consumer_id`'s doc comment) —
+    /// a one-time set at creation time
+    /// (`apps/api/src/organizations.rs::create_organization`), not a
+    /// wholesale replace like `set_trust_grants`.
+    pub async fn set_consumer_id(
+        &self,
+        organization_id: OrganizationId,
+        consumer_id: ConsumerId,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE organizations SET consumer_id = $2 WHERE id = $1")
+            .bind(organization_id.as_uuid())
+            .bind(consumer_id.as_uuid())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// The organization, if any, that owns this consumer (`consumer_id` is
+    /// `UNIQUE` on `organizations`, so at most one) — used to scope reviewer
+    /// access to a consumer's subscriptions/delivery preference to their own
+    /// organization (`authorize_consumer_management`).
+    pub async fn find_organization_id_by_consumer_id(
+        &self,
+        consumer_id: ConsumerId,
+    ) -> Result<Option<OrganizationId>, sqlx::Error> {
+        let row: Option<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM organizations WHERE consumer_id = $1")
+                .bind(consumer_id.as_uuid())
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(row.map(|(id,)| OrganizationId::from_uuid(id)))
     }
 
     /// Replaces both trust grants wholesale — there is no incremental

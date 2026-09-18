@@ -16,11 +16,14 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
-use safe_cameroon_application::authorization::{Capability, authorize};
+use safe_cameroon_application::authorization::{
+    Capability, authorize, authorize_consumer_management,
+};
+use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_domain::{
     AlertVisibility, CaseEventType, ChannelEndpoint, ChannelType, Comparison, ConsumerId,
     DeliveryPreference, DeliveryPreferenceError, DeliveryStrategy, EmptySubscriptionRules, GeoArea,
-    IncidentType, Severity, Subscription, SubscriptionId, SubscriptionRule,
+    IncidentType, Membership, Role, Severity, Subscription, SubscriptionId, SubscriptionRule,
 };
 use safe_cameroon_infrastructure::postgres::SubscriptionUpdateOutcome;
 use serde::{Deserialize, Serialize};
@@ -47,6 +50,50 @@ fn not_authorized(request_id: Uuid) -> ApiError {
         message: "Only an identified reviewer may manage subscriptions.",
         request_id,
     }
+}
+
+fn not_authorized_for_consumer(request_id: Uuid) -> ApiError {
+    ApiError {
+        status: StatusCode::FORBIDDEN,
+        code: "NOT_AUTHORIZED",
+        message: "You may not manage this organization's notification settings.",
+        request_id,
+    }
+}
+
+/// A `PlatformAdmin` may manage any consumer; when the consumer is linked to
+/// a reviewer `Organization` (`Organization::consumer_id`), only a reviewer
+/// belonging to that same organization may manage it. A consumer with no
+/// linked organization (a standalone consumer, or a citizen's self-managed
+/// one) has no real owner to scope against, so any identified reviewer may
+/// still manage it — see `authorize_consumer_management`'s doc comment.
+async fn authorize_consumer_access(
+    state: &AppState,
+    actor: Actor,
+    consumer_id: ConsumerId,
+    request_id: Uuid,
+) -> Result<(), ApiError> {
+    let Actor::Reviewer(reviewer_id) = actor else {
+        // `authorize(actor, Capability::ManageSubscriptions)` already
+        // rejected `Actor::Automated` before this is ever called.
+        return Err(not_authorized(request_id));
+    };
+    let membership = state
+        .organizations
+        .find_membership(reviewer_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .unwrap_or(Membership {
+            role: Role::Member,
+            organization_id: None,
+        });
+    let owning_organization_id = state
+        .organizations
+        .find_organization_id_by_consumer_id(consumer_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+    authorize_consumer_management(membership, owning_organization_id)
+        .map_err(|_| not_authorized_for_consumer(request_id))
 }
 
 // --- Subscription rules ----------------------------------------------------
@@ -183,6 +230,8 @@ pub async fn create_subscription(
     )
     .await?;
     authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
+    let consumer_id = ConsumerId::from_uuid(request.consumer_id);
+    authorize_consumer_access(&state, actor, consumer_id, request_id).await?;
 
     let rules = request
         .rules
@@ -190,18 +239,14 @@ pub async fn create_subscription(
         .map(|rule| to_domain_rule(rule, request_id))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let subscription = Subscription::new(
-        SubscriptionId::new(),
-        ConsumerId::from_uuid(request.consumer_id),
-        1,
-        rules,
-    )
-    .map_err(|EmptySubscriptionRules| ApiError {
-        status: StatusCode::BAD_REQUEST,
-        code: "EMPTY_SUBSCRIPTION_RULES",
-        message: "rules must contain at least one rule.",
-        request_id,
-    })?;
+    let subscription = Subscription::new(SubscriptionId::new(), consumer_id, 1, rules).map_err(
+        |EmptySubscriptionRules| ApiError {
+            status: StatusCode::BAD_REQUEST,
+            code: "EMPTY_SUBSCRIPTION_RULES",
+            message: "rules must contain at least one rule.",
+            request_id,
+        },
+    )?;
 
     state
         .subscriptions
@@ -229,10 +274,12 @@ pub async fn list_subscriptions_for_consumer(
     )
     .await?;
     authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
+    let consumer_id = ConsumerId::from_uuid(consumer_id);
+    authorize_consumer_access(&state, actor, consumer_id, request_id).await?;
 
     let subscriptions = state
         .subscriptions
-        .find_by_consumer(ConsumerId::from_uuid(consumer_id))
+        .find_by_consumer(consumer_id)
         .await
         .map_err(|_| persistence_failed(request_id))?;
 
@@ -277,6 +324,7 @@ pub async fn update_subscription(
             message: "No subscription exists with the given id.",
             request_id,
         })?;
+    authorize_consumer_access(&state, actor, subscription.consumer_id(), request_id).await?;
 
     let rules = request
         .rules
@@ -369,6 +417,8 @@ pub async fn set_delivery_preference(
     )
     .await?;
     authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
+    let consumer_id = ConsumerId::from_uuid(consumer_id);
+    authorize_consumer_access(&state, actor, consumer_id, request_id).await?;
 
     let strategy = DeliveryStrategy::from_database_value(&request.strategy).ok_or(ApiError {
         status: StatusCode::BAD_REQUEST,
@@ -411,7 +461,6 @@ pub async fn set_delivery_preference(
         },
     })?;
 
-    let consumer_id = ConsumerId::from_uuid(consumer_id);
     state
         .delivery_preferences
         .upsert(consumer_id, &preference)
@@ -435,8 +484,9 @@ pub async fn get_delivery_preference(
     )
     .await?;
     authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
-
     let consumer_id = ConsumerId::from_uuid(consumer_id);
+    authorize_consumer_access(&state, actor, consumer_id, request_id).await?;
+
     let preference = state
         .delivery_preferences
         .find_by_consumer(consumer_id)

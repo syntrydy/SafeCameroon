@@ -190,6 +190,7 @@ pub struct LoginResponse {
     reviewer_id: Uuid,
     email: String,
     role: Role,
+    organization_id: Option<Uuid>,
 }
 
 pub async fn google_login(
@@ -261,6 +262,7 @@ pub async fn google_login(
         reviewer_id,
         email: normalized_email,
         role: membership.role,
+        organization_id: membership.organization_id.map(OrganizationId::as_uuid),
     }))
 }
 
