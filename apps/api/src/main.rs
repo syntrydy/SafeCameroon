@@ -22,6 +22,7 @@ mod webhooks;
 
 use std::sync::Arc;
 
+use axum::extract::DefaultBodyLimit;
 use axum::http::{HeaderName, HeaderValue, Method};
 use axum::{
     Router,
@@ -29,10 +30,13 @@ use axum::{
 };
 use safe_cameroon_application::ai_extraction::ReportExtractor;
 use safe_cameroon_application::attachment_workflow::AttachmentStorage;
+use safe_cameroon_application::audio_transcription::AudioTranscriber;
 use safe_cameroon_application::google_identity::GoogleIdentityVerifier;
 use safe_cameroon_application::webhook::WebhookVerifierRegistry;
 use safe_cameroon_domain::ChannelType;
-use safe_cameroon_infrastructure::ai::{DisabledExtractor, OpenRouterExtractor};
+use safe_cameroon_infrastructure::ai::{
+    DisabledExtractor, DisabledTranscriber, OpenRouterExtractor, OpenRouterTranscriber,
+};
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::google_identity::GoogleTokenInfoVerifier;
 use safe_cameroon_infrastructure::postgres::{
@@ -127,6 +131,39 @@ fn report_extractor_from_env() -> Arc<dyn ReportExtractor> {
     }
 }
 
+/// A real [`OpenRouterTranscriber`] when `OPENROUTER_API_KEY` is configured;
+/// otherwise a [`DisabledTranscriber`] (issue #160) -- same "optional
+/// feature, don't refuse to boot" stance as [`report_extractor_from_env`].
+/// `OPENROUTER_MODEL` is the extraction model; transcription uses its own
+/// `VOICE_TRANSCRIPTION_MODEL` since not every model accepts audio input.
+fn audio_transcriber_from_env() -> Arc<dyn AudioTranscriber> {
+    match std::env::var("OPENROUTER_API_KEY") {
+        Ok(api_key) => {
+            let model = std::env::var("VOICE_TRANSCRIPTION_MODEL")
+                .unwrap_or_else(|_| "google/gemini-2.5-flash".to_owned());
+            tracing::info!(model, "Voice transcription: OpenRouter");
+            Arc::new(OpenRouterTranscriber::new(api_key, model))
+        }
+        Err(_) => {
+            tracing::info!("Voice transcription: disabled (OPENROUTER_API_KEY not configured)");
+            Arc::new(DisabledTranscriber)
+        }
+    }
+}
+
+/// The operator kill-switch for the whole voice-report feature (issue
+/// #160), independent of whether a real transcriber is configured --
+/// on by default, so a deployment that never sets this still gets the
+/// feature (gated in turn by `OPENROUTER_API_KEY` presence above). Only an
+/// explicit `"false"` or `"0"` turns it off.
+fn voice_reports_enabled_from_env() -> bool {
+    match std::env::var("VOICE_REPORTS_ENABLED") {
+        Ok(value) => !matches!(value.trim().to_ascii_lowercase().as_str(), "false" | "0"),
+        Err(_) => true,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_state(
     pool: PgPool,
     webhook_secret: Vec<u8>,
@@ -134,6 +171,8 @@ fn build_state(
     reviewer_session_secret: Vec<u8>,
     google_identity_verifier: Arc<dyn GoogleIdentityVerifier>,
     report_extractor: Arc<dyn ReportExtractor>,
+    audio_transcriber: Arc<dyn AudioTranscriber>,
+    voice_reports_enabled: bool,
 ) -> AppState {
     let mut webhook_verifiers = WebhookVerifierRegistry::new();
     for channel in [ChannelType::WhatsApp, ChannelType::Sms, ChannelType::Email] {
@@ -166,6 +205,8 @@ fn build_state(
         webhook_replay_guard: Arc::new(PostgresWebhookReplayGuard::new(pool.clone())),
         extractions: PostgresReportExtractionRepository::new(pool),
         report_extractor,
+        audio_transcriber,
+        voice_reports_enabled,
     }
 }
 
@@ -211,6 +252,10 @@ fn build_router(state: AppState) -> Router {
             get(reports::list_reports).post(reports::create_anonymous_report),
         )
         .route("/v1/reports/{id}", get(reports::get_report))
+        .route(
+            "/v1/reports/transcribe-audio",
+            post(reports::transcribe_audio).layer(DefaultBodyLimit::max(reports::MAX_AUDIO_BYTES)),
+        )
         .route(
             "/v1/reports/{report_id}/attachments",
             get(attachments::list_attachments_for_report).post(attachments::create_attachment),
@@ -348,6 +393,8 @@ async fn main() {
         reviewer_session_secret,
         Arc::new(GoogleTokenInfoVerifier::new(google_oauth_client_id)),
         report_extractor_from_env(),
+        audio_transcriber_from_env(),
+        voice_reports_enabled_from_env(),
     ));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
@@ -368,6 +415,7 @@ mod tests {
     use hmac::{Hmac, Mac};
     use safe_cameroon_application::ai_extraction::FakeReportExtractor;
     use safe_cameroon_application::alert_workflow::create_alert_from_case;
+    use safe_cameroon_application::audio_transcription::FakeAudioTranscriber;
     use safe_cameroon_application::case_workflow::{Actor, create_case_from_report, review_case};
     use safe_cameroon_application::channel::{Channel, build_outbound_message};
     use safe_cameroon_application::delivery_workflow::{plan_deliveries, start_delivery_attempt};
@@ -391,6 +439,13 @@ mod tests {
     const TEST_SECRET: &[u8] = b"test-webhook-secret";
 
     fn test_state(pool: PgPool) -> AppState {
+        test_state_with_voice_flag(pool, true)
+    }
+
+    /// Lets a test toggle the `VOICE_REPORTS_ENABLED` kill-switch
+    /// (issue #160) without every other `test_state(pool)` call site
+    /// having to pass a value it doesn't care about.
+    fn test_state_with_voice_flag(pool: PgPool, voice_reports_enabled: bool) -> AppState {
         build_state(
             pool,
             TEST_SECRET.to_vec(),
@@ -411,6 +466,10 @@ mod tests {
                     None,
                 )),
             }),
+            Arc::new(FakeAudioTranscriber {
+                result: Ok("My daughter has not come home from school.".into()),
+            }),
+            voice_reports_enabled,
         )
     }
 
@@ -2535,6 +2594,114 @@ mod tests {
         }
 
         let throttled = submit(app).await.unwrap();
+        assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            json_body(throttled).await["error"]["code"],
+            json!("RATE_LIMIT_EXCEEDED")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn transcribes_audio_and_returns_the_transcript() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports/transcribe-audio")
+                    .header("content-type", "audio/webm;codecs=opus")
+                    .body(Body::from(vec![0u8; 128]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            json_body(response).await["transcript"],
+            json!("My daughter has not come home from school.")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn transcription_is_unavailable_when_the_voice_reports_flag_is_disabled() {
+        let pool = test_pool().await;
+        let app = build_router(test_state_with_voice_flag(pool, false));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports/transcribe-audio")
+                    .header("content-type", "audio/webm;codecs=opus")
+                    .body(Body::from(vec![0u8; 128]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("VOICE_REPORTS_DISABLED")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn an_empty_audio_body_is_rejected() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports/transcribe-audio")
+                    .header("content-type", "audio/webm;codecs=opus")
+                    .body(Body::from(Vec::<u8>::new()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("EMPTY_AUDIO")
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn exceeding_the_voice_transcription_rate_limit_returns_too_many_requests() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let transcribe = |app: Router| {
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports/transcribe-audio")
+                    .header("content-type", "audio/webm;codecs=opus")
+                    .body(Body::from(vec![0u8; 128]))
+                    .unwrap(),
+            )
+        };
+
+        for attempt_number in 1..=5 {
+            let response = transcribe(app.clone()).await.unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "attempt {attempt_number} should still be within the limit"
+            );
+        }
+
+        let throttled = transcribe(app).await.unwrap();
         assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(
             json_body(throttled).await["error"]["code"],

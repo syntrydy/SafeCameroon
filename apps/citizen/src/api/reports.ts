@@ -25,6 +25,21 @@ export function submitReport(
   });
 }
 
+export interface TranscribeAudioResult {
+  transcript: string;
+}
+
+/** Sends a recorded voice clip to be transcribed (issue #160) -- never
+ * stores the audio itself; the caller shows the transcript back to the
+ * reporter for confirmation before it becomes report text. */
+export function transcribeAudio(audio: Blob): Promise<TranscribeAudioResult> {
+  return apiRequest<TranscribeAudioResult>("/v1/reports/transcribe-audio", {
+    method: "POST",
+    headers: { "Content-Type": audio.type || "application/octet-stream" },
+    body: audio,
+  });
+}
+
 export type PhotoContentType = "image/jpeg" | "image/png" | "image/webp";
 
 interface RequestAttachmentUploadResult {

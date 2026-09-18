@@ -3,6 +3,7 @@
 pub mod ai_extraction;
 pub mod alert_workflow;
 pub mod attachment_workflow;
+pub mod audio_transcription;
 pub mod authorization;
 pub mod case_workflow;
 pub mod channel;

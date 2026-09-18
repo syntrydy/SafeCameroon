@@ -12,6 +12,8 @@ export interface Translations {
   reportForm: {
     heading: string;
     subtitle: string;
+    speakTab: string;
+    typeTab: string;
     incidentTypeQuestion: string;
     incidentTypeMissingChild: string;
     incidentTypeOther: string;
@@ -94,6 +96,21 @@ export interface Translations {
     removeIncidentType: (label: string) => string;
     removeArea: (area: string) => string;
   };
+  voiceRecorder: {
+    prompt: string;
+    startRecording: string;
+    stopRecording: string;
+    recordingHint: string;
+    timeRemaining: (mmss: string) => string;
+    transcribing: string;
+    reviewHeading: string;
+    reviewHint: string;
+    useThisText: string;
+    reRecord: string;
+    micPermissionDenied: string;
+    unsupported: string;
+    transcriptionFailed: string;
+  };
 }
 
 export const translations: Record<Locale, Translations> = {
@@ -108,6 +125,8 @@ export const translations: Record<Locale, Translations> = {
     reportForm: {
       heading: "Report an incident",
       subtitle: "No account needed. Sentinel does not collect identity fields from reporters.",
+      speakTab: "Speak",
+      typeTab: "Type",
       incidentTypeQuestion: "What kind of report is this?",
       incidentTypeMissingChild: "Missing child",
       incidentTypeOther: "Other incident",
@@ -199,6 +218,23 @@ export const translations: Record<Locale, Translations> = {
       removeIncidentType: (label) => `Remove ${label}`,
       removeArea: (area) => `Remove ${area}`,
     },
+    voiceRecorder: {
+      prompt: "Tell us what you saw",
+      startRecording: "Record",
+      stopRecording: "Stop",
+      recordingHint: "Describe what happened, where, when, and anything you remember.",
+      timeRemaining: (mmss) => `${mmss} / 02:00`,
+      transcribing: "Transcribing...",
+      reviewHeading: "Here's what we heard",
+      reviewHint: "Check it over -- you can edit it, or record again.",
+      useThisText: "Use this text",
+      reRecord: "Record again",
+      micPermissionDenied:
+        "Microphone access was denied. You can allow it in your browser's site settings, or type your report instead.",
+      unsupported: "Voice recording is not supported in this browser. Please type your report instead.",
+      transcriptionFailed:
+        "We couldn't transcribe that. Please try again, or type your report instead.",
+    },
   },
   fr: {
     brand: {
@@ -211,6 +247,8 @@ export const translations: Record<Locale, Translations> = {
     reportForm: {
       heading: "Signaler un incident",
       subtitle: "Aucun compte requis. Sentinel ne collecte aucune donnée d'identité auprès des personnes qui signalent.",
+      speakTab: "Parler",
+      typeTab: "Écrire",
       incidentTypeQuestion: "De quel type de signalement s'agit-il ?",
       incidentTypeMissingChild: "Enfant disparu",
       incidentTypeOther: "Autre incident",
@@ -305,6 +343,24 @@ export const translations: Record<Locale, Translations> = {
       alertTypePlaceholder: "Ajouter un autre type d'alerte...",
       removeIncidentType: (label) => `Retirer ${label}`,
       removeArea: (area) => `Retirer ${area}`,
+    },
+    voiceRecorder: {
+      prompt: "Dites-nous ce que vous avez vu",
+      startRecording: "Enregistrer",
+      stopRecording: "Arrêter",
+      recordingHint: "Décrivez ce qui s'est passé, où, quand, et tout ce dont vous vous souvenez.",
+      timeRemaining: (mmss) => `${mmss} / 02:00`,
+      transcribing: "Transcription en cours...",
+      reviewHeading: "Voici ce que nous avons entendu",
+      reviewHint: "Vérifiez le texte -- vous pouvez le modifier ou recommencer l'enregistrement.",
+      useThisText: "Utiliser ce texte",
+      reRecord: "Recommencer",
+      micPermissionDenied:
+        "L'accès au microphone a été refusé. Vous pouvez l'autoriser dans les paramètres de votre navigateur, ou écrire votre signalement.",
+      unsupported:
+        "L'enregistrement vocal n'est pas prise en charge par ce navigateur. Veuillez écrire votre signalement.",
+      transcriptionFailed:
+        "Nous n'avons pas pu transcrire l'enregistrement. Réessayez, ou écrivez votre signalement.",
     },
   },
 };

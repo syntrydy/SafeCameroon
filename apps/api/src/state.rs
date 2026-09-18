@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use safe_cameroon_application::ai_extraction::ReportExtractor;
 use safe_cameroon_application::attachment_workflow::AttachmentStorage;
+use safe_cameroon_application::audio_transcription::AudioTranscriber;
 use safe_cameroon_application::google_identity::GoogleIdentityVerifier;
 use safe_cameroon_application::rate_limit::RateLimiter;
 use safe_cameroon_application::webhook::{WebhookReplayGuard, WebhookVerifierRegistry};
@@ -34,4 +35,8 @@ pub struct AppState {
     pub webhook_replay_guard: Arc<dyn WebhookReplayGuard>,
     pub extractions: PostgresReportExtractionRepository,
     pub report_extractor: Arc<dyn ReportExtractor>,
+    pub audio_transcriber: Arc<dyn AudioTranscriber>,
+    /// Operator kill-switch (`VOICE_REPORTS_ENABLED`, on by default) --
+    /// distinct from whether a real transcriber is configured (issue #160).
+    pub voice_reports_enabled: bool,
 }
