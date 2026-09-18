@@ -115,9 +115,9 @@ export function AlertsPanel() {
   if (view.kind === "off") {
     return (
       <div className="text-center">
-        <p className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+        <h1 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
           {t.alerts.turnedOffTitle}
-        </p>
+        </h1>
         <p className="mt-3 text-sm text-slate-500">{t.alerts.turnedOffBody}</p>
         <button
           type="button"
@@ -133,7 +133,8 @@ export function AlertsPanel() {
   if (view.kind === "subscribed") {
     return (
       <div>
-        <div className="mb-6 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-300">
+        <h1 className="text-xl font-bold text-white">{t.alerts.manageHeading}</h1>
+        <div className="mt-4 mb-6 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-300">
           {t.alerts.onForDevice}
         </div>
         <AlertRulesForm

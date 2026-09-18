@@ -19,9 +19,9 @@ export function ConfirmationCard(props: ConfirmationCardProps) {
   if (props.kind === "sent") {
     return (
       <div className="text-center">
-        <p className="text-sm font-semibold uppercase tracking-wider text-emerald-400">
+        <h1 className="text-sm font-semibold uppercase tracking-wider text-emerald-400">
           {t.confirmation.reportReceivedTitle}
-        </p>
+        </h1>
         <p className="mt-3 text-sm text-slate-400">{t.confirmation.reportReceivedBody}</p>
         <p className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-4 font-mono text-2xl font-semibold tracking-wide text-emerald-300 select-all">
           {props.referenceCode}
@@ -39,9 +39,9 @@ export function ConfirmationCard(props: ConfirmationCardProps) {
 
   return (
     <div className="text-center">
-      <p className="text-sm font-semibold uppercase tracking-wider text-amber-400">
+      <h1 className="text-sm font-semibold uppercase tracking-wider text-amber-400">
         {t.confirmation.savedOnDeviceTitle}
-      </p>
+      </h1>
       <p className="mt-3 text-sm text-slate-400">{t.confirmation.savedOnDeviceBody}</p>
       <button
         type="button"
