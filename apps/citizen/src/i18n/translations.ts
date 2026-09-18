@@ -29,6 +29,7 @@ export interface Translations {
     removePhoto: string;
     addPhoto: string;
     photoInvalidType: string;
+    photoTooLarge: string;
     sending: string;
     sendReport: string;
     anonymousNote: string;
@@ -147,6 +148,7 @@ export const translations: Record<Locale, Translations> = {
       removePhoto: "Remove photo",
       addPhoto: "Add a photo",
       photoInvalidType: "Please choose a JPEG, PNG, or WebP photo.",
+      photoTooLarge: "Please choose a photo under 2MB.",
       sending: "Sending...",
       sendReport: "Send report",
       anonymousNote: "This report is anonymous. No account or personal information is required.",
@@ -269,6 +271,7 @@ export const translations: Record<Locale, Translations> = {
       removePhoto: "Retirer la photo",
       addPhoto: "Ajouter une photo",
       photoInvalidType: "Veuillez choisir une photo JPEG, PNG ou WebP.",
+      photoTooLarge: "Veuillez choisir une photo de moins de 2 Mo.",
       sending: "Envoi en cours...",
       sendReport: "Envoyer le signalement",
       anonymousNote:
