@@ -18,7 +18,7 @@ use core::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{AlertVisibility, IncidentType, OrganizationId};
+use crate::{AlertVisibility, ConsumerId, IncidentType, OrganizationId};
 
 /// A reviewer's standing in the platform. `PlatformAdmin` is org-independent
 /// (organization membership does not apply to it); `OrgAdmin` and `Member`
@@ -73,12 +73,23 @@ impl std::error::Error for EmptyOrganizationName {}
 /// grants a `PlatformAdmin` sets explicitly when onboarding the
 /// organization — empty by default, so a newly created organization can
 /// verify nothing and issue nothing until deliberately trusted.
+///
+/// `consumer_id` links this reviewer institution to the
+/// [`Consumer`](crate::Consumer) alerts are actually delivered to — a
+/// separate identity on purpose (docs/DOMAIN_MODEL.md section 9: a consumer
+/// is "an organization... or a citizen", not a reviewer institution), so an
+/// org admin's own subscription/delivery-preference management reuses that
+/// existing pipeline instead of a second one living on `Organization`
+/// itself. `None` until the application layer creates and links one (every
+/// organization created going forward gets one automatically; organizations
+/// that predate this field do not, until backfilled).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Organization {
     id: OrganizationId,
     name: String,
     verified_incident_types: Vec<IncidentType>,
     verified_alert_visibilities: Vec<AlertVisibility>,
+    consumer_id: Option<ConsumerId>,
 }
 
 impl Organization {
@@ -93,23 +104,26 @@ impl Organization {
             name: trimmed.to_owned(),
             verified_incident_types: Vec::new(),
             verified_alert_visibilities: Vec::new(),
+            consumer_id: None,
         })
     }
 
     /// Rebuilds an organization from persisted state; infrastructure
-    /// adapters use this rather than `new`, which always mints a fresh id
-    /// and empty trust grants.
+    /// adapters use this rather than `new`, which always mints a fresh id,
+    /// empty trust grants, and no linked consumer.
     pub fn reconstitute(
         id: OrganizationId,
         name: String,
         verified_incident_types: Vec<IncidentType>,
         verified_alert_visibilities: Vec<AlertVisibility>,
+        consumer_id: Option<ConsumerId>,
     ) -> Self {
         Self {
             id,
             name,
             verified_incident_types,
             verified_alert_visibilities,
+            consumer_id,
         }
     }
 
@@ -127,6 +141,10 @@ impl Organization {
 
     pub fn verified_alert_visibilities(&self) -> &[AlertVisibility] {
         &self.verified_alert_visibilities
+    }
+
+    pub fn consumer_id(&self) -> Option<ConsumerId> {
+        self.consumer_id
     }
 
     pub fn may_verify(&self, incident_type: IncidentType) -> bool {
@@ -154,6 +172,12 @@ mod tests {
     }
 
     #[test]
+    fn a_freshly_created_organization_has_no_linked_consumer() {
+        let organization = Organization::new("Douala Police").unwrap();
+        assert_eq!(organization.consumer_id(), None);
+    }
+
+    #[test]
     fn a_freshly_created_organization_is_trusted_for_nothing() {
         let organization = Organization::new("Douala Police").unwrap();
         assert!(!organization.may_verify(IncidentType::MissingChild));
@@ -167,6 +191,7 @@ mod tests {
             "Douala Police".into(),
             vec![IncidentType::MissingChild],
             vec![],
+            None,
         );
         assert!(organization.may_verify(IncidentType::MissingChild));
         assert!(!organization.may_verify(IncidentType::OtherProtectionIncident));
@@ -179,6 +204,7 @@ mod tests {
             "Douala Police".into(),
             vec![],
             vec![AlertVisibility::Community],
+            None,
         );
         assert!(organization.may_issue_alert(AlertVisibility::Community));
         assert!(!organization.may_issue_alert(AlertVisibility::Public));

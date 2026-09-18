@@ -11,6 +11,10 @@ export interface Organization {
   name: string;
   verified_incident_types: IncidentType[];
   verified_alert_visibilities: AlertVisibility[];
+  // The consumer this organization's alert subscription and delivery
+  // preference live under (Organization::consumer_id). Null only for
+  // organizations that predate this link.
+  consumer_id: string | null;
 }
 
 // Matches apps/api/src/organizations.rs `MemberResponse`.

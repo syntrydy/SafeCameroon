@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import { registerOrgAdmin } from "../../api/auth";
 import { ApiError } from "../../api/client";
 import type { AlertVisibility } from "../../api/alerts";
 import type { IncidentType } from "../../api/cases";
@@ -123,6 +124,9 @@ function OrganizationDetail({
   );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [orgAdminEmail, setOrgAdminEmail] = useState("");
+  const [invitingOrgAdmin, setInvitingOrgAdmin] = useState(false);
+  const [inviteOrgAdminError, setInviteOrgAdminError] = useState<string | null>(null);
 
   const loadMembers = useCallback(async () => {
     try {
@@ -146,6 +150,21 @@ function OrganizationDetail({
       setSaveError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleInviteOrgAdmin(event: FormEvent) {
+    event.preventDefault();
+    setInvitingOrgAdmin(true);
+    setInviteOrgAdminError(null);
+    try {
+      await registerOrgAdmin(token, orgAdminEmail.trim(), organization.organization_id);
+      setOrgAdminEmail("");
+      await loadMembers();
+    } catch (cause) {
+      setInviteOrgAdminError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
+    } finally {
+      setInvitingOrgAdmin(false);
     }
   }
 
@@ -197,6 +216,45 @@ function OrganizationDetail({
       >
         {saving ? t.organizations.saving : t.organizations.saveTrustGrants}
       </button>
+
+      <form
+        onSubmit={(event) => void handleInviteOrgAdmin(event)}
+        className="mt-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4"
+      >
+        <h3 className="mb-2 text-xs font-semibold tracking-wide text-slate-300 uppercase">
+          {t.organizations.inviteOrgAdminHeading}
+        </h3>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex-1">
+            <label
+              htmlFor={`org-admin-email-${organization.organization_id}`}
+              className="mb-1 block text-xs text-slate-400"
+            >
+              {t.myOrganization.emailLabel}
+            </label>
+            <input
+              id={`org-admin-email-${organization.organization_id}`}
+              type="email"
+              value={orgAdminEmail}
+              placeholder={t.myOrganization.emailPlaceholder}
+              onChange={(event) => setOrgAdminEmail(event.target.value)}
+              className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={invitingOrgAdmin || !orgAdminEmail.trim()}
+            className="rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {invitingOrgAdmin ? t.myOrganization.inviting : t.organizations.inviteOrgAdmin}
+          </button>
+        </div>
+        {inviteOrgAdminError && (
+          <p role="alert" className="mt-2 text-sm text-red-300">
+            {inviteOrgAdminError}
+          </p>
+        )}
+      </form>
 
       <h3 className="mt-4 mb-2 text-xs font-semibold tracking-wide text-slate-300 uppercase">
         {t.organizations.membersHeading}

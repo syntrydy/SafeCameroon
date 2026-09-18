@@ -24,7 +24,9 @@
 use core::fmt;
 
 use crate::case_workflow::Actor;
-use safe_cameroon_domain::{AlertVisibility, IncidentType, Membership, Organization, Role};
+use safe_cameroon_domain::{
+    AlertVisibility, IncidentType, Membership, Organization, OrganizationId, Role,
+};
 
 /// The closed set of privileged actions across the platform
 /// (docs/SECURITY_PRIVACY.md section 3).
@@ -228,6 +230,48 @@ pub fn authorize_alert_issuance(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConsumerManagementNotAuthorized;
+
+impl fmt::Display for ConsumerManagementNotAuthorized {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "reviewer may not manage this consumer's subscriptions or delivery preference"
+        )
+    }
+}
+
+impl std::error::Error for ConsumerManagementNotAuthorized {}
+
+/// Whether `membership` may manage a consumer's subscriptions/delivery
+/// preference (`apps/api/src/subscriptions.rs`). `Capability::ManageSubscriptions`
+/// deliberately stays flat for consumers with no real owner (a standalone
+/// consumer, or a citizen's self-managed one via management token) — but
+/// once a consumer is linked to a reviewer `Organization`
+/// (`Organization::consumer_id`), it *does* have a real owner, and letting
+/// any identified reviewer manage another organization's actual
+/// notification channel (docs/SECURITY_PRIVACY.md: least privilege) is the
+/// gap this closes. A `PlatformAdmin` may still manage any consumer,
+/// mirroring its unrestricted authority elsewhere in this module.
+pub fn authorize_consumer_management(
+    membership: Membership,
+    owning_organization_id: Option<OrganizationId>,
+) -> Result<(), ConsumerManagementNotAuthorized> {
+    if membership.role == Role::PlatformAdmin {
+        return Ok(());
+    }
+    match owning_organization_id {
+        None => Ok(()),
+        Some(owning_organization_id)
+            if membership.organization_id == Some(owning_organization_id) =>
+        {
+            Ok(())
+        }
+        Some(_) => Err(ConsumerManagementNotAuthorized),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,6 +414,7 @@ mod tests {
             "Douala Police".into(),
             vec![IncidentType::MissingChild],
             vec![],
+            None,
         );
         let membership = Membership {
             role: Role::Member,
@@ -418,6 +463,7 @@ mod tests {
             "Douala Police".into(),
             vec![],
             vec![AlertVisibility::Community],
+            None,
         );
         let membership = Membership {
             role: Role::Member,
@@ -430,6 +476,51 @@ mod tests {
         assert_eq!(
             authorize_alert_issuance(membership, Some(&trusted_org), AlertVisibility::Public),
             Err(AlertIssuanceNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn a_platform_admin_may_manage_any_consumer() {
+        let membership = Membership {
+            role: Role::PlatformAdmin,
+            organization_id: None,
+        };
+        assert!(authorize_consumer_management(membership, Some(OrganizationId::new())).is_ok());
+        assert!(authorize_consumer_management(membership, None).is_ok());
+    }
+
+    #[test]
+    fn a_consumer_with_no_owning_organization_is_manageable_by_any_reviewer() {
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: Some(OrganizationId::new()),
+        };
+        assert!(authorize_consumer_management(membership, None).is_ok());
+    }
+
+    #[test]
+    fn a_member_may_manage_only_their_own_organizations_consumer() {
+        let org_id = OrganizationId::new();
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: Some(org_id),
+        };
+        assert!(authorize_consumer_management(membership, Some(org_id)).is_ok());
+        assert_eq!(
+            authorize_consumer_management(membership, Some(OrganizationId::new())),
+            Err(ConsumerManagementNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn a_member_with_no_organization_may_not_manage_an_owned_consumer() {
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: None,
+        };
+        assert_eq!(
+            authorize_consumer_management(membership, Some(OrganizationId::new())),
+            Err(ConsumerManagementNotAuthorized)
         );
     }
 }

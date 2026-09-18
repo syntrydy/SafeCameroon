@@ -1626,6 +1626,41 @@ mod tests {
             .to_owned()
     }
 
+    /// Like `create_organization`, but also returns the id of the consumer
+    /// auto-linked to it (migration 0025) — used by tests that manage that
+    /// consumer's subscriptions/delivery preference.
+    async fn create_organization_with_consumer(
+        app: Router,
+        granter_token: &str,
+        name: &str,
+    ) -> (String, String) {
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/organizations")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {granter_token}"))
+                    .body(Body::from(json!({"name": name}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::CREATED,
+            "organization creation must succeed in test setup"
+        );
+        let body = json_body(response).await;
+        (
+            body["organization_id"].as_str().unwrap().to_owned(),
+            body["consumer_id"]
+                .as_str()
+                .expect("a newly created organization is linked to a consumer")
+                .to_owned(),
+        )
+    }
+
     /// Registers a fresh reviewer with `role`/`organization_id` (as
     /// `granter_token`) and logs them in, returning their session token.
     async fn register_and_login(
@@ -1895,7 +1930,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(login_response.status(), StatusCode::OK);
-        assert_eq!(json_body(login_response).await["role"], json!("MEMBER"));
+        let body = json_body(login_response).await;
+        assert_eq!(body["role"], json!("MEMBER"));
+        assert_eq!(body["organization_id"], json!(organization_id));
     }
 
     #[tokio::test]
@@ -3359,6 +3396,170 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn creating_an_organization_auto_links_a_consumer_usable_for_notifications() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/organizations")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(json!({"name": "Douala Police"}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(create_response.status(), StatusCode::CREATED);
+        let body = json_body(create_response).await;
+        let consumer_id = body["consumer_id"]
+            .as_str()
+            .expect("a newly created organization is linked to a consumer")
+            .to_owned();
+
+        // The linked consumer is a real, usable consumer: its own alert
+        // subscription and delivery preference can be set through the
+        // existing endpoints, exactly as for any other consumer.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/consumers/{consumer_id}/delivery-preference"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(
+                        json!({
+                            "strategy": "ALL",
+                            "channels": [{"channel": "WHATSAPP", "address": "+237600000000"}]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/subscriptions")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(
+                        json!({
+                            "consumer_id": consumer_id,
+                            "rules": [{"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]}]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn an_org_admin_may_not_manage_another_organizations_consumer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+
+        let (org_a, consumer_a) =
+            create_organization_with_consumer(app.clone(), &platform_admin, "Douala Police").await;
+        let (_org_b, consumer_b) =
+            create_organization_with_consumer(app.clone(), &platform_admin, "Yaounde NGO").await;
+        let org_a_admin =
+            register_and_login(app.clone(), &platform_admin, "ORG_ADMIN", Some(&org_a)).await;
+
+        fn set_delivery_preference_request(consumer_id: &str, token: &str) -> Request<Body> {
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/v1/consumers/{consumer_id}/delivery-preference"))
+                .header("content-type", "application/json")
+                .header("Authorization", format!("Bearer {token}"))
+                .body(Body::from(
+                    json!({
+                        "strategy": "ALL",
+                        "channels": [{"channel": "WHATSAPP", "address": "+237600000000"}]
+                    })
+                    .to_string(),
+                ))
+                .unwrap()
+        }
+
+        // Org A's admin may manage org A's own consumer...
+        let response = app
+            .clone()
+            .oneshot(set_delivery_preference_request(&consumer_a, &org_a_admin))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // ...but not org B's.
+        let response = app
+            .clone()
+            .oneshot(set_delivery_preference_request(&consumer_b, &org_a_admin))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/consumers/{consumer_b}/delivery-preference"))
+                    .header("Authorization", format!("Bearer {org_a_admin}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/subscriptions")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {org_a_admin}"))
+                    .body(Body::from(
+                        json!({
+                            "consumer_id": consumer_b,
+                            "rules": [{"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]}]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        // The platform admin may still manage org B's consumer regardless.
+        let response = app
+            .oneshot(set_delivery_preference_request(
+                &consumer_b,
+                &platform_admin,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
     async fn a_platform_admin_creates_an_organization_and_sets_its_trust_grants() {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));
@@ -3750,6 +3951,118 @@ mod tests {
         let members = members.as_array().unwrap();
         assert_eq!(members.len(), 1);
         assert_eq!(members[0]["role"], json!("MEMBER"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn an_org_admin_manages_their_own_organization_but_not_another() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let douala_org = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+        let yaounde_org =
+            create_organization(app.clone(), &platform_admin, "Yaounde Association").await;
+        let douala_org_admin =
+            register_and_login(app.clone(), &platform_admin, "ORG_ADMIN", Some(&douala_org)).await;
+        register_and_login(app.clone(), &platform_admin, "MEMBER", Some(&douala_org)).await;
+
+        // The org admin may view their own organization's detail...
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/organizations/{douala_org}"))
+                    .header("Authorization", format!("Bearer {douala_org_admin}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // ...and its member list...
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/organizations/{douala_org}/members"))
+                    .header("Authorization", format!("Bearer {douala_org_admin}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let members = json_body(response).await;
+        assert_eq!(members.as_array().unwrap().len(), 2);
+
+        // ...but not another organization's detail or members.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/organizations/{yaounde_org}"))
+                    .header("Authorization", format!("Bearer {douala_org_admin}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/organizations/{yaounde_org}/members"))
+                    .header("Authorization", format!("Bearer {douala_org_admin}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_plain_member_may_not_view_organization_detail_or_members() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let org_id = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+        let member =
+            register_and_login(app.clone(), &platform_admin, "MEMBER", Some(&org_id)).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/organizations/{org_id}"))
+                    .header("Authorization", format!("Bearer {member}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/organizations/{org_id}/members"))
+                    .header("Authorization", format!("Bearer {member}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

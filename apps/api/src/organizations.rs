@@ -10,8 +10,8 @@ use axum::{
     http::{HeaderMap, StatusCode},
 };
 use safe_cameroon_domain::{
-    AlertVisibility, EmptyOrganizationName, IncidentType, Membership, Organization, OrganizationId,
-    Role,
+    AlertVisibility, Consumer, ConsumerType, EmptyOrganizationName, IncidentType, Membership,
+    Organization, OrganizationId, Role,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -36,6 +36,15 @@ fn not_authorized(request_id: Uuid) -> ApiError {
         status: StatusCode::FORBIDDEN,
         code: "NOT_AUTHORIZED",
         message: "Only a platform admin may manage organizations.",
+        request_id,
+    }
+}
+
+fn not_authorized_for_organization(request_id: Uuid) -> ApiError {
+    ApiError {
+        status: StatusCode::FORBIDDEN,
+        code: "NOT_AUTHORIZED",
+        message: "You are not authorized to view this organization.",
         request_id,
     }
 }
@@ -74,12 +83,50 @@ async fn require_platform_admin(
     }
 }
 
+/// A platform admin may view any organization; an org admin may view only
+/// their own — this is the "manage my organization" route (member list,
+/// read-only org detail), distinct from the platform-wide organization
+/// management above, which stays platform-admin-only.
+async fn require_platform_admin_or_org_admin_of(
+    state: &AppState,
+    actor: Actor,
+    organization_id: OrganizationId,
+    request_id: Uuid,
+) -> Result<(), ApiError> {
+    let Actor::Reviewer(reviewer_id) = actor else {
+        return Err(not_authorized_for_organization(request_id));
+    };
+    let membership = state
+        .organizations
+        .find_membership(reviewer_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+    match membership {
+        Some(Membership {
+            role: Role::PlatformAdmin,
+            ..
+        }) => Ok(()),
+        Some(Membership {
+            role: Role::OrgAdmin,
+            organization_id: Some(own_organization_id),
+        }) if own_organization_id == organization_id => Ok(()),
+        _ => Err(not_authorized_for_organization(request_id)),
+    }
+}
+
 #[derive(Serialize)]
 pub struct OrganizationResponse {
     organization_id: Uuid,
     name: String,
     verified_incident_types: Vec<IncidentType>,
     verified_alert_visibilities: Vec<AlertVisibility>,
+    /// The consumer this organization's alert subscription and delivery
+    /// preference (WhatsApp/email endpoints) live under — see
+    /// `Organization::consumer_id`'s doc comment. The console calls the
+    /// existing `/v1/consumers/{id}`, `/v1/subscriptions`, and
+    /// `/v1/consumers/{id}/delivery-preference` endpoints with this id
+    /// directly.
+    consumer_id: Option<Uuid>,
 }
 
 fn organization_response(organization: &Organization) -> OrganizationResponse {
@@ -88,6 +135,7 @@ fn organization_response(organization: &Organization) -> OrganizationResponse {
         name: organization.name().to_owned(),
         verified_incident_types: organization.verified_incident_types().to_vec(),
         verified_alert_visibilities: organization.verified_alert_visibilities().to_vec(),
+        consumer_id: organization.consumer_id().map(|id| id.as_uuid()),
     }
 }
 
@@ -125,6 +173,32 @@ pub async fn create_organization(
         .await
         .map_err(|_| persistence_failed(request_id))?;
 
+    // Every organization gets a linked consumer up front, so its alert
+    // subscription and delivery preference (WhatsApp/email endpoints) are
+    // always manageable through the existing consumer pipeline the moment
+    // it's onboarded — see `Organization::consumer_id`'s doc comment. The
+    // name is already validated non-blank by `Organization::new` above, so
+    // this can't fail on `EmptyConsumerName`.
+    let consumer = Consumer::new(organization.name(), ConsumerType::Organization)
+        .expect("organization name is already validated non-blank above");
+    state
+        .consumers
+        .create(&consumer)
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+    state
+        .organizations
+        .set_consumer_id(organization.id(), consumer.id())
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+
+    let organization = state
+        .organizations
+        .find_by_id(organization.id())
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .expect("the organization was just created above");
+
     Ok((
         StatusCode::CREATED,
         Json(organization_response(&organization)),
@@ -144,11 +218,12 @@ pub async fn get_organization(
         request_id,
     )
     .await?;
-    require_platform_admin(&state, actor, request_id).await?;
+    let organization_id = OrganizationId::from_uuid(organization_id);
+    require_platform_admin_or_org_admin_of(&state, actor, organization_id, request_id).await?;
 
     let organization = state
         .organizations
-        .find_by_id(OrganizationId::from_uuid(organization_id))
+        .find_by_id(organization_id)
         .await
         .map_err(|_| persistence_failed(request_id))?
         .ok_or_else(|| organization_not_found(request_id))?;
@@ -269,9 +344,9 @@ pub async fn list_members(
         request_id,
     )
     .await?;
-    require_platform_admin(&state, actor, request_id).await?;
-
     let organization_id = OrganizationId::from_uuid(organization_id);
+    require_platform_admin_or_org_admin_of(&state, actor, organization_id, request_id).await?;
+
     state
         .organizations
         .find_by_id(organization_id)
