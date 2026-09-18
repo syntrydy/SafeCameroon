@@ -288,7 +288,7 @@ export const translations: Record<Locale, Translations> = {
       saving: "Saving...",
     },
     brand: {
-      consoleBadge: "Console",
+      consoleBadge: "Portal",
     },
     layout: {
       reports: "Reports",
@@ -306,12 +306,12 @@ export const translations: Record<Locale, Translations> = {
       heroHeadingPrefix: "Coordinated response for",
       heroHeadingHighlight: "every reported incident",
       heroSubtitle:
-        "Verified reviewers triage reports, confirm cases, and issue alerts through a single accountable console—built for privacy, speed, and oversight.",
+        "Verified reviewers triage reports, confirm cases, and issue alerts through a single accountable portal—built for privacy, speed, and oversight.",
       fullAuditTrail: "Full audit trail",
       privacyFirst: "Privacy-first architecture",
-      organizationConsole: "Organization console",
+      organizationConsole: "Organization portal",
       welcomeBack: "Welcome back",
-      signInSubtitle: "Sign in with your registered Google account to access the console.",
+      signInSubtitle: "Sign in with your registered Google account to access the portal.",
       secureNote: "Secured with OAuth 2.0 · Your credentials are never stored",
       accessLimited: "Access is limited to reviewers added by an administrator.",
     },
@@ -564,7 +564,7 @@ export const translations: Record<Locale, Translations> = {
       saving: "Enregistrement...",
     },
     brand: {
-      consoleBadge: "Console",
+      consoleBadge: "Portail",
     },
     layout: {
       reports: "Signalements",
@@ -582,13 +582,13 @@ export const translations: Record<Locale, Translations> = {
       heroHeadingPrefix: "Une réponse coordonnée pour",
       heroHeadingHighlight: "chaque incident signalé",
       heroSubtitle:
-        "Des examinateurs vérifiés trient les signalements, confirment les dossiers et publient des alertes via une console unique et responsable—conçue pour la confidentialité, la rapidité et la supervision.",
+        "Des examinateurs vérifiés trient les signalements, confirment les dossiers et publient des alertes via un portail unique et responsable—conçu pour la confidentialité, la rapidité et la supervision.",
       fullAuditTrail: "Journal d'audit complet",
       privacyFirst: "Architecture axée sur la confidentialité",
-      organizationConsole: "Console de l'organisation",
+      organizationConsole: "Portail de l'organisation",
       welcomeBack: "Bon retour",
       signInSubtitle:
-        "Connectez-vous avec votre compte Google enregistré pour accéder à la console.",
+        "Connectez-vous avec votre compte Google enregistré pour accéder au portail.",
       secureNote:
         "Sécurisé avec OAuth 2.0 · Vos identifiants ne sont jamais stockés",
       accessLimited: "L'accès est réservé aux examinateurs ajoutés par un administrateur.",

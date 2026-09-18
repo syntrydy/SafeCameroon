@@ -28,7 +28,7 @@ function ProtectedLayout() {
 
 export function App() {
   useEffect(() => {
-    document.title = `${BRAND_NAME} Console`;
+    document.title = `${BRAND_NAME} Portal`;
   }, []);
 
   return (
