@@ -192,7 +192,7 @@ export const translations: Record<Locale, Translations> = {
       manageHeading: "Manage your alerts",
       onForDevice: "Alerts are on for this device.",
       turnOff: "Turn off alerts",
-      signupHeading: "Get missing-child alerts",
+      signupHeading: "Get protection alerts",
       signupSubtitle: "Choose what you want to hear about. You can change this anytime.",
       saveChanges: "Save changes",
       enableAlerts: "Enable alerts",
@@ -318,7 +318,7 @@ export const translations: Record<Locale, Translations> = {
       manageHeading: "Gérer vos alertes",
       onForDevice: "Les alertes sont activées pour cet appareil.",
       turnOff: "Désactiver les alertes",
-      signupHeading: "Recevoir les alertes enfant disparu",
+      signupHeading: "Recevoir les alertes de protection",
       signupSubtitle:
         "Choisissez ce que vous souhaitez suivre. Vous pouvez modifier ce choix à tout moment.",
       saveChanges: "Enregistrer les modifications",
