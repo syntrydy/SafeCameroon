@@ -7,6 +7,7 @@
 
 use async_trait::async_trait;
 use safe_cameroon_application::ai_extraction::{ExtractionError, ReportExtractor};
+use safe_cameroon_application::audio_transcription::{AudioTranscriber, TranscriptionError};
 use safe_cameroon_domain::ExtractedReportFields;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -25,6 +26,35 @@ impl ReportExtractor for DisabledExtractor {
     async fn extract(&self, _raw_content: &str) -> Result<ExtractedReportFields, ExtractionError> {
         Err(ExtractionError {
             message: "AI extraction is not configured for this deployment".into(),
+        })
+    }
+}
+
+/// Same "fail clearly, don't refuse to boot" stance as [`DisabledExtractor`],
+/// for when voice transcription has no credentials configured
+/// (`OPENROUTER_API_KEY` unset) -- distinct from the `VOICE_REPORTS_ENABLED`
+/// feature flag, which is an operator kill-switch checked in
+/// `apps/api/src/reports.rs` before this is ever reached.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DisabledTranscriber;
+
+#[async_trait]
+impl AudioTranscriber for DisabledTranscriber {
+    fn provider(&self) -> &'static str {
+        "DISABLED"
+    }
+
+    fn model(&self) -> &str {
+        "none"
+    }
+
+    async fn transcribe(
+        &self,
+        _audio_bytes: &[u8],
+        _format: &str,
+    ) -> Result<String, TranscriptionError> {
+        Err(TranscriptionError {
+            message: "Voice transcription is not configured for this deployment".into(),
         })
     }
 }

@@ -21,6 +21,7 @@ pub enum RateLimitScope {
     ReviewerLoginAttempt,
     CitizenSubscriptionCreation,
     AttachmentUploadRequest,
+    VoiceTranscriptionRequest,
 }
 
 impl RateLimitScope {
@@ -30,6 +31,7 @@ impl RateLimitScope {
             Self::ReviewerLoginAttempt => "REVIEWER_LOGIN_ATTEMPT",
             Self::CitizenSubscriptionCreation => "CITIZEN_SUBSCRIPTION_CREATION",
             Self::AttachmentUploadRequest => "ATTACHMENT_UPLOAD_REQUEST",
+            Self::VoiceTranscriptionRequest => "VOICE_TRANSCRIPTION_REQUEST",
         }
     }
 
@@ -48,6 +50,13 @@ impl RateLimitScope {
             // (and the R2 storage cost it enables) against one report; a
             // real report's attachment count won't come close to this.
             Self::AttachmentUploadRequest => 30,
+            // Each request is a paid call to a third-party transcription
+            // API (issue #160) -- deliberately tighter than every other
+            // scope here. This is a baseline reuse of existing
+            // infrastructure, not the deeper abuse-mitigation work
+            // (budget circuit breaker, content heuristics) the platform
+            // administrator explicitly deferred.
+            Self::VoiceTranscriptionRequest => 5,
         }
     }
 
@@ -57,6 +66,7 @@ impl RateLimitScope {
             Self::ReviewerLoginAttempt => Duration::from_secs(15 * 60),
             Self::CitizenSubscriptionCreation => Duration::from_secs(60 * 60),
             Self::AttachmentUploadRequest => Duration::from_secs(60 * 60),
+            Self::VoiceTranscriptionRequest => Duration::from_secs(60 * 60),
         }
     }
 }

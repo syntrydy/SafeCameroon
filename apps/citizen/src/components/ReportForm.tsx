@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from "preact/hooks";
 import type { IncidentType, PhotoContentType } from "../api/reports";
 import { MAX_REPORT_CONTENT_CHARS, validateReportContent } from "../domain/reportValidation";
 import { useTranslation } from "../i18n/LanguageContext";
+import { VoiceRecorder } from "./VoiceRecorder";
 
 const ACCEPTED_PHOTO_TYPES: Record<string, PhotoContentType> = {
   "image/jpeg": "image/jpeg",
@@ -26,6 +27,7 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
   const { t } = useTranslation();
   const [incidentType, setIncidentType] = useState<IncidentType>("MISSING_CHILD");
   const [content, setContent] = useState("");
+  const [inputMode, setInputMode] = useState<"speak" | "type">("type");
   const [photo, setPhoto] = useState<ReportFormPhoto | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
@@ -113,31 +115,70 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
         ))}
       </div>
 
-      <label htmlFor="report-content" className="mt-6 block text-sm font-medium text-slate-300">
-        {t.reportForm.whatIsHappening}
-      </label>
-      <p className="mt-1 text-sm text-slate-500">{guidance.helper}</p>
-      <textarea
-        id="report-content"
-        value={content}
-        onInput={(event) => setContent((event.target as HTMLTextAreaElement).value)}
-        onBlur={() => setTouched(true)}
-        rows={7}
-        autoFocus
-        placeholder={guidance.placeholder}
-        className="mt-3 w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-base text-white placeholder-slate-500 shadow-sm transition-all duration-300 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-      />
-      <div className="mt-1.5 flex items-center justify-between text-xs text-slate-500">
-        <span>
-          {touched && validationError === "EMPTY" && (
-            <span className="text-red-400">{t.reportForm.validationEmpty}</span>
-          )}
-          {touched && validationError === "TOO_LONG" && (
-            <span className="text-red-400">{t.reportForm.validationTooLong}</span>
-          )}
-        </span>
-        <span>{t.reportForm.charCount(charCount, MAX_REPORT_CONTENT_CHARS)}</span>
+      <div className="mt-6 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.06] bg-white/[0.03] p-1">
+        <button
+          type="button"
+          onClick={() => setInputMode("speak")}
+          aria-pressed={inputMode === "speak"}
+          className={`rounded-lg py-2.5 text-sm font-medium transition-all duration-300 ${
+            inputMode === "speak"
+              ? "border border-white/[0.08] bg-white/[0.08] text-white shadow-sm"
+              : "text-slate-400 hover:text-slate-300"
+          }`}
+        >
+          {t.reportForm.speakTab}
+        </button>
+        <button
+          type="button"
+          onClick={() => setInputMode("type")}
+          aria-pressed={inputMode === "type"}
+          className={`rounded-lg py-2.5 text-sm font-medium transition-all duration-300 ${
+            inputMode === "type"
+              ? "border border-white/[0.08] bg-white/[0.08] text-white shadow-sm"
+              : "text-slate-400 hover:text-slate-300"
+          }`}
+        >
+          {t.reportForm.typeTab}
+        </button>
       </div>
+
+      {inputMode === "speak" ? (
+        <div className="mt-3">
+          <VoiceRecorder
+            onConfirm={(transcript) => {
+              setContent(transcript);
+              setInputMode("type");
+            }}
+          />
+        </div>
+      ) : (
+        <>
+          <label htmlFor="report-content" className="mt-3 block text-sm font-medium text-slate-300">
+            {t.reportForm.whatIsHappening}
+          </label>
+          <p className="mt-1 text-sm text-slate-500">{guidance.helper}</p>
+          <textarea
+            id="report-content"
+            value={content}
+            onInput={(event) => setContent((event.target as HTMLTextAreaElement).value)}
+            onBlur={() => setTouched(true)}
+            rows={7}
+            placeholder={guidance.placeholder}
+            className="mt-3 w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-base text-white placeholder-slate-500 shadow-sm transition-all duration-300 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+          />
+          <div className="mt-1.5 flex items-center justify-between text-xs text-slate-500">
+            <span>
+              {touched && validationError === "EMPTY" && (
+                <span className="text-red-400">{t.reportForm.validationEmpty}</span>
+              )}
+              {touched && validationError === "TOO_LONG" && (
+                <span className="text-red-400">{t.reportForm.validationTooLong}</span>
+              )}
+            </span>
+            <span>{t.reportForm.charCount(charCount, MAX_REPORT_CONTENT_CHARS)}</span>
+          </div>
+        </>
+      )}
 
       <div className="mt-6">
         <span className="block text-sm font-medium text-slate-300">{t.reportForm.photoLabel}</span>

@@ -2250,6 +2250,7 @@ dependencies = [
  "async-trait",
  "aws-credential-types",
  "aws-sigv4",
+ "base64 0.22.1",
  "hmac",
  "http 1.5.0",
  "reqwest",
