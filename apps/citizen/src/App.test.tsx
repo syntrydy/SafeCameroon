@@ -79,4 +79,22 @@ describe("citizen reporting app", () => {
       expect(screen.getByText("Saved on this device")).toBeInTheDocument();
     });
   });
+
+  it("switches language via the footer toggle and remembers the choice", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const user = userEvent.setup();
+    const { unmount } = render(<App />);
+
+    expect(screen.getByLabelText("What is happening?")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Switch to French" }));
+
+    expect(await screen.findByLabelText("Que se passe-t-il ?")).toBeInTheDocument();
+    expect(window.localStorage.getItem("citizen.locale")).toBe("fr");
+
+    unmount();
+    render(<App />);
+
+    expect(await screen.findByLabelText("Que se passe-t-il ?")).toBeInTheDocument();
+  });
 });

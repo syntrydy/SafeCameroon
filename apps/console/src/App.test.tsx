@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
 import { App } from "./App";
@@ -140,6 +140,10 @@ function stubBackend(role: string = "MEMBER", organizationId: string | null = nu
   );
 }
 
+beforeEach(() => {
+  window.localStorage.clear();
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -150,6 +154,23 @@ describe("console auth flow", () => {
 
     expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Fake Google Sign-In" })).toBeInTheDocument();
+  });
+
+  it("switches language via the footer toggle and remembers the choice", async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderApp("/");
+
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Switch to French" }));
+
+    expect(await screen.findByRole("heading", { name: "Bon retour" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("console.locale")).toBe("fr");
+
+    unmount();
+    renderApp("/");
+
+    expect(await screen.findByRole("heading", { name: "Bon retour" })).toBeInTheDocument();
   });
 
   it("logs in with a verified Google credential and reaches the review queue", async () => {
