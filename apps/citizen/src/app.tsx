@@ -91,7 +91,7 @@ function AppContent() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-950 px-4 py-10">
+    <div className="relative min-h-screen overflow-hidden bg-slate-950 px-4 py-6 sm:py-10">
       <div aria-hidden="true" className="pointer-events-none fixed inset-0">
         <div className="absolute top-0 left-0 h-full w-full bg-[radial-gradient(ellipse_at_top_left,rgba(16,185,129,0.06)_0%,transparent_50%)]" />
         <div className="absolute bottom-0 right-0 h-full w-full bg-[radial-gradient(ellipse_at_bottom_right,rgba(59,130,246,0.05)_0%,transparent_50%)]" />
@@ -108,7 +108,7 @@ function AppContent() {
 
       <div className="relative mx-auto w-full max-w-md">
         <div
-          className={`mb-8 flex items-center justify-center gap-3 transition-all duration-700 ${
+          className={`mb-5 flex items-center justify-center gap-3 transition-all duration-700 sm:mb-8 ${
             mounted ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0"
           }`}
         >
@@ -127,7 +127,7 @@ function AppContent() {
         </div>
 
         <div
-          className={`mb-6 transition-all delay-100 duration-700 ${
+          className={`mb-4 transition-all delay-100 duration-700 sm:mb-6 ${
             mounted ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
           }`}
         >
@@ -143,7 +143,7 @@ function AppContent() {
             aria-hidden="true"
             className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-emerald-500/5 via-blue-500/5 to-emerald-500/5 opacity-60 blur-xl"
           />
-          <div className="relative rounded-2xl border border-white/[0.08] bg-slate-900/80 p-6 shadow-2xl shadow-black/20 backdrop-blur-xl sm:p-8">
+          <div className="relative rounded-2xl border border-white/[0.08] bg-slate-900/80 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl sm:p-8">
             {tab === "report" && (
               <>
                 <StatusBanner online={online} pendingCount={pendingCount} />
@@ -152,7 +152,7 @@ function AppContent() {
                   <>
                     <h1 className="text-xl font-bold text-white">{t.reportForm.heading}</h1>
                     <p className="mt-1.5 text-sm text-slate-400">{t.reportForm.subtitle}</p>
-                    <div className="mt-6">
+                    <div className="mt-4 sm:mt-6">
                       <ReportForm
                         submitting={submitting}
                         errorMessage={errorMessage}
@@ -188,7 +188,7 @@ function AppContent() {
         {tab === "report" && <ReceiptsList receipts={receipts} />}
 
         <div
-          className={`mt-8 transition-all delay-300 duration-700 ${
+          className={`mt-5 transition-all delay-300 duration-700 sm:mt-8 ${
             mounted ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
           }`}
         >

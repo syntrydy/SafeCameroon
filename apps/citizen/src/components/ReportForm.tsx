@@ -5,6 +5,20 @@ import { MAX_REPORT_CONTENT_CHARS, validateReportContent } from "../domain/repor
 import { useTranslation } from "../i18n/LanguageContext";
 import { VoiceRecorder } from "./VoiceRecorder";
 
+function StepHeading({ step, label }: { step: number; label: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        aria-hidden="true"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-xs font-semibold text-slate-300"
+      >
+        {step}
+      </span>
+      <span className="text-sm font-medium text-slate-300">{label}</span>
+    </div>
+  );
+}
+
 const ACCEPTED_PHOTO_TYPES: Record<string, PhotoContentType> = {
   "image/jpeg": "image/jpeg",
   "image/png": "image/png",
@@ -99,9 +113,7 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
 
   return (
     <form onSubmit={handleSubmit} noValidate>
-      <span className="block text-sm font-medium text-slate-300">
-        {t.reportForm.incidentTypeQuestion}
-      </span>
+      <StepHeading step={1} label={t.reportForm.incidentTypeQuestion} />
       <div className="mt-2.5 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.06] bg-white/[0.03] p-1">
         {incidentTypeOptions.map((option) => (
           <button
@@ -123,7 +135,10 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
         ))}
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.06] bg-white/[0.03] p-1">
+      <div className="mt-4 sm:mt-6">
+        <StepHeading step={2} label={t.reportForm.inputModeQuestion} />
+      </div>
+      <div className="mt-2.5 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.06] bg-white/[0.03] p-1">
         <button
           type="button"
           onClick={() => setInputMode("speak")}
@@ -161,18 +176,21 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
         </div>
       ) : (
         <>
-          <label htmlFor="report-content" className="mt-3 block text-sm font-medium text-slate-300">
+          <div className="mt-4 sm:mt-6">
+            <StepHeading step={3} label={t.reportForm.whatIsHappening} />
+          </div>
+          <p className="mt-1 text-sm text-slate-500">{guidance.helper}</p>
+          <label htmlFor="report-content" className="sr-only">
             {t.reportForm.whatIsHappening}
           </label>
-          <p className="mt-1 text-sm text-slate-500">{guidance.helper}</p>
           <textarea
             id="report-content"
             value={content}
             onInput={(event) => setContent((event.target as HTMLTextAreaElement).value)}
             onBlur={() => setTouched(true)}
-            rows={7}
+            rows={4}
             placeholder={guidance.placeholder}
-            className="mt-3 w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-base text-white placeholder-slate-500 shadow-sm transition-all duration-300 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            className="mt-2.5 w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-2.5 text-base text-white placeholder-slate-500 shadow-sm transition-all duration-300 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
           />
           <div className="mt-1.5 flex items-center justify-between text-xs text-slate-500">
             <span>
@@ -188,8 +206,8 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
         </>
       )}
 
-      <div className="mt-6">
-        <span className="block text-sm font-medium text-slate-300">{t.reportForm.photoLabel}</span>
+      <div className="mt-4 sm:mt-6">
+        <StepHeading step={4} label={t.reportForm.photoLabel} />
         <p className="mt-1 text-sm text-slate-500">{t.reportForm.photoHelper}</p>
 
         {photo ? (
@@ -229,7 +247,7 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
       {errorMessage && (
         <div
           role="alert"
-          className="mt-6 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+          className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300"
         >
           {errorMessage}
         </div>
@@ -238,12 +256,12 @@ export function ReportForm({ submitting, errorMessage, onSubmit }: ReportFormPro
       <button
         type="submit"
         disabled={submitting}
-        className="group relative mt-6 w-full overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-3.5 text-base font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:from-emerald-500 hover:to-emerald-600 hover:shadow-xl hover:shadow-emerald-500/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+        className="group relative mt-4 w-full overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-3 text-base font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all duration-300 hover:from-emerald-500 hover:to-emerald-600 hover:shadow-xl hover:shadow-emerald-500/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:mt-6 sm:py-3.5"
       >
         {submitting ? t.reportForm.sending : t.reportForm.sendReport}
       </button>
 
-      <div className="mt-5 flex items-center justify-center gap-2 rounded-lg border border-emerald-500/10 bg-emerald-500/5 px-3 py-2.5">
+      <div className="mt-3 flex items-center justify-center gap-2 rounded-lg border border-emerald-500/10 bg-emerald-500/5 px-3 py-2 sm:mt-5 sm:py-2.5">
         <p className="text-xs text-slate-400">{t.reportForm.anonymousNote}</p>
       </div>
     </form>
