@@ -4,13 +4,74 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#020617" />
+    <meta name="robots" content="index, follow" />
     <meta
       name="description"
       content="Report a missing child anonymously. No account needed. Works offline -- your report sends automatically once you're back online."
     />
+
+    <!-- Canonical + language variants: one URL serves English/French based on
+         the browser's own language (no separate per-locale routes), so both
+         hreflang entries point at the same address rather than distinct
+         pages -- an accurate signal for a client-detected bilingual SPA. -->
+    <link rel="canonical" href="https://sentinel.africalineage.com/" />
+    <link rel="alternate" hreflang="en" href="https://sentinel.africalineage.com/" />
+    <link rel="alternate" hreflang="fr" href="https://sentinel.africalineage.com/" />
+    <link rel="alternate" hreflang="x-default" href="https://sentinel.africalineage.com/" />
+
+    <!-- Open Graph / Twitter card: link-preview quality matters here as much
+         as search ranking -- this app is shared via WhatsApp and social
+         media during real incidents. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Sentinel" />
+    <meta property="og:title" content="Sentinel — Report a Missing Child" />
+    <meta
+      property="og:description"
+      content="Report a missing child or protection incident anonymously. No account needed. Works offline."
+    />
+    <meta property="og:url" content="https://sentinel.africalineage.com/" />
+    <meta property="og:image" content="https://sentinel.africalineage.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="fr_FR" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Sentinel — Report a Missing Child" />
+    <meta
+      name="twitter:description"
+      content="Report a missing child or protection incident anonymously. No account needed. Works offline."
+    />
+    <meta name="twitter:image" content="https://sentinel.africalineage.com/og-image.png" />
+
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <title>Sentinel &ndash; Report a Missing Child</title>
+
+    <!-- Structured data for search engines and AI answer/search tools:
+         what this is, who publishes it, and that it's free to use. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Sentinel",
+        "url": "https://sentinel.africalineage.com/",
+        "description": "Anonymous incident reporting and verified safety alerts for missing children and other protection incidents. No account needed; works offline.",
+        "applicationCategory": "SafetyApplication",
+        "operatingSystem": "Any (web-based)",
+        "inLanguage": ["en", "fr"],
+        "isAccessibleForFree": true,
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "Sentinel",
+          "url": "https://sentinel.africalineage.com/"
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
