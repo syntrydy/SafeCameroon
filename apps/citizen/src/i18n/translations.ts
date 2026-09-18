@@ -104,7 +104,7 @@ export const translations: Record<Locale, Translations> = {
     },
     reportForm: {
       heading: "Report an incident",
-      subtitle: "No account needed. Your identity is never recorded.",
+      subtitle: "No account needed. Sentinel does not collect identity fields from reporters.",
       incidentTypeQuestion: "What kind of report is this?",
       incidentTypeMissingChild: "Missing child",
       incidentTypeOther: "Other incident",
@@ -204,7 +204,7 @@ export const translations: Record<Locale, Translations> = {
     },
     reportForm: {
       heading: "Signaler un incident",
-      subtitle: "Aucun compte requis. Votre identité n'est jamais enregistrée.",
+      subtitle: "Aucun compte requis. Sentinel ne collecte aucune donnée d'identité auprès des personnes qui signalent.",
       incidentTypeQuestion: "De quel type de signalement s'agit-il ?",
       incidentTypeMissingChild: "Enfant disparu",
       incidentTypeOther: "Autre incident",
