@@ -63,6 +63,7 @@ export interface Translations {
     turnedOffTitle: string;
     turnedOffBody: string;
     turnBackOn: string;
+    manageHeading: string;
     onForDevice: string;
     turnOff: string;
     signupHeading: string;
@@ -165,6 +166,7 @@ export const translations: Record<Locale, Translations> = {
       turnedOffTitle: "Alerts turned off",
       turnedOffBody: "You will no longer receive alerts on this device.",
       turnBackOn: "Turn alerts back on",
+      manageHeading: "Manage your alerts",
       onForDevice: "Alerts are on for this device.",
       turnOff: "Turn off alerts",
       signupHeading: "Get missing-child alerts",
@@ -269,6 +271,7 @@ export const translations: Record<Locale, Translations> = {
       turnedOffTitle: "Alertes désactivées",
       turnedOffBody: "Vous ne recevrez plus d'alertes sur cet appareil.",
       turnBackOn: "Réactiver les alertes",
+      manageHeading: "Gérer vos alertes",
       onForDevice: "Les alertes sont activées pour cet appareil.",
       turnOff: "Désactiver les alertes",
       signupHeading: "Recevoir les alertes enfant disparu",
