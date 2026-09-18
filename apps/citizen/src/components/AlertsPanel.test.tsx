@@ -54,7 +54,7 @@ describe("AlertsPanel", () => {
     const user = userEvent.setup();
     renderPanel();
 
-    await screen.findByText("Get missing-child alerts");
+    await screen.findByText("Get protection alerts");
     await user.type(screen.getByLabelText("Area"), "Douala");
     await user.click(screen.getByRole("button", { name: "Enable alerts" }));
 
@@ -85,7 +85,7 @@ describe("AlertsPanel", () => {
     const user = userEvent.setup();
     renderPanel();
 
-    await screen.findByText("Get missing-child alerts");
+    await screen.findByText("Get protection alerts");
     await user.click(screen.getByRole("combobox", { name: "Alert type" }));
     await user.click(await screen.findByRole("option", { name: "Other protection incident" }));
     await user.type(screen.getByLabelText("Area"), "Douala");
@@ -145,7 +145,7 @@ describe("AlertsPanel", () => {
 
     renderPanel();
 
-    await screen.findByText("Get missing-child alerts");
+    await screen.findByText("Get protection alerts");
     expect(window.localStorage.getItem("safecameroon-citizen-alert-subscription")).toBeNull();
   });
 
