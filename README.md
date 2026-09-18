@@ -4,9 +4,20 @@ _(Repository name is `SafeCameroon` for historical reasons — Cameroon was the 
 the product itself is named Sentinel and is built to run in any country. See
 ["Multi-country deployment model"](#multi-country-deployment-model) below.)_
 
-Sentinel is a privacy-first civic-protection platform for anonymous incident intake,
-case coordination, controlled alerts, and multi-channel delivery. The first operational
-use case is missing children.
+Sentinel is not, at its core, a missing-child reporting app. It is a trust-controlled
+civic-protection network that turns unverified anonymous claims into verified,
+audience-appropriate, actionable alerts — missing children is the first hard case chosen to
+prove that network end-to-end, not the ceiling of what it does.
+
+The contradiction it resolves: a citizen must be able to report without trusting Sentinel with
+their identity, but anonymous cannot mean automatically trusted. Sentinel's answer is a pipeline —
+anonymous claim → AI-assisted extraction → human verification → policy-controlled disclosure →
+targeted delivery → audit trail — built on four domain concepts the codebase keeps deliberately
+distinct rather than collapsing into one "the data says" object: a `Report` is raw incoming
+information, a `Case` is the canonical reviewed incident, an `Alert` is a controlled projection of
+that case for a specific audience, and a `Delivery` is one attempt to reach one consumer through
+one channel. Collapsing those into a single object is exactly what would let an unverified claim
+leak out looking like a verified fact — Sentinel doesn't.
 
 Submitted to the OSF/Andela hackathon under **Track 3: Safety, Reporting & Protection** — see
 [`HACKATHON_SUBMISSION.md`](HACKATHON_SUBMISSION.md) for the full written summary
@@ -42,8 +53,8 @@ Citizen reports anonymously (no account)
   never accidentally carry internal-only detail.
 - **The engine is generic; the vertical is the proof.** Incident types, geography matching, and
   delivery strategy are all domain-modeled to extend beyond one country or one incident class —
-  missing children is the first hard case chosen to prove it end-to-end, not the ceiling of what
-  the platform can do.
+  a second incident class (`OtherProtectionIncident`) already exists precisely to demonstrate
+  that.
 
 ## Multi-country deployment model
 

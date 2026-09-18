@@ -5,11 +5,21 @@
 **Track 3: Safety, Reporting & Protection** — "platforms enabling anonymous reporting with
 pathways to actual protection."
 
-Sentinel (repository name `SafeCameroon`, after its pilot country) is an anonymous
-incident-reporting and verified-alerting platform. The first
-operational use case is missing children, chosen because it forces the hardest version of the
-problem: a false negative can cost a life, a false positive erodes trust in every future alert,
-and the reporter is often a stranger with no standing relationship to the platform. The
+Sentinel (repository name `SafeCameroon`, after its pilot country) is not, at its core, a
+missing-child reporting app — it is a trust-controlled civic-protection network that turns
+unverified anonymous claims into verified, audience-appropriate, actionable alerts. The
+contradiction it resolves: a reporter must be able to come forward without trusting Sentinel with
+their identity, but anonymous cannot mean automatically trusted. The platform's answer is a
+pipeline — anonymous claim → AI-assisted extraction → human verification → policy-controlled
+disclosure → targeted delivery → full audit trail — built on four domain concepts the codebase
+keeps deliberately distinct rather than collapsing into one "the data says" object: a `Report` is
+raw incoming information, a `Case` is the canonical reviewed incident, an `Alert` is a controlled
+projection of that case for a specific audience, and a `Delivery` is one attempt to reach one
+consumer through one channel.
+
+Missing children is the first operational use case, chosen because it forces the hardest version
+of the problem: a false negative can cost a life, a false positive erodes trust in every future
+alert, and the reporter is often a stranger with no standing relationship to the platform. The
 underlying engine (report intake, human verification, subscription-based alert matching,
 multi-channel delivery) is not specific to that use case — `IncidentType` is an extensible enum,
 and a second incident class (`OtherProtectionIncident`) already exists to prove the model
