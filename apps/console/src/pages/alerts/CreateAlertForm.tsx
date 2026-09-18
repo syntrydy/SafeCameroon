@@ -56,7 +56,7 @@ export function CreateAlertForm({ token, caseId, onCreated }: CreateAlertFormPro
 
   return (
     <form onSubmit={handleSubmit} className="rounded border border-white/[0.08] p-4">
-      <h3 className="mb-3 text-sm font-semibold text-white">{t.createAlertForm.heading}</h3>
+      <h2 className="mb-3 text-sm font-semibold text-white">{t.createAlertForm.heading}</h2>
 
       <label className="mb-3 block text-sm">
         <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.severity}</span>

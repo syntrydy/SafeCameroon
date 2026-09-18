@@ -42,7 +42,7 @@ export function AlertList() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-white">{t.alertList.heading}</h2>
+        <h1 className="text-base font-semibold text-white">{t.alertList.heading}</h1>
         <label className="text-sm text-slate-400">
           {t.alertList.statusLabel}{" "}
           <select

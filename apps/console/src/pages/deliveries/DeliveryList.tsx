@@ -38,9 +38,9 @@ export function DeliveryList() {
 
   return (
     <div>
-      <h2 className="mb-4 text-base font-semibold text-white">
+      <h1 className="mb-4 text-base font-semibold text-white">
         {t.deliveryList.heading(id?.slice(0, 8) ?? "")}
-      </h2>
+      </h1>
 
       {error && (
         <p role="alert" className="mb-4 rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">

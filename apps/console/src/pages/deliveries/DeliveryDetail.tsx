@@ -45,9 +45,9 @@ export function DeliveryDetail() {
 
   return (
     <div>
-      <h2 className="mb-4 text-base font-semibold text-white">
+      <h1 className="mb-4 text-base font-semibold text-white">
         {t.deliveryDetail.heading(delivery.delivery_id.slice(0, 8))}
-      </h2>
+      </h1>
 
       <dl className="mb-6 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-slate-500">{t.deliveryDetail.channel}</dt>
@@ -65,7 +65,7 @@ export function DeliveryDetail() {
       </dl>
 
       <section>
-        <h3 className="mb-2 text-sm font-semibold text-white">{t.deliveryDetail.attemptHistory}</h3>
+        <h2 className="mb-2 text-sm font-semibold text-white">{t.deliveryDetail.attemptHistory}</h2>
         {delivery.attempts.length === 0 ? (
           <p className="text-sm text-slate-500">{t.deliveryDetail.noAttempts}</p>
         ) : (
