@@ -3,6 +3,8 @@ import { useState } from "react";
 import { ApiError } from "../../api/client";
 import type { IncidentType } from "../../api/cases";
 import type { ReportSummary } from "../../api/reports";
+import { AttachmentsBody } from "../../components/AttachmentsBody";
+import { useReportAttachments } from "../../components/useReportAttachments";
 import { useTranslation } from "../../i18n/LanguageContext";
 import { ExtractionPanel } from "./ExtractionPanel";
 
@@ -33,6 +35,15 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
   const [caseId, setCaseId] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const {
+    expanded: attachmentsExpanded,
+    toggleExpanded: toggleAttachments,
+    loading: attachmentsLoading,
+    error: attachmentsError,
+    attachments,
+    downloadUrls,
+    getDownloadUrl,
+  } = useReportAttachments(token, report.report_id);
 
   // A successful action re-fetches the queue, which can remove this row
   // immediately (e.g. a created case takes the report out of "received").
@@ -85,6 +96,27 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
               ?.label ?? report.reported_incident_type}
           </p>
         )}
+
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => void toggleAttachments()}
+            className="text-xs font-medium text-slate-400 underline"
+          >
+            {attachmentsExpanded ? t.linkedAttachments.hideAttachments : t.linkedAttachments.showAttachments}
+          </button>
+          {attachmentsExpanded && (
+            <div className="mt-2">
+              <AttachmentsBody
+                loading={attachmentsLoading}
+                error={attachmentsError}
+                attachments={attachments}
+                downloadUrls={downloadUrls}
+                onGetDownloadUrl={(attachmentId) => void getDownloadUrl(attachmentId)}
+              />
+            </div>
+          )}
+        </div>
       </td>
       <td className="min-w-[14rem] py-3 align-top">
         <div className="flex flex-wrap items-center gap-2">

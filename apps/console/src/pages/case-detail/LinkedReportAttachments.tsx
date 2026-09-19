@@ -1,7 +1,5 @@
-import { useState } from "react";
-
-import { createDownloadUrl, listAttachmentsForReport, type AttachmentSummary } from "../../api/attachments";
-import { ApiError } from "../../api/client";
+import { AttachmentsBody } from "../../components/AttachmentsBody";
+import { useReportAttachments } from "../../components/useReportAttachments";
 import { useTranslation } from "../../i18n/LanguageContext";
 
 interface LinkedReportAttachmentsProps {
@@ -15,36 +13,8 @@ interface LinkedReportAttachmentsProps {
 // whatever files were attached to it.
 export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachmentsProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [attachments, setAttachments] = useState<AttachmentSummary[] | null>(null);
-  const [downloadUrls, setDownloadUrls] = useState<Record<string, string>>({});
-
-  async function toggleExpanded() {
-    setExpanded((value) => !value);
-    if (attachments !== null) {
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      setAttachments(await listAttachmentsForReport(token, reportId));
-    } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function getDownloadUrl(attachmentId: string) {
-    try {
-      const { download_url } = await createDownloadUrl(token, attachmentId);
-      setDownloadUrls((current) => ({ ...current, [attachmentId]: download_url }));
-    } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
-    }
-  }
+  const { expanded, toggleExpanded, loading, error, attachments, downloadUrls, getDownloadUrl } =
+    useReportAttachments(token, reportId);
 
   return (
     <li className="py-2">
@@ -57,42 +27,13 @@ export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachm
 
       {expanded && (
         <div className="mt-2 pl-4">
-          {loading && <p className="text-xs text-slate-500">{t.linkedAttachments.loading}</p>}
-          {error && (
-            <p role="alert" className="text-xs text-red-300">
-              {error}
-            </p>
-          )}
-          {attachments !== null && attachments.length === 0 && (
-            <p className="text-xs text-slate-500">{t.linkedAttachments.none}</p>
-          )}
-          {attachments && attachments.length > 0 && (
-            <ul>
-              {attachments.map((attachment) => (
-                <li key={attachment.attachment_id} className="mb-1 text-xs text-slate-300">
-                  {attachment.content_type} ({t.linkedAttachments.sizeBytes(attachment.size_bytes)}){" "}
-                  {downloadUrls[attachment.attachment_id] ? (
-                    <a
-                      href={downloadUrls[attachment.attachment_id]}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-white underline"
-                    >
-                      {t.linkedAttachments.open}
-                    </a>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => void getDownloadUrl(attachment.attachment_id)}
-                      className="text-slate-400 underline"
-                    >
-                      {t.linkedAttachments.getDownloadLink}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
+          <AttachmentsBody
+            loading={loading}
+            error={error}
+            attachments={attachments}
+            downloadUrls={downloadUrls}
+            onGetDownloadUrl={(attachmentId) => void getDownloadUrl(attachmentId)}
+          />
         </div>
       )}
     </li>
