@@ -171,15 +171,24 @@ fn voice_reports_enabled_from_env() -> bool {
 /// doc comment) rather than refusing to boot. Reuses the same two vars as
 /// `apps/worker`'s citizen-alert email channel, but must be configured
 /// separately for this service (`apps/api`) since they're per-service
-/// Railway variables, not shared.
+/// Railway variables, not shared. `BRAND_NAME`/`CONSOLE_URL` mirror the
+/// console app's own `VITE_BRAND_NAME`/cross-link config, server-side --
+/// the email is composed here, not by the console app.
 fn invite_mailer_from_env() -> Arc<dyn InviteMailer> {
+    let brand_name = std::env::var("BRAND_NAME").unwrap_or_else(|_| "Sentinel".to_owned());
+    let console_url = std::env::var("CONSOLE_URL").ok();
     match (
         std::env::var("RESEND_API_KEY"),
         std::env::var("RESEND_FROM_ADDRESS"),
     ) {
         (Ok(api_key), Ok(from_address)) => {
             tracing::info!("Invite emails: Resend");
-            Arc::new(ResendInviteMailer::new(api_key, from_address))
+            Arc::new(ResendInviteMailer::new(
+                api_key,
+                from_address,
+                brand_name,
+                console_url,
+            ))
         }
         _ => {
             tracing::info!(
