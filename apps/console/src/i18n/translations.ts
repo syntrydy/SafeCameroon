@@ -121,6 +121,7 @@ export interface Translations {
     none: string;
     open: string;
     getDownloadLink: string;
+    attachmentPreviewAlt: string;
     sizeBytes: (n: number) => string;
   };
   alertList: {
@@ -463,6 +464,7 @@ export const translations: Record<Locale, Translations> = {
       none: "No attachments.",
       open: "Open",
       getDownloadLink: "Get download link",
+      attachmentPreviewAlt: "Attachment preview",
       sizeBytes: (n) => `${n} bytes`,
     },
     alertList: {
@@ -806,6 +808,7 @@ export const translations: Record<Locale, Translations> = {
       none: "Aucune pièce jointe.",
       open: "Ouvrir",
       getDownloadLink: "Obtenir le lien de téléchargement",
+      attachmentPreviewAlt: "Aperçu de la pièce jointe",
       sizeBytes: (n) => `${n} octets`,
     },
     alertList: {

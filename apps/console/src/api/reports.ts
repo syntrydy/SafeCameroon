@@ -5,9 +5,7 @@ import { apiRequest } from "./client";
 export type ReportStatus = "RECEIVED" | "UNDER_REVIEW" | "LINKED_TO_CASE" | "CLOSED";
 export type ReportSourceChannel = "WEB" | "SMS" | "WHATSAPP" | "PHONE" | "PARTNER_API";
 
-// Matches apps/api/src/reports.rs `ReportSummaryResponse`. There is no
-// single-report GET — this list is a reviewer's only way to read report
-// content before deciding whether to open or link a case.
+// Matches apps/api/src/reports.rs `ReportSummaryResponse`.
 export interface ReportSummary {
   report_id: string;
   source_channel: ReportSourceChannel;
@@ -32,6 +30,12 @@ export function listReports(token: string, params: ListReportsParams = {}): Prom
   if (params.offset !== undefined) query.set("offset", String(params.offset));
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return apiRequest<ReportSummary[]>(`/v1/reports${suffix}`, { token });
+}
+
+// apps/api/src/reports.rs `get_report` -- fetches one report by id, used to
+// show its raw_content on the case detail page.
+export function getReport(token: string, reportId: string): Promise<ReportSummary> {
+  return apiRequest<ReportSummary>(`/v1/reports/${reportId}`, { token });
 }
 
 // Moves a report from RECEIVED to UNDER_REVIEW (apps/api/src/reports.rs
