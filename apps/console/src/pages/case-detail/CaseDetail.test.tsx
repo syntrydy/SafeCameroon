@@ -61,6 +61,18 @@ function stubBackend() {
         caseData = { ...caseData, status: body.to, version: caseData.version + 1 };
         return Promise.resolve(jsonResponse(200, caseData));
       }
+      if (url.pathname === `/v1/reports/${REPORT_ID}` && method === "GET") {
+        return Promise.resolve(
+          jsonResponse(200, {
+            report_id: REPORT_ID,
+            source_channel: "WEB",
+            status: "UNDER_REVIEW",
+            raw_content: "A child went missing near the central market.",
+            received_at: "2026-09-15T09:00:00Z",
+            reported_incident_type: "MISSING_CHILD",
+          }),
+        );
+      }
       if (url.pathname === `/v1/reports/${REPORT_ID}/attachments` && method === "GET") {
         return Promise.resolve(
           jsonResponse(200, [
@@ -200,6 +212,12 @@ describe("CaseDetail", () => {
     expect(screen.queryByRole("button", { name: "Mark Verified" })).not.toBeInTheDocument();
   });
 
+  it("shows the linked report's text", async () => {
+    await loginAndReachCase();
+
+    await screen.findByText("A child went missing near the central market.");
+  });
+
   it("lists a linked report's attachments and fetches a download link on demand", async () => {
     const user = await loginAndReachCase();
 
@@ -210,6 +228,17 @@ describe("CaseDetail", () => {
 
     const link = await screen.findByRole("link", { name: "Open" });
     expect(link).toHaveAttribute("href", "https://storage.example/signed");
+  });
+
+  it("renders an inline image preview for an image attachment once its download link is fetched", async () => {
+    const user = await loginAndReachCase();
+
+    await user.click(screen.getByRole("button", { name: "Show attachments" }));
+    await screen.findByText(/image\/jpeg/);
+    await user.click(screen.getByRole("button", { name: "Get download link" }));
+
+    const preview = await screen.findByAltText("Attachment preview");
+    expect(preview).toHaveAttribute("src", "https://storage.example/signed");
   });
 
   it("creates an alert from a verified case and navigates to its preview", async () => {

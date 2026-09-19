@@ -33,29 +33,39 @@ export function AttachmentsBody({
       )}
       {attachments && attachments.length > 0 && (
         <ul>
-          {attachments.map((attachment) => (
-            <li key={attachment.attachment_id} className="mb-1 text-xs text-slate-300">
-              {attachment.content_type} ({t.linkedAttachments.sizeBytes(attachment.size_bytes)}){" "}
-              {downloadUrls[attachment.attachment_id] ? (
-                <a
-                  href={downloadUrls[attachment.attachment_id]}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-white underline"
-                >
-                  {t.linkedAttachments.open}
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onGetDownloadUrl(attachment.attachment_id)}
-                  className="text-slate-400 underline"
-                >
-                  {t.linkedAttachments.getDownloadLink}
-                </button>
-              )}
-            </li>
-          ))}
+          {attachments.map((attachment) => {
+            const downloadUrl = downloadUrls[attachment.attachment_id];
+            const isImage = attachment.content_type.startsWith("image/");
+            return (
+              <li key={attachment.attachment_id} className="mb-2 text-xs text-slate-300">
+                <div>
+                  {attachment.content_type} ({t.linkedAttachments.sizeBytes(attachment.size_bytes)}){" "}
+                  {downloadUrl ? (
+                    <a href={downloadUrl} target="_blank" rel="noreferrer" className="text-white underline">
+                      {t.linkedAttachments.open}
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onGetDownloadUrl(attachment.attachment_id)}
+                      className="text-slate-400 underline"
+                    >
+                      {t.linkedAttachments.getDownloadLink}
+                    </button>
+                  )}
+                </div>
+                {downloadUrl && isImage && (
+                  <a href={downloadUrl} target="_blank" rel="noreferrer">
+                    <img
+                      src={downloadUrl}
+                      alt={t.linkedAttachments.attachmentPreviewAlt}
+                      className="mt-1 max-h-48 rounded border border-white/[0.08]"
+                    />
+                  </a>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </>
