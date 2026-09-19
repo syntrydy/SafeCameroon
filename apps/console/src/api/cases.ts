@@ -41,6 +41,23 @@ export interface CaseEvent {
   occurred_at: string;
 }
 
+export interface ListCasesParams {
+  status?: CaseStatus;
+  incidentType?: IncidentType;
+  limit?: number;
+  offset?: number;
+}
+
+export function listCases(token: string, params: ListCasesParams = {}): Promise<Case[]> {
+  const query = new URLSearchParams();
+  if (params.status) query.set("status", params.status);
+  if (params.incidentType) query.set("incident_type", params.incidentType);
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  if (params.offset !== undefined) query.set("offset", String(params.offset));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return apiRequest<Case[]>(`/v1/cases${suffix}`, { token });
+}
+
 export function createCase(token: string, reportId: string, incidentType: IncidentType): Promise<Case> {
   return apiRequest<Case>("/v1/cases", {
     method: "POST",

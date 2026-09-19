@@ -6,6 +6,7 @@ import { BRAND_NAME } from "../config/brand";
 import { useTranslation } from "../i18n/LanguageContext";
 import {
   AlertsIcon,
+  CasesIcon,
   ChevronLeftIcon,
   OrganizationsIcon,
   ReportsIcon,
@@ -70,6 +71,10 @@ export function Sidebar() {
         <NavLink to="/" end className={linkClassName}>
           <ReportsIcon className="h-5 w-5 flex-shrink-0" />
           {!collapsed && <span className="truncate">{t.layout.reports}</span>}
+        </NavLink>
+        <NavLink to="/cases" className={linkClassName}>
+          <CasesIcon className="h-5 w-5 flex-shrink-0" />
+          {!collapsed && <span className="truncate">{t.layout.cases}</span>}
         </NavLink>
         <NavLink to="/alerts" className={linkClassName}>
           <AlertsIcon className="h-5 w-5 flex-shrink-0" />

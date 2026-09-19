@@ -17,6 +17,21 @@ export function ReportsIcon({ className }: IconProps) {
   );
 }
 
+export function CasesIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M9 6.5V5a2 2 0 012-2h2a2 2 0 012 2v1.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <rect x="3.5" y="6.5" width="17" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M3.5 12h17M10.5 12v2h3v-2" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function AlertsIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
