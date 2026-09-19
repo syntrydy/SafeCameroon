@@ -77,7 +77,15 @@ async fn a_subscription_with_every_rule_type_round_trips_through_postgres() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(loaded, subscription);
+    // Field-by-field rather than a whole-struct assert_eq!: `subscription`
+    // is the in-memory, pre-persist value (created_at is still None), while
+    // `loaded` carries the DB-assigned created_at, which this test cannot
+    // predict.
+    assert_eq!(loaded.id(), subscription.id());
+    assert_eq!(loaded.consumer_id(), subscription.consumer_id());
+    assert_eq!(loaded.version(), subscription.version());
+    assert_eq!(loaded.rules(), subscription.rules());
+    assert!(loaded.created_at().is_some());
 }
 
 #[tokio::test]
@@ -221,7 +229,12 @@ async fn updating_a_subscription_persists_the_new_rules_and_version_and_audits_i
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(reloaded, subscription);
+    // See the created_at comment in the round-trip test above.
+    assert_eq!(reloaded.id(), subscription.id());
+    assert_eq!(reloaded.consumer_id(), subscription.consumer_id());
+    assert_eq!(reloaded.version(), subscription.version());
+    assert_eq!(reloaded.rules(), subscription.rules());
+    assert!(reloaded.created_at().is_some());
 
     let (count,): (i64,) = sqlx::query_as(
         "SELECT count(*) FROM audit_events WHERE resource_id = $1 AND action = 'SUBSCRIPTION_UPDATED' AND request_id = $2",
