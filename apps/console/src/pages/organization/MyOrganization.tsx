@@ -16,17 +16,21 @@ import { CreateSubscriptionForm } from "../subscriptions/CreateSubscriptionForm"
 import { DeliveryPreferenceForm } from "../subscriptions/DeliveryPreferenceForm";
 import { SubscriptionCard } from "../subscriptions/SubscriptionCard";
 
-/** An org admin's own-organization view: read-only org detail (trust
- * grants are the platform's decision, not the org's own — see
- * pages/organizations/Organizations.tsx) plus the member list and an
- * invite form, both scoped to this org by the backend
- * (`require_platform_admin_or_org_admin_of` in apps/api/src/organizations.rs). */
+/** A reviewer's own-organization view: read-only org detail (trust grants
+ * are the platform's decision, not the org's own — see
+ * pages/organizations/Organizations.tsx) and member list, scoped to this
+ * org by the backend (`require_membership_of` in
+ * apps/api/src/organizations.rs) — any `MEMBER`/`ORG_ADMIN`/`PLATFORM_ADMIN`
+ * of the org may see it. The invite form is further restricted to an
+ * `ORG_ADMIN`/`PLATFORM_ADMIN` (`require_platform_admin_or_org_admin_of`),
+ * since a plain member may not grant membership. */
 export function MyOrganization() {
   const { t } = useTranslation();
   const { session } = useAuth();
-  // Safe: this page only renders inside <RequireAuth>/<RequireOrgAdmin>.
+  // Safe: this page only renders inside <RequireAuth>/<RequireOrgMember>.
   const token = session!.token;
   const organizationId = session!.organizationId;
+  const canInviteMembers = session!.role === "ORG_ADMIN" || session!.role === "PLATFORM_ADMIN";
 
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [members, setMembers] = useState<Member[] | null>(null);
@@ -183,39 +187,41 @@ export function MyOrganization() {
         </>
       )}
 
-      <form
-        onSubmit={(event) => void handleInvite(event)}
-        className="mb-6 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4"
-      >
-        <h2 className="mb-3 text-sm font-semibold text-white">{t.myOrganization.inviteHeading}</h2>
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="flex-1">
-            <label htmlFor="invite-member-email" className="mb-1 block text-xs text-slate-400">
-              {t.myOrganization.emailLabel}
-            </label>
-            <input
-              id="invite-member-email"
-              type="email"
-              value={inviteEmail}
-              placeholder={t.myOrganization.emailPlaceholder}
-              onChange={(event) => setInviteEmail(event.target.value)}
-              className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-            />
+      {canInviteMembers && (
+        <form
+          onSubmit={(event) => void handleInvite(event)}
+          className="mb-6 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4"
+        >
+          <h2 className="mb-3 text-sm font-semibold text-white">{t.myOrganization.inviteHeading}</h2>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex-1">
+              <label htmlFor="invite-member-email" className="mb-1 block text-xs text-slate-400">
+                {t.myOrganization.emailLabel}
+              </label>
+              <input
+                id="invite-member-email"
+                type="email"
+                value={inviteEmail}
+                placeholder={t.myOrganization.emailPlaceholder}
+                onChange={(event) => setInviteEmail(event.target.value)}
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={inviting || !inviteEmail.trim()}
+              className="rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {inviting ? t.myOrganization.inviting : t.myOrganization.invite}
+            </button>
           </div>
-          <button
-            type="submit"
-            disabled={inviting || !inviteEmail.trim()}
-            className="rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {inviting ? t.myOrganization.inviting : t.myOrganization.invite}
-          </button>
-        </div>
-        {inviteError && (
-          <p role="alert" className="mt-2 text-sm text-red-300">
-            {inviteError}
-          </p>
-        )}
-      </form>
+          {inviteError && (
+            <p role="alert" className="mt-2 text-sm text-red-300">
+              {inviteError}
+            </p>
+          )}
+        </form>
+      )}
 
       <h2 className="mb-2 text-xs font-semibold tracking-wide text-slate-300 uppercase">
         {t.organizations.membersHeading}

@@ -309,32 +309,20 @@ describe("console auth flow", () => {
     expect(await screen.findByRole("heading", { name: "Organizations" })).toBeInTheDocument();
   });
 
-  it("hides the My organization link for a plain member", async () => {
-    stubBackend("MEMBER");
-    const user = userEvent.setup();
-    renderApp("/login");
 
-    await user.click(screen.getByRole("button", { name: "Fake Google Sign-In" }));
-    await screen.findByRole("heading", { name: "Review queue" });
-
-    expect(screen.queryByRole("link", { name: "My organization" })).not.toBeInTheDocument();
-  });
-
-  it("shows the My organization link for an org admin and lets them invite a member", async () => {
+  it("lands an org admin on their own organization after login and lets them invite a member", async () => {
     const organizationId = "55555555-5555-5555-5555-555555555555";
     stubBackend("ORG_ADMIN", organizationId);
     const user = userEvent.setup();
     renderApp("/login");
 
     await user.click(screen.getByRole("button", { name: "Fake Google Sign-In" }));
-    await screen.findByRole("heading", { name: "Review queue" });
 
+    // An org admin has an organization, so login lands them on it directly
+    // rather than the global review queue (Login.tsx's defaultDestination).
+    expect(await screen.findByRole("heading", { name: "Douala Police" })).toBeInTheDocument();
     expect(screen.getByText(`Org admin ${LOGIN_RESPONSE.email}`)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Organizations" })).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("link", { name: "My organization" }));
-
-    expect(await screen.findByRole("heading", { name: "Douala Police" })).toBeInTheDocument();
 
     // The org's linked consumer's notification setup is reachable from the
     // same page: no delivery preference yet, and it can be set.
@@ -351,6 +339,22 @@ describe("console auth flow", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Email")).toHaveValue("");
     });
+  });
+
+  it("lands a plain member on their own organization after login, read-only", async () => {
+    const organizationId = "55555555-5555-5555-5555-555555555555";
+    stubBackend("MEMBER", organizationId);
+    const user = userEvent.setup();
+    renderApp("/login");
+
+    await user.click(screen.getByRole("button", { name: "Fake Google Sign-In" }));
+
+    expect(await screen.findByRole("heading", { name: "Douala Police" })).toBeInTheDocument();
+    // A plain member may see their organization but not grant membership
+    // into it -- the invite form is org-admin/platform-admin only.
+    expect(screen.queryByRole("button", { name: "Invite" })).not.toBeInTheDocument();
+
+    expect(screen.getByRole("link", { name: "My organization" })).toBeInTheDocument();
   });
 
   it("lets a platform admin create an organization and invite its first org admin", async () => {

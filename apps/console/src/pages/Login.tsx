@@ -43,7 +43,10 @@ export function Login() {
 
   if (session) {
     const state = location.state as LocationState | null;
-    return <Navigate to={state?.from?.pathname ?? "/"} replace />;
+    // A reviewer with an organization lands on it (my-organization); a
+    // platform admin has none and lands on the global review queue instead.
+    const defaultDestination = session.organizationId ? "/my-organization" : "/";
+    return <Navigate to={state?.from?.pathname ?? defaultDestination} replace />;
   }
 
   return (

@@ -3,7 +3,7 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import { AppLayout } from "./components/AppLayout";
 import { RequireAuth } from "./auth/RequireAuth";
-import { RequireOrgAdmin } from "./auth/RequireOrgAdmin";
+import { RequireOrgMember } from "./auth/RequireOrgMember";
 import { RequirePlatformAdmin } from "./auth/RequirePlatformAdmin";
 import { BRAND_NAME } from "./config/brand";
 import { AlertList } from "./pages/alerts/AlertList";
@@ -50,9 +50,9 @@ export function App() {
           <Route
             path="/my-organization"
             element={
-              <RequireOrgAdmin>
+              <RequireOrgMember>
                 <MyOrganization />
-              </RequireOrgAdmin>
+              </RequireOrgMember>
             }
           />
           <Route
