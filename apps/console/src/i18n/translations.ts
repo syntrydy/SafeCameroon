@@ -192,6 +192,9 @@ export interface Translations {
     fieldSafeDescription: string;
     fieldOfficialContact: string;
     fieldCaseReference: string;
+    geographySuggestions: string[];
+    incidentCategorySuggestions: string[];
+    timeWindowSuggestions: string[];
   };
   deliveryList: {
     heading: (shortId: string) => string;
@@ -535,6 +538,36 @@ export const translations: Record<Locale, Translations> = {
       fieldSafeDescription: "Safe description",
       fieldOfficialContact: "Official contact",
       fieldCaseReference: "Case reference",
+      geographySuggestions: [
+        "Douala, Bonamoussadi",
+        "Douala, Akwa",
+        "Douala, Bonaberi",
+        "Yaoundé, Bastos",
+        "Yaoundé, Mvog-Ada",
+        "Yaoundé, Etoudi",
+        "Bafoussam",
+        "Bamenda",
+        "Buea",
+        "Limbe",
+        "Garoua",
+        "Maroua",
+        "Ngaoundéré",
+        "Kribi",
+      ],
+      incidentCategorySuggestions: [
+        "Suspected abduction by a stranger",
+        "Family or custody dispute",
+        "Ran away from home",
+        "Lost or wandered off",
+        "Circumstances unknown",
+      ],
+      timeWindowSuggestions: [
+        "Within the last hour",
+        "Within the last 3 hours",
+        "Within the last 6 hours",
+        "Since yesterday",
+        "Time unknown",
+      ],
     },
     deliveryList: {
       heading: (shortId) => `Deliveries for alert ${shortId}`,
@@ -879,6 +912,36 @@ export const translations: Record<Locale, Translations> = {
       fieldSafeDescription: "Description sécurisée",
       fieldOfficialContact: "Contact officiel",
       fieldCaseReference: "Référence du dossier",
+      geographySuggestions: [
+        "Douala, Bonamoussadi",
+        "Douala, Akwa",
+        "Douala, Bonaberi",
+        "Yaoundé, Bastos",
+        "Yaoundé, Mvog-Ada",
+        "Yaoundé, Etoudi",
+        "Bafoussam",
+        "Bamenda",
+        "Buea",
+        "Limbe",
+        "Garoua",
+        "Maroua",
+        "Ngaoundéré",
+        "Kribi",
+      ],
+      incidentCategorySuggestions: [
+        "Enlèvement présumé par un inconnu",
+        "Conflit familial ou de garde",
+        "Fugue du domicile",
+        "Perdu(e) ou égaré(e)",
+        "Circonstances inconnues",
+      ],
+      timeWindowSuggestions: [
+        "Au cours de la dernière heure",
+        "Au cours des 3 dernières heures",
+        "Au cours des 6 dernières heures",
+        "Depuis hier",
+        "Heure inconnue",
+      ],
     },
     deliveryList: {
       heading: (shortId) => `Envois pour l'alerte ${shortId}`,
