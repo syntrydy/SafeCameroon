@@ -84,9 +84,11 @@ async fn require_platform_admin(
 }
 
 /// A platform admin may view any organization; an org admin may view only
-/// their own — this is the "manage my organization" route (member list,
-/// read-only org detail), distinct from the platform-wide organization
-/// management above, which stays platform-admin-only.
+/// their own — this is the "manage my organization" route's mutating
+/// actions (profile edits, invites), distinct from the platform-wide
+/// organization management above, which stays platform-admin-only, and from
+/// [`require_membership_of`] below, which also lets a plain `Member` read
+/// (but not edit) their own organization.
 async fn require_platform_admin_or_org_admin_of(
     state: &AppState,
     actor: Actor,
@@ -109,6 +111,40 @@ async fn require_platform_admin_or_org_admin_of(
         Some(Membership {
             role: Role::OrgAdmin,
             organization_id: Some(own_organization_id),
+        }) if own_organization_id == organization_id => Ok(()),
+        _ => Err(not_authorized_for_organization(request_id)),
+    }
+}
+
+/// A platform admin may view any organization; any reviewer belonging to an
+/// organization — `Member` or `OrgAdmin` — may view only their own. This is
+/// the read side of the "manage my organization" route (org detail, member
+/// list): every reviewer lands here after signing in and should be able to
+/// see their own organization even if only an `OrgAdmin`/`PlatformAdmin` can
+/// edit it (see [`require_platform_admin_or_org_admin_of`] for the write
+/// side, e.g. `update_organization_profile`).
+async fn require_membership_of(
+    state: &AppState,
+    actor: Actor,
+    organization_id: OrganizationId,
+    request_id: Uuid,
+) -> Result<(), ApiError> {
+    let Actor::Reviewer(reviewer_id) = actor else {
+        return Err(not_authorized_for_organization(request_id));
+    };
+    let membership = state
+        .organizations
+        .find_membership(reviewer_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+    match membership {
+        Some(Membership {
+            role: Role::PlatformAdmin,
+            ..
+        }) => Ok(()),
+        Some(Membership {
+            organization_id: Some(own_organization_id),
+            ..
         }) if own_organization_id == organization_id => Ok(()),
         _ => Err(not_authorized_for_organization(request_id)),
     }
@@ -233,7 +269,7 @@ pub async fn get_organization(
     )
     .await?;
     let organization_id = OrganizationId::from_uuid(organization_id);
-    require_platform_admin_or_org_admin_of(&state, actor, organization_id, request_id).await?;
+    require_membership_of(&state, actor, organization_id, request_id).await?;
 
     let organization = state
         .organizations
@@ -474,7 +510,7 @@ pub async fn list_members(
     )
     .await?;
     let organization_id = OrganizationId::from_uuid(organization_id);
-    require_platform_admin_or_org_admin_of(&state, actor, organization_id, request_id).await?;
+    require_membership_of(&state, actor, organization_id, request_id).await?;
 
     state
         .organizations

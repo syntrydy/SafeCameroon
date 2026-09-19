@@ -84,7 +84,7 @@ export function Sidebar() {
           <SubscriptionsIcon className="h-5 w-5 flex-shrink-0" />
           {!collapsed && <span className="truncate">{t.layout.subscriptions}</span>}
         </NavLink>
-        {session?.role === "ORG_ADMIN" && (
+        {(session?.role === "ORG_ADMIN" || session?.role === "MEMBER") && (
           <NavLink to="/my-organization" className={linkClassName}>
             <OrganizationsIcon className="h-5 w-5 flex-shrink-0" />
             {!collapsed && <span className="truncate">{t.layout.myOrganization}</span>}

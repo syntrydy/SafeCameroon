@@ -299,10 +299,14 @@ pub struct ListAllSubscriptionsQuery {
 }
 
 /// Every subscription across every consumer, most recently created first --
-/// deliberately not org-scoped, matching how `list_alerts`/`list_organizations`
-/// also give any identified reviewer flat bulk visibility (subscriptions are
-/// not yet citizen self-service, AGENTS.md; a finer-grained restriction is a
-/// separate, unrequested concern).
+/// but only for a `PlatformAdmin`, who oversees the whole platform. An
+/// `OrgAdmin`/`Member` instead sees only their own organization's own
+/// subscriptions (via `Organization::consumer_id`, the same link
+/// `authorize_consumer_access` already uses for single-consumer endpoints)
+/// -- the platform-wide bulk list is a platform-admin tool, not something
+/// every reviewer should see. A reviewer with no organization at all (and
+/// not a platform admin) has no "own" subscriptions to show, so sees an
+/// empty list rather than the global one.
 pub async fn list_all_subscriptions(
     State(state): State<AppState>,
     Query(query): Query<ListAllSubscriptionsQuery>,
@@ -318,14 +322,48 @@ pub async fn list_all_subscriptions(
     .await?;
     authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
 
-    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as i64;
-    let offset = query.offset.unwrap_or(0) as i64;
-
-    let subscriptions = state
-        .subscriptions
-        .list_all_page(limit, offset)
+    let Actor::Reviewer(reviewer_id) = actor else {
+        // `authorize(actor, Capability::ManageSubscriptions)` already
+        // rejected `Actor::Automated` before this is ever called.
+        return Err(not_authorized(request_id));
+    };
+    let membership = state
+        .organizations
+        .find_membership(reviewer_id)
         .await
-        .map_err(|_| persistence_failed(request_id))?;
+        .map_err(|_| persistence_failed(request_id))?
+        .unwrap_or(Membership {
+            role: Role::Member,
+            organization_id: None,
+        });
+
+    let subscriptions = if membership.role == Role::PlatformAdmin {
+        let limit = query.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as i64;
+        let offset = query.offset.unwrap_or(0) as i64;
+        state
+            .subscriptions
+            .list_all_page(limit, offset)
+            .await
+            .map_err(|_| persistence_failed(request_id))?
+    } else {
+        let consumer_id = match membership.organization_id {
+            Some(organization_id) => state
+                .organizations
+                .find_by_id(organization_id)
+                .await
+                .map_err(|_| persistence_failed(request_id))?
+                .and_then(|organization| organization.consumer_id()),
+            None => None,
+        };
+        match consumer_id {
+            Some(consumer_id) => state
+                .subscriptions
+                .find_by_consumer(consumer_id)
+                .await
+                .map_err(|_| persistence_failed(request_id))?,
+            None => Vec::new(),
+        }
+    };
 
     Ok(Json(
         subscriptions.iter().map(subscription_response).collect(),

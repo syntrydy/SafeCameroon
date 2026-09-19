@@ -4799,7 +4799,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
-    async fn a_plain_member_may_not_view_organization_detail_or_members() {
+    async fn a_plain_member_may_view_their_own_organizations_detail_and_members() {
         let pool = test_pool().await;
         let app = build_router(test_state(pool));
         let platform_admin = login_reviewer(app.clone()).await;
@@ -4807,6 +4807,9 @@ mod tests {
         let member =
             register_and_login(app.clone(), &platform_admin, "MEMBER", Some(&org_id)).await;
 
+        // A plain member lands on their own org after login (the console's
+        // default route for a non-platform-admin), so it must be readable
+        // even though only an OrgAdmin/PlatformAdmin may edit it.
         let response = app
             .clone()
             .oneshot(
@@ -4819,7 +4822,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(response.status(), StatusCode::OK);
 
         let response = app
             .oneshot(
@@ -4827,6 +4830,47 @@ mod tests {
                     .method("GET")
                     .uri(format!("/v1/organizations/{org_id}/members"))
                     .header("Authorization", format!("Bearer {member}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await.as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_plain_member_may_not_view_another_organizations_detail_or_members() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let douala_org = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+        let yaounde_org =
+            create_organization(app.clone(), &platform_admin, "Yaounde Association").await;
+        let douala_member =
+            register_and_login(app.clone(), &platform_admin, "MEMBER", Some(&douala_org)).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/organizations/{yaounde_org}"))
+                    .header("Authorization", format!("Bearer {douala_member}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/organizations/{yaounde_org}/members"))
+                    .header("Authorization", format!("Bearer {douala_member}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -4994,6 +5038,63 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn an_org_admin_lists_only_their_own_organizations_subscriptions() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+
+        let (org_a_id, org_a_consumer_id) =
+            create_organization_with_consumer(app.clone(), &platform_admin, "Org A").await;
+        let (_org_b_id, org_b_consumer_id) =
+            create_organization_with_consumer(app.clone(), &platform_admin, "Org B").await;
+
+        let create = |consumer_id: &str| {
+            Request::builder()
+                .method("POST")
+                .uri("/v1/subscriptions")
+                .header("content-type", "application/json")
+                .header("Authorization", format!("Bearer {platform_admin}"))
+                .body(Body::from(
+                    json!({
+                        "consumer_id": consumer_id,
+                        "rules": [{"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]}]
+                    })
+                    .to_string(),
+                ))
+                .unwrap()
+        };
+        for consumer_id in [&org_a_consumer_id, &org_b_consumer_id] {
+            let response = app.clone().oneshot(create(consumer_id)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::CREATED);
+        }
+
+        let org_a_admin =
+            register_and_login(app.clone(), &platform_admin, "ORG_ADMIN", Some(&org_a_id)).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/subscriptions")
+                    .header("Authorization", format!("Bearer {org_a_admin}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let listed = json_body(response).await;
+        let listed = listed.as_array().unwrap();
+        assert_eq!(
+            listed.len(),
+            1,
+            "an org admin must see only their own organization's subscriptions, not org B's"
+        );
+        assert_eq!(listed[0]["consumer_id"], json!(org_a_consumer_id));
     }
 
     #[tokio::test]
