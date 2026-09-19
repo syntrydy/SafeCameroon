@@ -3,12 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ExtractionPanel } from "./ExtractionPanel";
+import type { ExtractedFields } from "../../api/extractions";
 import { LanguageProvider } from "../../i18n/LanguageContext";
 
-function renderPanel(token: string, reportId: string) {
+function renderPanel(token: string, reportId: string, onApply?: (fields: ExtractedFields) => void) {
   return render(
     <LanguageProvider>
-      <ExtractionPanel token={token} reportId={reportId} />
+      <ExtractionPanel token={token} reportId={reportId} onApply={onApply} />
     </LanguageProvider>,
   );
 }
@@ -76,6 +77,48 @@ describe("ExtractionPanel", () => {
     });
     expect(screen.getByText("Douala")).toBeInTheDocument();
     expect(screen.getByText("openrouter/openai/gpt-4o-mini")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Apply to alert form" })).not.toBeInTheDocument();
+  });
+
+  it("offers an apply action only when onApply is given, and calls it with the extraction's fields", async () => {
+    const extractedFields = {
+      person_description: "a young girl in a blue uniform",
+      age: "about 8 years old",
+      time: null,
+      place: "Douala",
+      incident_category: null,
+      vehicle_details: null,
+      contact_request: null,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_input: string, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "GET") {
+          return Promise.resolve(jsonResponse(200, []));
+        }
+        return Promise.resolve(
+          jsonResponse(201, {
+            report_id: "report-1",
+            requested_by: "reviewer-1",
+            provider: "OPENROUTER",
+            model: "openai/gpt-4o-mini",
+            prompt_version: "v1",
+            fields: extractedFields,
+          }),
+        );
+      }),
+    );
+    const onApply = vi.fn();
+    const user = userEvent.setup();
+    renderPanel("token-1", "report-1", onApply);
+
+    await user.click(screen.getByRole("button", { name: "AI extraction" }));
+    await user.click(await screen.findByRole("button", { name: "Extract candidate info" }));
+
+    const applyButton = await screen.findByRole("button", { name: "Apply to alert form" });
+    await user.click(applyButton);
+
+    expect(onApply).toHaveBeenCalledWith(extractedFields);
   });
 
   it("shows the backend's error message when extraction fails", async () => {

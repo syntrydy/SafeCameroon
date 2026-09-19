@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 
-import { createExtraction, listExtractions, type Extraction } from "../../api/extractions";
+import { createExtraction, listExtractions, type Extraction, type ExtractedFields } from "../../api/extractions";
 import { ApiError } from "../../api/client";
 import { useTranslation } from "../../i18n/LanguageContext";
 import type { Translations } from "../../i18n/translations";
@@ -34,7 +34,17 @@ function ExtractionFields({ fields, t }: { fields: Extraction["fields"]; t: Tran
   );
 }
 
-export function ExtractionPanel({ token, reportId }: { token: string; reportId: string }) {
+interface ExtractionPanelProps {
+  token: string;
+  reportId: string;
+  // When set, each listed extraction gets an "apply" action that hands its
+  // fields to the caller instead of only displaying them read-only --
+  // used by the case detail page to prefill the create-alert form. Omitted
+  // entirely on the review queue, where there is no form to fill yet.
+  onApply?: (fields: ExtractedFields) => void;
+}
+
+export function ExtractionPanel({ token, reportId, onApply }: ExtractionPanelProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [extractions, setExtractions] = useState<Extraction[]>([]);
@@ -116,9 +126,20 @@ export function ExtractionPanel({ token, reportId }: { token: string; reportId: 
         {extractions.map((extraction, index) => (
           <li key={index} className="rounded bg-white/[0.05] p-2">
             <ExtractionFields fields={extraction.fields} t={t} />
-            <p className="mt-1 text-[10px] text-slate-400">
-              {extraction.provider.toLowerCase()}/{extraction.model}
-            </p>
+            <div className="mt-1 flex items-center justify-between">
+              <p className="text-[10px] text-slate-400">
+                {extraction.provider.toLowerCase()}/{extraction.model}
+              </p>
+              {onApply && (
+                <button
+                  type="button"
+                  onClick={() => onApply(extraction.fields)}
+                  className="text-[10px] font-medium text-indigo-300 underline"
+                >
+                  {t.extraction.applyButton}
+                </button>
+              )}
+            </div>
           </li>
         ))}
       </ul>

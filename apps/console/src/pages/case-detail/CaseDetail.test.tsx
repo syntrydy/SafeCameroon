@@ -94,6 +94,29 @@ function stubBackend() {
           jsonResponse(200, { download_url: "https://storage.example/signed", expires_in_seconds: 60 }),
         );
       }
+      if (url.pathname === `/v1/reports/${REPORT_ID}/extractions` && method === "GET") {
+        return Promise.resolve(jsonResponse(200, []));
+      }
+      if (url.pathname === `/v1/reports/${REPORT_ID}/extractions` && method === "POST") {
+        return Promise.resolve(
+          jsonResponse(201, {
+            report_id: REPORT_ID,
+            requested_by: "reviewer-1",
+            provider: "OPENROUTER",
+            model: "openai/gpt-4o-mini",
+            prompt_version: "v1",
+            fields: {
+              person_description: "an 8-year-old girl in a blue school uniform",
+              age: "8 years old",
+              time: "around 3:15 PM",
+              place: "Carrefour Bonamoussadi, Douala",
+              incident_category: "Did not return from school",
+              vehicle_details: null,
+              contact_request: null,
+            },
+          }),
+        );
+      }
       if (url.pathname === `/v1/cases/${CASE_ID}/alerts` && method === "POST") {
         const body = JSON.parse(init?.body as string) as {
           severity: string;
@@ -250,6 +273,30 @@ describe("CaseDetail", () => {
     await user.click(screen.getByRole("button", { name: "Create alert" }));
 
     await screen.findByRole("heading", { name: `Alert ${ALERT_ID.slice(0, 8)}` });
+  });
+
+  it("applies a report's AI extraction into the create-alert form without overwriting typed fields", async () => {
+    caseData = { ...caseData, status: "VERIFIED" };
+    const user = await loginAndReachCase();
+
+    await user.type(screen.getByLabelText("Approximate age"), "9 years old, per a witness");
+
+    await user.click(screen.getByRole("button", { name: "AI extraction" }));
+    await user.click(await screen.findByRole("button", { name: "Extract candidate info" }));
+    await user.click(await screen.findByRole("button", { name: "Apply to alert form" }));
+
+    expect(
+      await screen.findByText("Filled in from the report's AI suggestion -- review every value before sending."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Target geography")).toHaveValue("Carrefour Bonamoussadi, Douala");
+    expect(screen.getByLabelText("Last seen (general area)")).toHaveValue("Carrefour Bonamoussadi, Douala");
+    expect(screen.getByLabelText("Time window")).toHaveValue("around 3:15 PM");
+    expect(screen.getByLabelText("Incident category")).toHaveValue("Did not return from school");
+    expect(screen.getByLabelText("Safe description")).toHaveValue(
+      "an 8-year-old girl in a blue school uniform",
+    );
+    // Already-typed fields are never clobbered by an applied suggestion.
+    expect(screen.getByLabelText("Approximate age")).toHaveValue("9 years old, per a witness");
   });
 
   it("does not offer alert creation before a case is verified", async () => {
