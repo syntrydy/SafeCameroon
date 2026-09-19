@@ -218,6 +218,11 @@ export interface Translations {
     addSubscription: string;
     creating: string;
     createSubscription: string;
+    allSubscriptionsHeading: string;
+    noSubscriptionsAtAll: string;
+    consumerLabel: string;
+    viewConsumer: string;
+    loadMore: string;
   };
   subscriptionCard: {
     edit: string;
@@ -529,6 +534,11 @@ export const translations: Record<Locale, Translations> = {
       addSubscription: "Add subscription",
       creating: "Creating...",
       createSubscription: "Create subscription",
+      allSubscriptionsHeading: "All subscriptions",
+      noSubscriptionsAtAll: "No subscriptions exist yet.",
+      consumerLabel: "Consumer",
+      viewConsumer: "View consumer",
+      loadMore: "Load more",
     },
     subscriptionCard: {
       edit: "Edit",
@@ -841,6 +851,11 @@ export const translations: Record<Locale, Translations> = {
       addSubscription: "Ajouter un abonnement",
       creating: "Création...",
       createSubscription: "Créer l'abonnement",
+      allSubscriptionsHeading: "Tous les abonnements",
+      noSubscriptionsAtAll: "Aucun abonnement n'existe pour l'instant.",
+      consumerLabel: "Consommateur",
+      viewConsumer: "Voir le consommateur",
+      loadMore: "Charger plus",
     },
     subscriptionCard: {
       edit: "Modifier",

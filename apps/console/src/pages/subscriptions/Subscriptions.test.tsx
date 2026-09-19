@@ -61,6 +61,9 @@ function stubBackend() {
       if (url.pathname === `/v1/consumers/${CONSUMER.consumer_id}/subscriptions` && method === "GET") {
         return Promise.resolve(jsonResponse(200, subscriptions));
       }
+      if (url.pathname === "/v1/subscriptions" && method === "GET") {
+        return Promise.resolve(jsonResponse(200, subscriptions));
+      }
       if (url.pathname === "/v1/subscriptions" && method === "POST") {
         const body = JSON.parse(init?.body as string) as { rules: SubscriptionRule[] };
         const created: Subscription = {
@@ -134,6 +137,25 @@ afterEach(() => {
 });
 
 describe("Subscriptions", () => {
+  it("lists every subscription and can jump to its consumer", async () => {
+    subscriptions = [
+      {
+        subscription_id: "ffffffff-6666-6666-6666-666666666666",
+        consumer_id: CONSUMER.consumer_id,
+        version: 1,
+        rules: [{ rule: "INCIDENT_TYPE", values: ["MISSING_CHILD"] }],
+      },
+    ];
+    const user = await loginAndReachSubscriptions();
+
+    await screen.findByText("Incident type: MISSING_CHILD");
+    expect(screen.getByText(CONSUMER.consumer_id)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "View consumer" }));
+
+    await screen.findByText("Douala Police");
+  });
+
   it("looks up an existing consumer by id and shows it has no subscriptions yet", async () => {
     const user = await loginAndReachSubscriptions();
 
@@ -229,6 +251,9 @@ describe("Subscriptions", () => {
       vi.fn().mockImplementation((input: string, init?: RequestInit) => {
         const url = new URL(input, "http://localhost");
         if (url.pathname === "/v1/auth/google") return Promise.resolve(jsonResponse(200, LOGIN_RESPONSE));
+        if (url.pathname === "/v1/subscriptions" && (init?.method ?? "GET") === "GET") {
+          return Promise.resolve(jsonResponse(200, []));
+        }
         if (url.pathname.startsWith("/v1/consumers/")) {
           return Promise.resolve(
             jsonResponse(404, {

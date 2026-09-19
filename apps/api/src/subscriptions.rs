@@ -13,7 +13,7 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
 };
 use safe_cameroon_application::authorization::{
@@ -270,6 +270,51 @@ pub async fn create_subscription(
     Ok((
         StatusCode::CREATED,
         Json(subscription_response(&subscription)),
+    ))
+}
+
+const DEFAULT_LIMIT: u32 = 50;
+/// A hard ceiling regardless of what the caller asks for, so a single
+/// request can never force an unbounded scan/response.
+const MAX_LIMIT: u32 = 100;
+
+#[derive(Deserialize)]
+pub struct ListAllSubscriptionsQuery {
+    limit: Option<u32>,
+    offset: Option<u32>,
+}
+
+/// Every subscription across every consumer, most recently created first --
+/// deliberately not org-scoped, matching how `list_alerts`/`list_organizations`
+/// also give any identified reviewer flat bulk visibility (subscriptions are
+/// not yet citizen self-service, AGENTS.md; a finer-grained restriction is a
+/// separate, unrequested concern).
+pub async fn list_all_subscriptions(
+    State(state): State<AppState>,
+    Query(query): Query<ListAllSubscriptionsQuery>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<SubscriptionResponse>>, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    authorize(actor, Capability::ManageSubscriptions).map_err(|_| not_authorized(request_id))?;
+
+    let limit = query.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as i64;
+    let offset = query.offset.unwrap_or(0) as i64;
+
+    let subscriptions = state
+        .subscriptions
+        .list_all_page(limit, offset)
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+
+    Ok(Json(
+        subscriptions.iter().map(subscription_response).collect(),
     ))
 }
 

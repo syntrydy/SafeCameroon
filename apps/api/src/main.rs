@@ -330,7 +330,7 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/deliveries/{id}", get(deliveries::get_delivery))
         .route(
             "/v1/subscriptions",
-            post(subscriptions::create_subscription),
+            get(subscriptions::list_all_subscriptions).post(subscriptions::create_subscription),
         )
         .route(
             "/v1/subscriptions/{id}",
@@ -4906,6 +4906,77 @@ mod tests {
         let listed = json_body(response).await;
         assert_eq!(listed.as_array().unwrap().len(), 1);
         assert_eq!(listed[0]["subscription_id"], body["subscription_id"]);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_lists_all_subscriptions_across_consumers() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+        let create = |consumer_id: Uuid| {
+            Request::builder()
+                .method("POST")
+                .uri("/v1/subscriptions")
+                .header("content-type", "application/json")
+                .header("Authorization", format!("Bearer {reviewer}"))
+                .body(Body::from(
+                    json!({
+                        "consumer_id": consumer_id,
+                        "rules": [{"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]}]
+                    })
+                    .to_string(),
+                ))
+                .unwrap()
+        };
+
+        let first_consumer_id = Uuid::new_v4();
+        let second_consumer_id = Uuid::new_v4();
+        for consumer_id in [first_consumer_id, second_consumer_id] {
+            let response = app.clone().oneshot(create(consumer_id)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::CREATED);
+        }
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/subscriptions")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let listed = json_body(response).await;
+        let listed = listed.as_array().unwrap();
+        assert!(listed.len() >= 2);
+        let consumer_ids: Vec<_> = listed
+            .iter()
+            .map(|subscription| subscription["consumer_id"].clone())
+            .collect();
+        assert!(consumer_ids.contains(&json!(first_consumer_id)));
+        assert!(consumer_ids.contains(&json!(second_consumer_id)));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn listing_all_subscriptions_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/subscriptions")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

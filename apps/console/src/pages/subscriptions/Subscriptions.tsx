@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
@@ -6,6 +6,7 @@ import { useTranslation } from "../../i18n/LanguageContext";
 import { getConsumer, registerConsumer, type Consumer, type ConsumerType } from "../../api/consumers";
 import {
   getDeliveryPreference,
+  listAllSubscriptions,
   listSubscriptionsForConsumer,
   type DeliveryPreference,
   type Subscription,
@@ -13,6 +14,8 @@ import {
 import { CreateSubscriptionForm } from "./CreateSubscriptionForm";
 import { DeliveryPreferenceForm } from "./DeliveryPreferenceForm";
 import { SubscriptionCard } from "./SubscriptionCard";
+
+const ALL_SUBSCRIPTIONS_PAGE_SIZE = 50;
 
 export function Subscriptions() {
   const { t } = useTranslation();
@@ -26,6 +29,11 @@ export function Subscriptions() {
   const [deliveryPreference, setDeliveryPreference] = useState<DeliveryPreference | null>(null);
   const [loadingData, setLoadingData] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
+
+  const [allSubscriptions, setAllSubscriptions] = useState<Subscription[]>([]);
+  const [allSubscriptionsLoading, setAllSubscriptionsLoading] = useState(false);
+  const [allSubscriptionsError, setAllSubscriptionsError] = useState<string | null>(null);
+  const [hasMoreSubscriptions, setHasMoreSubscriptions] = useState(true);
 
   const { session } = useAuth();
   // Safe: this page only renders inside <RequireAuth>.
@@ -51,17 +59,45 @@ export function Subscriptions() {
     setLoadingData(false);
   }
 
-  async function handleLookup(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function viewConsumer(consumerId: string) {
     setLookupError(null);
     try {
-      const found = await getConsumer(token, consumerIdInput.trim());
+      const found = await getConsumer(token, consumerId);
       setConsumer(found);
       await loadConsumerData(found.consumer_id);
     } catch (cause) {
       setLookupError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     }
   }
+
+  async function handleLookup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await viewConsumer(consumerIdInput.trim());
+  }
+
+  const loadAllSubscriptions = useCallback(
+    async (offset: number) => {
+      setAllSubscriptionsLoading(true);
+      setAllSubscriptionsError(null);
+      try {
+        const page = await listAllSubscriptions(token, {
+          limit: ALL_SUBSCRIPTIONS_PAGE_SIZE,
+          offset,
+        });
+        setAllSubscriptions((current) => (offset === 0 ? page : [...current, ...page]));
+        setHasMoreSubscriptions(page.length === ALL_SUBSCRIPTIONS_PAGE_SIZE);
+      } catch (cause) {
+        setAllSubscriptionsError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
+      } finally {
+        setAllSubscriptionsLoading(false);
+      }
+    },
+    [token, t],
+  );
+
+  useEffect(() => {
+    void loadAllSubscriptions(0);
+  }, [loadAllSubscriptions]);
 
   async function handleCreateConsumer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -135,7 +171,60 @@ export function Subscriptions() {
             </button>
           </form>
         </div>
-      ) : (
+      ) : null}
+
+      {!consumer && (
+        <section className="mt-6 rounded border border-white/[0.08] p-4">
+          <h2 className="mb-2 text-sm font-semibold text-white">
+            {t.subscriptions.allSubscriptionsHeading}
+          </h2>
+          {allSubscriptionsError && (
+            <p role="alert" className="mb-2 rounded border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+              {allSubscriptionsError}
+            </p>
+          )}
+          {allSubscriptions.length === 0 && !allSubscriptionsLoading && !allSubscriptionsError && (
+            <p className="text-sm text-slate-500">{t.subscriptions.noSubscriptionsAtAll}</p>
+          )}
+          {allSubscriptions.map((subscription) => (
+            <div key={subscription.subscription_id}>
+              <div className="mb-1 flex items-center gap-2 text-xs text-slate-500">
+                <span>
+                  {t.subscriptions.consumerLabel}: <span className="font-mono">{subscription.consumer_id}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void viewConsumer(subscription.consumer_id)}
+                  className="font-medium text-emerald-400 underline"
+                >
+                  {t.subscriptions.viewConsumer}
+                </button>
+              </div>
+              <SubscriptionCard
+                token={token}
+                subscription={subscription}
+                onUpdated={(updated) =>
+                  setAllSubscriptions((current) =>
+                    current.map((s) => (s.subscription_id === updated.subscription_id ? updated : s)),
+                  )
+                }
+              />
+            </div>
+          ))}
+          {allSubscriptionsLoading && <p className="text-sm text-slate-500">{t.subscriptions.loading}</p>}
+          {hasMoreSubscriptions && !allSubscriptionsLoading && allSubscriptions.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void loadAllSubscriptions(allSubscriptions.length)}
+              className="mt-2 rounded-lg border border-white/[0.08] px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-white/[0.05]"
+            >
+              {t.subscriptions.loadMore}
+            </button>
+          )}
+        </section>
+      )}
+
+      {consumer && (
         <div>
           <div className="mb-4 flex items-center justify-between rounded border border-white/[0.08] p-3">
             <div>
