@@ -4083,10 +4083,17 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::CREATED);
 
+        // `login_reviewer` above already bootstraps the first (platform
+        // admin) reviewer through this same `/v1/auth/register` path, which
+        // also sends its own invite email through this shared mailer --
+        // filter to the one this test actually cares about rather than
+        // assuming an exact count.
         let sent = invite_mailer.sent.lock().unwrap();
-        assert_eq!(sent.len(), 1);
-        assert_eq!(sent[0].0, "admin@douala-police.example");
-        assert_eq!(sent[0].2, Some("Douala Police".to_owned()));
+        let org_admin_invite = sent
+            .iter()
+            .find(|(to, ..)| to == "admin@douala-police.example")
+            .expect("an invite email was sent to the new org admin");
+        assert_eq!(org_admin_invite.2, Some("Douala Police".to_owned()));
     }
 
     #[tokio::test]
