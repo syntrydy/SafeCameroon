@@ -12,6 +12,7 @@ import {
   type CaseStatus,
 } from "../../api/cases";
 import { ApiError } from "../../api/client";
+import type { ExtractedFields } from "../../api/extractions";
 import { useAuth } from "../../auth/AuthContext";
 import { canCreateAlert } from "../../domain/alertEligibility";
 import { nextStatusOptions } from "../../domain/caseTransitions";
@@ -53,6 +54,9 @@ export function CaseDetail() {
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [pendingTransition, setPendingTransition] = useState<CaseStatus | null>(null);
+  const [suggestedFields, setSuggestedFields] = useState<{ fields: ExtractedFields; appliedAt: number } | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -153,7 +157,12 @@ export function CaseDetail() {
         ) : (
           <ul className="divide-y divide-white/[0.06]">
             {caseData.report_ids.map((reportId) => (
-              <LinkedReportAttachments key={reportId} token={token} reportId={reportId} />
+              <LinkedReportAttachments
+                key={reportId}
+                token={token}
+                reportId={reportId}
+                onApplyToAlertForm={(fields) => setSuggestedFields({ fields, appliedAt: Date.now() })}
+              />
             ))}
           </ul>
         )}
@@ -165,6 +174,7 @@ export function CaseDetail() {
             token={token}
             caseId={caseData.case_id}
             onCreated={(alert) => navigate(`/alerts/${alert.alert_id}`)}
+            suggestedFields={suggestedFields}
           />
         </section>
       )}

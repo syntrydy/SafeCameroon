@@ -1,17 +1,22 @@
 import { useEffect, useState } from "react";
 
 import { ApiError } from "../../api/client";
+import type { ExtractedFields } from "../../api/extractions";
 import { getReport, type ReportSummary } from "../../api/reports";
 import { AttachmentsBody } from "../../components/AttachmentsBody";
 import { useReportAttachments } from "../../components/useReportAttachments";
 import { useTranslation } from "../../i18n/LanguageContext";
+import { ExtractionPanel } from "../review-queue/ExtractionPanel";
 
 interface LinkedReportAttachmentsProps {
   token: string;
   reportId: string;
+  // Forwarded to ExtractionPanel so a reviewer can pull this report's AI
+  // extraction straight into the case's create-alert form.
+  onApplyToAlertForm?: (fields: ExtractedFields) => void;
 }
 
-export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachmentsProps) {
+export function LinkedReportAttachments({ token, reportId, onApplyToAlertForm }: LinkedReportAttachmentsProps) {
   const { t } = useTranslation();
   const { expanded, toggleExpanded, loading, error, attachments, downloadUrls, getDownloadUrl } =
     useReportAttachments(token, reportId);
@@ -52,6 +57,8 @@ export function LinkedReportAttachments({ token, reportId }: LinkedReportAttachm
         </p>
       )}
       {report && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-300">{report.raw_content}</p>}
+
+      <ExtractionPanel token={token} reportId={reportId} onApply={onApplyToAlertForm} />
 
       <button
         type="button"

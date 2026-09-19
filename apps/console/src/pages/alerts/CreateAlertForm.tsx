@@ -1,25 +1,12 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { createAlert, MISSING_CHILD_COMMUNITY_FIELDS, type Alert, type AlertField, type Severity } from "../../api/alerts";
+import type { ExtractedFields } from "../../api/extractions";
 import { ApiError } from "../../api/client";
 import { useTranslation } from "../../i18n/LanguageContext";
 import type { Translations } from "../../i18n/translations";
 
 const SEVERITIES: Severity[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
-
-const GEOGRAPHY_SUGGESTIONS_ID = "create-alert-geography-suggestions";
-const INCIDENT_CATEGORY_SUGGESTIONS_ID = "create-alert-incident-category-suggestions";
-const TIME_WINDOW_SUGGESTIONS_ID = "create-alert-time-window-suggestions";
-
-// Fields with a small, well-known set of common values get a <datalist> of
-// suggestions -- still free text underneath (the backend stores every field
-// as a plain string, docs/DOMAIN_MODEL.md), just faster to fill for the
-// common case than typing from scratch.
-const FIELD_SUGGESTIONS_ID: Partial<Record<AlertField, string>> = {
-  LAST_SEEN_GENERAL_AREA: GEOGRAPHY_SUGGESTIONS_ID,
-  INCIDENT_CATEGORY: INCIDENT_CATEGORY_SUGGESTIONS_ID,
-  TIME_WINDOW: TIME_WINDOW_SUGGESTIONS_ID,
-};
 
 function fieldLabels(t: Translations): Record<string, string> {
   return {
@@ -36,13 +23,33 @@ function fieldLabels(t: Translations): Record<string, string> {
 const fieldInputClassName =
   "w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20";
 
+// Maps a report's AI-extracted fields onto this policy's alert fields.
+// Deliberately excludes `contact_request` (the citizen reporter's own
+// contact info -- never the alert's OFFICIAL_CONTACT, which would leak
+// reporter PII into a public/community alert) and CASE_REFERENCE (an
+// internal reviewer-chosen id the report text has no bearing on).
+function mappedFieldValues(fields: ExtractedFields): Partial<Record<AlertField, string>> {
+  const mapped: Partial<Record<AlertField, string>> = {};
+  if (fields.age) mapped.APPROXIMATE_AGE = fields.age;
+  if (fields.time) mapped.TIME_WINDOW = fields.time;
+  if (fields.place) mapped.LAST_SEEN_GENERAL_AREA = fields.place;
+  if (fields.incident_category) mapped.INCIDENT_CATEGORY = fields.incident_category;
+  const description = [fields.person_description, fields.vehicle_details].filter(Boolean).join(" ");
+  if (description) mapped.SAFE_DESCRIPTION = description;
+  return mapped;
+}
+
 interface CreateAlertFormProps {
   token: string;
   caseId: string;
   onCreated: (alert: Alert) => void;
+  // Set (with a fresh `appliedAt`) each time a reviewer applies one of the
+  // linked report's AI extractions -- see ExtractionPanel's `onApply`. Only
+  // fills fields the reviewer hasn't already typed into.
+  suggestedFields?: { fields: ExtractedFields; appliedAt: number } | null;
 }
 
-export function CreateAlertForm({ token, caseId, onCreated }: CreateAlertFormProps) {
+export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: CreateAlertFormProps) {
   const { t } = useTranslation();
   const labels = fieldLabels(t);
   const [severity, setSeverity] = useState<Severity>("HIGH");
@@ -50,6 +57,27 @@ export function CreateAlertForm({ token, caseId, onCreated }: CreateAlertFormPro
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [suggestionsAppliedAt, setSuggestionsAppliedAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!suggestedFields) return;
+    const mapped = mappedFieldValues(suggestedFields.fields);
+    setFieldValues((current) => {
+      const next = { ...current };
+      for (const [field, value] of Object.entries(mapped) as [AlertField, string][]) {
+        if (!next[field]?.trim()) next[field] = value;
+      }
+      return next;
+    });
+    if (suggestedFields.fields.place) {
+      setTargetGeography((current) => (current.trim() ? current : suggestedFields.fields.place!));
+    }
+    setSuggestionsAppliedAt(suggestedFields.appliedAt);
+    // Re-runs only when a *new* apply happens (a fresh appliedAt), not on
+    // every render -- `suggestedFields` itself is a fresh object each time
+    // the parent re-renders, which would re-fire this on unrelated updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestedFields?.appliedAt]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -77,21 +105,11 @@ export function CreateAlertForm({ token, caseId, onCreated }: CreateAlertFormPro
     <form onSubmit={handleSubmit} className="rounded border border-white/[0.08] p-4">
       <h2 className="mb-3 text-sm font-semibold text-white">{t.createAlertForm.heading}</h2>
 
-      <datalist id={GEOGRAPHY_SUGGESTIONS_ID}>
-        {t.createAlertForm.geographySuggestions.map((suggestion) => (
-          <option key={suggestion} value={suggestion} />
-        ))}
-      </datalist>
-      <datalist id={INCIDENT_CATEGORY_SUGGESTIONS_ID}>
-        {t.createAlertForm.incidentCategorySuggestions.map((suggestion) => (
-          <option key={suggestion} value={suggestion} />
-        ))}
-      </datalist>
-      <datalist id={TIME_WINDOW_SUGGESTIONS_ID}>
-        {t.createAlertForm.timeWindowSuggestions.map((suggestion) => (
-          <option key={suggestion} value={suggestion} />
-        ))}
-      </datalist>
+      {suggestionsAppliedAt !== null && (
+        <p role="status" className="mb-3 text-xs text-indigo-300">
+          {t.createAlertForm.suggestionsApplied}
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block text-sm">
@@ -113,7 +131,6 @@ export function CreateAlertForm({ token, caseId, onCreated }: CreateAlertFormPro
           <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.targetGeography}</span>
           <input
             required
-            list={GEOGRAPHY_SUGGESTIONS_ID}
             value={targetGeography}
             onChange={(event) => setTargetGeography(event.target.value)}
             placeholder={t.createAlertForm.targetGeographyPlaceholder}
@@ -125,7 +142,6 @@ export function CreateAlertForm({ token, caseId, onCreated }: CreateAlertFormPro
           <label key={field} className="block text-sm">
             <span className="mb-1 block font-medium text-slate-300">{labels[field]}</span>
             <input
-              list={FIELD_SUGGESTIONS_ID[field]}
               value={fieldValues[field] ?? ""}
               onChange={(event) => setFieldValues((current) => ({ ...current, [field]: event.target.value }))}
               className={fieldInputClassName}
