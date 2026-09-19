@@ -103,28 +103,31 @@ export function ReviewQueue() {
       ) : reports.length === 0 ? (
         <p className="text-sm text-slate-500">{t.reviewQueue.noReports}</p>
       ) : (
-        <table className="w-full border-collapse text-left">
-          <thead>
-            <tr className="border-b border-white/[0.08] text-xs uppercase text-slate-500">
-              <th className="py-2 pr-4">{t.reviewQueue.colReport}</th>
-              <th className="py-2 pr-4">{t.reviewQueue.colChannel}</th>
-              <th className="py-2 pr-4">{t.reviewQueue.colStatus}</th>
-              <th className="py-2 pr-4">{t.reviewQueue.colReceived}</th>
-              <th className="py-2 pr-4">{t.reviewQueue.colContentActions}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reports.map((report) => (
-              <ReportRow
-                key={report.report_id}
-                report={report}
-                token={token}
-                onCreateCase={handleCreateCase}
-                onLinkToCase={handleLinkToCase}
-              />
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left">
+            <thead>
+              <tr className="border-b border-white/[0.08] text-xs uppercase text-slate-500">
+                <th className="py-2 pr-4">{t.reviewQueue.colReport}</th>
+                <th className="py-2 pr-4">{t.reviewQueue.colChannel}</th>
+                <th className="py-2 pr-4">{t.reviewQueue.colStatus}</th>
+                <th className="py-2 pr-4">{t.reviewQueue.colReceived}</th>
+                <th className="py-2 pr-4">{t.reviewQueue.colContent}</th>
+                <th className="py-2 pr-4">{t.reviewQueue.colActions}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((report) => (
+                <ReportRow
+                  key={report.report_id}
+                  report={report}
+                  token={token}
+                  onCreateCase={handleCreateCase}
+                  onLinkToCase={handleLinkToCase}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

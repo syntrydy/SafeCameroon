@@ -63,7 +63,8 @@ export interface Translations {
     colChannel: string;
     colStatus: string;
     colReceived: string;
-    colContentActions: string;
+    colContent: string;
+    colActions: string;
   };
   reportRow: {
     showMore: string;
@@ -356,7 +357,8 @@ export const translations: Record<Locale, Translations> = {
       colChannel: "Channel",
       colStatus: "Status",
       colReceived: "Received",
-      colContentActions: "Content & actions",
+      colContent: "Content",
+      colActions: "Actions",
     },
     reportRow: {
       showMore: "Show more",
@@ -650,7 +652,8 @@ export const translations: Record<Locale, Translations> = {
       colChannel: "Canal",
       colStatus: "Statut",
       colReceived: "Reçu le",
-      colContentActions: "Contenu et actions",
+      colContent: "Contenu",
+      colActions: "Actions",
     },
     reportRow: {
       showMore: "Afficher plus",

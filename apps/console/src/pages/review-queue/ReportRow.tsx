@@ -62,7 +62,7 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
         </span>
       </td>
       <td className="py-3 pr-4 text-sm text-slate-500">{new Date(report.received_at).toLocaleString()}</td>
-      <td className="py-3 pr-4">
+      <td className="max-w-sm min-w-[16rem] py-3 pr-4">
         <p className={expanded ? "whitespace-pre-wrap text-sm text-slate-300" : "truncate text-sm text-slate-300"}>
           {report.raw_content}
         </p>
@@ -85,8 +85,9 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
               ?.label ?? report.reported_incident_type}
           </p>
         )}
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+      </td>
+      <td className="min-w-[14rem] py-3 align-top">
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={incidentType}
             onChange={(event) => setIncidentType(event.target.value as IncidentType)}
