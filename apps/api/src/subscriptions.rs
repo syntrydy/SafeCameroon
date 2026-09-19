@@ -218,6 +218,10 @@ pub struct SubscriptionResponse {
     consumer_id: Uuid,
     version: u32,
     rules: Vec<SubscriptionRuleOutput>,
+    /// `None` only for the instant between construction and its first
+    /// persist -- `create_subscription` re-fetches before responding so
+    /// callers never actually see that gap; see `Subscription::created_at`.
+    created_at: Option<String>,
 }
 
 fn subscription_response(subscription: &Subscription) -> SubscriptionResponse {
@@ -226,6 +230,7 @@ fn subscription_response(subscription: &Subscription) -> SubscriptionResponse {
         consumer_id: subscription.consumer_id().as_uuid(),
         version: subscription.version(),
         rules: subscription.rules().iter().map(rule_output).collect(),
+        created_at: subscription.created_at().map(str::to_owned),
     }
 }
 
@@ -266,6 +271,15 @@ pub async fn create_subscription(
         .create(&subscription)
         .await
         .map_err(|_| persistence_failed(request_id))?;
+
+    // Re-fetch so the response carries the DB-assigned created_at rather
+    // than the still-`None` in-memory value from `Subscription::new`.
+    let subscription = state
+        .subscriptions
+        .find_by_id(subscription.id())
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .expect("the subscription was just created above");
 
     Ok((
         StatusCode::CREATED,

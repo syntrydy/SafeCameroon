@@ -19,6 +19,10 @@ export interface Subscription {
   consumer_id: string;
   version: number;
   rules: SubscriptionRule[];
+  // Null only for the instant between creation and its first persist --
+  // the backend re-fetches before responding, so this is only ever null
+  // as a defensive fallback, not something the console should expect.
+  created_at: string | null;
 }
 
 export function createSubscription(

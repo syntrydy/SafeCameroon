@@ -11,6 +11,7 @@ import {
   type DeliveryPreference,
   type Subscription,
 } from "../../api/subscriptions";
+import { AllSubscriberRow } from "./AllSubscriberRow";
 import { CreateSubscriptionForm } from "./CreateSubscriptionForm";
 import { DeliveryPreferenceForm } from "./DeliveryPreferenceForm";
 import { SubscriptionCard } from "./SubscriptionCard";
@@ -186,31 +187,36 @@ export function Subscriptions() {
           {allSubscriptions.length === 0 && !allSubscriptionsLoading && !allSubscriptionsError && (
             <p className="text-sm text-slate-500">{t.subscriptions.noSubscriptionsAtAll}</p>
           )}
-          {allSubscriptions.map((subscription) => (
-            <div key={subscription.subscription_id}>
-              <div className="mb-1 flex items-center gap-2 text-xs text-slate-500">
-                <span>
-                  {t.subscriptions.consumerLabel}: <span className="font-mono">{subscription.consumer_id}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void viewConsumer(subscription.consumer_id)}
-                  className="font-medium text-emerald-400 underline"
-                >
-                  {t.subscriptions.viewConsumer}
-                </button>
-              </div>
-              <SubscriptionCard
-                token={token}
-                subscription={subscription}
-                onUpdated={(updated) =>
-                  setAllSubscriptions((current) =>
-                    current.map((s) => (s.subscription_id === updated.subscription_id ? updated : s)),
-                  )
-                }
-              />
+          {allSubscriptions.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-white/[0.08] text-xs uppercase text-slate-500">
+                    <th className="py-2 pr-4">{t.subscriptions.colSubscriber}</th>
+                    <th className="py-2 pr-4">{t.subscriptions.colRules}</th>
+                    <th className="py-2 pr-4">{t.subscriptions.colVersion}</th>
+                    <th className="py-2 pr-4">{t.subscriptions.colCreated}</th>
+                    <th className="py-2 pr-4">{t.subscriptions.colActions}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allSubscriptions.map((subscription) => (
+                    <AllSubscriberRow
+                      key={subscription.subscription_id}
+                      token={token}
+                      subscription={subscription}
+                      onViewSubscriber={(consumerId) => void viewConsumer(consumerId)}
+                      onUpdated={(updated) =>
+                        setAllSubscriptions((current) =>
+                          current.map((s) => (s.subscription_id === updated.subscription_id ? updated : s)),
+                        )
+                      }
+                    />
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
+          )}
           {allSubscriptionsLoading && <p className="text-sm text-slate-500">{t.subscriptions.loading}</p>}
           {hasMoreSubscriptions && !allSubscriptionsLoading && allSubscriptions.length > 0 && (
             <button

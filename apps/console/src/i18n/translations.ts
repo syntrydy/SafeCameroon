@@ -223,6 +223,11 @@ export interface Translations {
     consumerLabel: string;
     viewConsumer: string;
     loadMore: string;
+    colSubscriber: string;
+    colRules: string;
+    colVersion: string;
+    colCreated: string;
+    colActions: string;
   };
   subscriptionCard: {
     edit: string;
@@ -517,16 +522,16 @@ export const translations: Record<Locale, Translations> = {
     },
     subscriptions: {
       heading: "Subscriptions",
-      lookupHeading: "Look up a consumer",
-      consumerId: "Consumer id",
+      lookupHeading: "Look up a subscriber",
+      consumerId: "Subscriber id",
       load: "Load",
-      registerHeading: "Register a new consumer",
+      registerHeading: "Register a new subscriber",
       name: "Name",
       type: "Type",
       typeOrganization: "Organization",
       typeCitizen: "Citizen",
-      createConsumer: "Create consumer",
-      switchConsumer: "Switch consumer",
+      createConsumer: "Create subscriber",
+      switchConsumer: "Switch subscriber",
       subscriptionsHeading: "Subscriptions",
       loading: "Loading...",
       deliveryPreferenceHeading: "Delivery preference",
@@ -534,11 +539,16 @@ export const translations: Record<Locale, Translations> = {
       addSubscription: "Add subscription",
       creating: "Creating...",
       createSubscription: "Create subscription",
-      allSubscriptionsHeading: "All subscriptions",
-      noSubscriptionsAtAll: "No subscriptions exist yet.",
-      consumerLabel: "Consumer",
-      viewConsumer: "View consumer",
+      allSubscriptionsHeading: "All subscribers",
+      noSubscriptionsAtAll: "No subscribers exist yet.",
+      consumerLabel: "Subscriber",
+      viewConsumer: "View subscriber",
       loadMore: "Load more",
+      colSubscriber: "Subscriber",
+      colRules: "Rules",
+      colVersion: "Version",
+      colCreated: "Created",
+      colActions: "Actions",
     },
     subscriptionCard: {
       edit: "Edit",
@@ -834,16 +844,16 @@ export const translations: Record<Locale, Translations> = {
     },
     subscriptions: {
       heading: "Abonnements",
-      lookupHeading: "Rechercher un consommateur",
-      consumerId: "Identifiant du consommateur",
+      lookupHeading: "Rechercher un abonné",
+      consumerId: "Identifiant de l'abonné",
       load: "Charger",
-      registerHeading: "Enregistrer un nouveau consommateur",
+      registerHeading: "Enregistrer un nouvel abonné",
       name: "Nom",
       type: "Type",
       typeOrganization: "Organisation",
       typeCitizen: "Citoyen",
-      createConsumer: "Créer le consommateur",
-      switchConsumer: "Changer de consommateur",
+      createConsumer: "Créer l'abonné",
+      switchConsumer: "Changer d'abonné",
       subscriptionsHeading: "Abonnements",
       loading: "Chargement...",
       deliveryPreferenceHeading: "Préférence de livraison",
@@ -851,11 +861,16 @@ export const translations: Record<Locale, Translations> = {
       addSubscription: "Ajouter un abonnement",
       creating: "Création...",
       createSubscription: "Créer l'abonnement",
-      allSubscriptionsHeading: "Tous les abonnements",
-      noSubscriptionsAtAll: "Aucun abonnement n'existe pour l'instant.",
-      consumerLabel: "Consommateur",
-      viewConsumer: "Voir le consommateur",
+      allSubscriptionsHeading: "Tous les abonnés",
+      noSubscriptionsAtAll: "Aucun abonné n'existe pour l'instant.",
+      consumerLabel: "Abonné",
+      viewConsumer: "Voir l'abonné",
       loadMore: "Charger plus",
+      colSubscriber: "Abonné",
+      colRules: "Règles",
+      colVersion: "Version",
+      colCreated: "Créé le",
+      colActions: "Actions",
     },
     subscriptionCard: {
       edit: "Modifier",
