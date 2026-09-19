@@ -1,11 +1,25 @@
 import { useState, type FormEvent } from "react";
 
-import { createAlert, MISSING_CHILD_COMMUNITY_FIELDS, type Alert, type Severity } from "../../api/alerts";
+import { createAlert, MISSING_CHILD_COMMUNITY_FIELDS, type Alert, type AlertField, type Severity } from "../../api/alerts";
 import { ApiError } from "../../api/client";
 import { useTranslation } from "../../i18n/LanguageContext";
 import type { Translations } from "../../i18n/translations";
 
 const SEVERITIES: Severity[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+
+const GEOGRAPHY_SUGGESTIONS_ID = "create-alert-geography-suggestions";
+const INCIDENT_CATEGORY_SUGGESTIONS_ID = "create-alert-incident-category-suggestions";
+const TIME_WINDOW_SUGGESTIONS_ID = "create-alert-time-window-suggestions";
+
+// Fields with a small, well-known set of common values get a <datalist> of
+// suggestions -- still free text underneath (the backend stores every field
+// as a plain string, docs/DOMAIN_MODEL.md), just faster to fill for the
+// common case than typing from scratch.
+const FIELD_SUGGESTIONS_ID: Partial<Record<AlertField, string>> = {
+  LAST_SEEN_GENERAL_AREA: GEOGRAPHY_SUGGESTIONS_ID,
+  INCIDENT_CATEGORY: INCIDENT_CATEGORY_SUGGESTIONS_ID,
+  TIME_WINDOW: TIME_WINDOW_SUGGESTIONS_ID,
+};
 
 function fieldLabels(t: Translations): Record<string, string> {
   return {
@@ -18,6 +32,9 @@ function fieldLabels(t: Translations): Record<string, string> {
     CASE_REFERENCE: t.createAlertForm.fieldCaseReference,
   };
 }
+
+const fieldInputClassName =
+  "w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20";
 
 interface CreateAlertFormProps {
   token: string;
@@ -54,49 +71,83 @@ export function CreateAlertForm({ token, caseId, onCreated }: CreateAlertFormPro
     }
   }
 
+  const gridFields = MISSING_CHILD_COMMUNITY_FIELDS.filter((field) => field !== "SAFE_DESCRIPTION");
+
   return (
     <form onSubmit={handleSubmit} className="rounded border border-white/[0.08] p-4">
       <h2 className="mb-3 text-sm font-semibold text-white">{t.createAlertForm.heading}</h2>
 
-      <label className="mb-3 block text-sm">
-        <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.severity}</span>
-        <select
-          value={severity}
-          onChange={(event) => setSeverity(event.target.value as Severity)}
-          className="w-full max-w-xs rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-        >
-          {SEVERITIES.map((option) => (
-            <option key={option} value={option} className="bg-slate-900 text-white">
-              {option}
-            </option>
-          ))}
-        </select>
-      </label>
+      <datalist id={GEOGRAPHY_SUGGESTIONS_ID}>
+        {t.createAlertForm.geographySuggestions.map((suggestion) => (
+          <option key={suggestion} value={suggestion} />
+        ))}
+      </datalist>
+      <datalist id={INCIDENT_CATEGORY_SUGGESTIONS_ID}>
+        {t.createAlertForm.incidentCategorySuggestions.map((suggestion) => (
+          <option key={suggestion} value={suggestion} />
+        ))}
+      </datalist>
+      <datalist id={TIME_WINDOW_SUGGESTIONS_ID}>
+        {t.createAlertForm.timeWindowSuggestions.map((suggestion) => (
+          <option key={suggestion} value={suggestion} />
+        ))}
+      </datalist>
 
-      <label className="mb-3 block text-sm">
-        <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.targetGeography}</span>
-        <input
-          required
-          value={targetGeography}
-          onChange={(event) => setTargetGeography(event.target.value)}
-          placeholder={t.createAlertForm.targetGeographyPlaceholder}
-          className="w-full max-w-xs rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.severity}</span>
+          <select
+            value={severity}
+            onChange={(event) => setSeverity(event.target.value as Severity)}
+            className={fieldInputClassName}
+          >
+            {SEVERITIES.map((option) => (
+              <option key={option} value={option} className="bg-slate-900 text-white">
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.targetGeography}</span>
+          <input
+            required
+            list={GEOGRAPHY_SUGGESTIONS_ID}
+            value={targetGeography}
+            onChange={(event) => setTargetGeography(event.target.value)}
+            placeholder={t.createAlertForm.targetGeographyPlaceholder}
+            className={fieldInputClassName}
+          />
+        </label>
+
+        {gridFields.map((field) => (
+          <label key={field} className="block text-sm">
+            <span className="mb-1 block font-medium text-slate-300">{labels[field]}</span>
+            <input
+              list={FIELD_SUGGESTIONS_ID[field]}
+              value={fieldValues[field] ?? ""}
+              onChange={(event) => setFieldValues((current) => ({ ...current, [field]: event.target.value }))}
+              className={fieldInputClassName}
+            />
+          </label>
+        ))}
+      </div>
+
+      <label className="mt-3 block text-sm">
+        <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.fieldSafeDescription}</span>
+        <textarea
+          rows={3}
+          value={fieldValues.SAFE_DESCRIPTION ?? ""}
+          onChange={(event) =>
+            setFieldValues((current) => ({ ...current, SAFE_DESCRIPTION: event.target.value }))
+          }
+          className={fieldInputClassName}
         />
       </label>
 
-      {MISSING_CHILD_COMMUNITY_FIELDS.map((field) => (
-        <label key={field} className="mb-3 block text-sm">
-          <span className="mb-1 block font-medium text-slate-300">{labels[field]}</span>
-          <input
-            value={fieldValues[field] ?? ""}
-            onChange={(event) => setFieldValues((current) => ({ ...current, [field]: event.target.value }))}
-            className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-          />
-        </label>
-      ))}
-
       {error && (
-        <p role="alert" className="mb-3 text-sm text-red-300">
+        <p role="alert" className="mt-3 text-sm text-red-300">
           {error}
         </p>
       )}
@@ -104,7 +155,7 @@ export function CreateAlertForm({ token, caseId, onCreated }: CreateAlertFormPro
       <button
         type="submit"
         disabled={submitting}
-        className="rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-3 rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {submitting ? t.createAlertForm.creating : t.createAlertForm.createAlert}
       </button>
