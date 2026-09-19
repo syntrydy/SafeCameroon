@@ -28,10 +28,15 @@ async fn test_pool() -> PgPool {
     );
 
     MIGRATOR.run(&pool).await.expect("migrations must apply");
-    sqlx::query("TRUNCATE reviewer_organization_memberships, organizations, reviewers")
-        .execute(&pool)
-        .await
-        .expect("test tables must be reset");
+    // alerts FK-references organizations (migration 0027) -- must be
+    // truncated together, matching apps/api/src/main.rs's test_pool.
+    sqlx::query(
+        "TRUNCATE delivery_events, delivery_attempts, deliveries, alert_events, alert_fields, \
+         alerts, reviewer_organization_memberships, organizations, reviewers",
+    )
+    .execute(&pool)
+    .await
+    .expect("test tables must be reset");
     pool
 }
 
