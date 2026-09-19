@@ -32,6 +32,7 @@ use safe_cameroon_application::ai_extraction::ReportExtractor;
 use safe_cameroon_application::attachment_workflow::AttachmentStorage;
 use safe_cameroon_application::audio_transcription::AudioTranscriber;
 use safe_cameroon_application::google_identity::GoogleIdentityVerifier;
+use safe_cameroon_application::invite_mailer::InviteMailer;
 use safe_cameroon_application::webhook::WebhookVerifierRegistry;
 use safe_cameroon_domain::ChannelType;
 use safe_cameroon_infrastructure::ai::{
@@ -39,6 +40,7 @@ use safe_cameroon_infrastructure::ai::{
 };
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::google_identity::GoogleTokenInfoVerifier;
+use safe_cameroon_infrastructure::invite_mailer::{DisabledInviteMailer, ResendInviteMailer};
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresAttachmentRepository, PostgresAuditEventRepository,
     PostgresCaseRepository, PostgresConsumerRepository, PostgresDeliveryPreferenceRepository,
@@ -163,6 +165,31 @@ fn voice_reports_enabled_from_env() -> bool {
     }
 }
 
+/// A real [`ResendInviteMailer`] when `RESEND_API_KEY`/`RESEND_FROM_ADDRESS`
+/// are configured; otherwise a [`DisabledInviteMailer`] that silently does
+/// nothing (invite emails are best-effort -- see `InviteMailer`'s module
+/// doc comment) rather than refusing to boot. Reuses the same two vars as
+/// `apps/worker`'s citizen-alert email channel, but must be configured
+/// separately for this service (`apps/api`) since they're per-service
+/// Railway variables, not shared.
+fn invite_mailer_from_env() -> Arc<dyn InviteMailer> {
+    match (
+        std::env::var("RESEND_API_KEY"),
+        std::env::var("RESEND_FROM_ADDRESS"),
+    ) {
+        (Ok(api_key), Ok(from_address)) => {
+            tracing::info!("Invite emails: Resend");
+            Arc::new(ResendInviteMailer::new(api_key, from_address))
+        }
+        _ => {
+            tracing::info!(
+                "Invite emails: disabled (RESEND_API_KEY/RESEND_FROM_ADDRESS not configured)"
+            );
+            Arc::new(DisabledInviteMailer)
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_state(
     pool: PgPool,
@@ -173,6 +200,7 @@ fn build_state(
     report_extractor: Arc<dyn ReportExtractor>,
     audio_transcriber: Arc<dyn AudioTranscriber>,
     voice_reports_enabled: bool,
+    invite_mailer: Arc<dyn InviteMailer>,
 ) -> AppState {
     let mut webhook_verifiers = WebhookVerifierRegistry::new();
     for channel in [ChannelType::WhatsApp, ChannelType::Sms, ChannelType::Email] {
@@ -207,6 +235,7 @@ fn build_state(
         report_extractor,
         audio_transcriber,
         voice_reports_enabled,
+        invite_mailer,
     }
 }
 
@@ -329,6 +358,18 @@ fn build_router(state: AppState) -> Router {
             put(organizations::set_trust_grants),
         )
         .route(
+            "/v1/organizations/{id}/profile",
+            put(organizations::update_organization_profile),
+        )
+        .route(
+            "/v1/organizations/{id}/deactivate",
+            post(organizations::deactivate_organization),
+        )
+        .route(
+            "/v1/organizations/{id}/reactivate",
+            post(organizations::reactivate_organization),
+        )
+        .route(
             "/v1/organizations/{id}/members",
             get(organizations::list_members),
         )
@@ -399,6 +440,7 @@ async fn main() {
         report_extractor_from_env(),
         audio_transcriber_from_env(),
         voice_reports_enabled_from_env(),
+        invite_mailer_from_env(),
     ));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
@@ -426,6 +468,7 @@ mod tests {
     use safe_cameroon_application::google_identity::{
         FakeGoogleIdentityVerifier, INVALID_GOOGLE_TOKEN,
     };
+    use safe_cameroon_application::invite_mailer::{FakeInviteMailer, InviteMailer};
     use safe_cameroon_application::prepare_anonymous_report;
     use safe_cameroon_domain::{
         AlertField, AlertFieldValue, AlertPolicy, CaseStatus, ChannelEndpoint, ConsumerId,
@@ -450,6 +493,21 @@ mod tests {
     /// (issue #160) without every other `test_state(pool)` call site
     /// having to pass a value it doesn't care about.
     fn test_state_with_voice_flag(pool: PgPool, voice_reports_enabled: bool) -> AppState {
+        test_state_with_invite_mailer(
+            pool,
+            voice_reports_enabled,
+            Arc::new(FakeInviteMailer::default()),
+        )
+    }
+
+    /// Lets a test inspect what `send_invite` was called with (e.g.
+    /// `registering_an_org_admin_sends_an_invite_email` below), without
+    /// every other call site having to pass one.
+    fn test_state_with_invite_mailer(
+        pool: PgPool,
+        voice_reports_enabled: bool,
+        invite_mailer: Arc<dyn InviteMailer>,
+    ) -> AppState {
         build_state(
             pool,
             TEST_SECRET.to_vec(),
@@ -474,6 +532,7 @@ mod tests {
                 result: Ok("My daughter has not come home from school.".into()),
             }),
             voice_reports_enabled,
+            invite_mailer,
         )
     }
 
@@ -3848,6 +3907,176 @@ mod tests {
             json_body(response).await["verified_incident_types"],
             json!(["MISSING_CHILD"])
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn creating_an_organization_accepts_an_optional_description_and_location() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/organizations")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(
+                        json!({
+                            "name": "Douala Police",
+                            "description": "Municipal police unit",
+                            "location": "Douala, Cameroon"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = json_body(response).await;
+        assert_eq!(body["description"], json!("Municipal police unit"));
+        assert_eq!(body["location"], json!("Douala, Cameroon"));
+        assert_eq!(body["is_active"], json!(true));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_platform_admin_updates_an_organizations_profile() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let org_id = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/organizations/{org_id}/profile"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(
+                        json!({
+                            "description": "Municipal police unit",
+                            "location": "Douala, Cameroon"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["description"], json!("Municipal police unit"));
+        assert_eq!(body["location"], json!("Douala, Cameroon"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_platform_admin_deactivates_and_reactivates_an_organization() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let org_id = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/organizations/{org_id}/deactivate"))
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await["is_active"], json!(false));
+
+        // A deactivated organization cannot register new members.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(
+                        json!({
+                            "email": "member@douala-police.example",
+                            "role": "MEMBER",
+                            "organization_id": org_id
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("ORGANIZATION_INACTIVE")
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/organizations/{org_id}/reactivate"))
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await["is_active"], json!(true));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn registering_an_org_admin_sends_an_invite_email() {
+        let pool = test_pool().await;
+        let invite_mailer = Arc::new(FakeInviteMailer::default());
+        let app = build_router(test_state_with_invite_mailer(
+            pool,
+            true,
+            invite_mailer.clone(),
+        ));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let org_id = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/register")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(
+                        json!({
+                            "email": "admin@douala-police.example",
+                            "role": "ORG_ADMIN",
+                            "organization_id": org_id
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        let sent = invite_mailer.sent.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].0, "admin@douala-police.example");
+        assert_eq!(sent[0].2, Some("Douala Police".to_owned()));
     }
 
     #[tokio::test]

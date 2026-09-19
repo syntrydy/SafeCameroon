@@ -192,7 +192,11 @@ pub fn authorize_case_verification(
         return Ok(());
     }
     match organization {
-        Some(organization) if organization.may_verify(incident_type) => Ok(()),
+        Some(organization)
+            if organization.is_active() && organization.may_verify(incident_type) =>
+        {
+            Ok(())
+        }
         _ => Err(CaseVerificationNotAuthorized),
     }
 }
@@ -225,7 +229,11 @@ pub fn authorize_alert_issuance(
         return Ok(());
     }
     match organization {
-        Some(organization) if organization.may_issue_alert(visibility) => Ok(()),
+        Some(organization)
+            if organization.is_active() && organization.may_issue_alert(visibility) =>
+        {
+            Ok(())
+        }
         _ => Err(AlertIssuanceNotAuthorized),
     }
 }
@@ -412,9 +420,12 @@ mod tests {
         let trusted_org = Organization::reconstitute(
             org_id,
             "Douala Police".into(),
+            None,
+            None,
             vec![IncidentType::MissingChild],
             vec![],
             None,
+            true,
         );
         let membership = Membership {
             role: Role::Member,
@@ -447,6 +458,60 @@ mod tests {
     }
 
     #[test]
+    fn a_member_of_a_deactivated_organization_may_not_verify_cases_even_if_trusted() {
+        let org_id = OrganizationId::new();
+        let deactivated_org = Organization::reconstitute(
+            org_id,
+            "Douala Police".into(),
+            None,
+            None,
+            vec![IncidentType::MissingChild],
+            vec![],
+            None,
+            false,
+        );
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: Some(org_id),
+        };
+        assert_eq!(
+            authorize_case_verification(
+                membership,
+                Some(&deactivated_org),
+                IncidentType::MissingChild
+            ),
+            Err(CaseVerificationNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn a_platform_admin_may_verify_a_case_even_for_a_deactivated_organization() {
+        let org_id = OrganizationId::new();
+        let membership = Membership {
+            role: Role::PlatformAdmin,
+            organization_id: None,
+        };
+        let deactivated_org = Organization::reconstitute(
+            org_id,
+            "Douala Police".into(),
+            None,
+            None,
+            vec![],
+            vec![],
+            None,
+            false,
+        );
+        assert!(
+            authorize_case_verification(
+                membership,
+                Some(&deactivated_org),
+                IncidentType::MissingChild
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
     fn a_platform_admin_may_issue_any_alert_visibility() {
         let membership = Membership {
             role: Role::PlatformAdmin,
@@ -461,9 +526,12 @@ mod tests {
         let trusted_org = Organization::reconstitute(
             org_id,
             "Douala Police".into(),
+            None,
+            None,
             vec![],
             vec![AlertVisibility::Community],
             None,
+            true,
         );
         let membership = Membership {
             role: Role::Member,
@@ -475,6 +543,33 @@ mod tests {
         );
         assert_eq!(
             authorize_alert_issuance(membership, Some(&trusted_org), AlertVisibility::Public),
+            Err(AlertIssuanceNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn a_member_of_a_deactivated_organization_may_not_issue_alerts_even_if_trusted() {
+        let org_id = OrganizationId::new();
+        let deactivated_org = Organization::reconstitute(
+            org_id,
+            "Douala Police".into(),
+            None,
+            None,
+            vec![],
+            vec![AlertVisibility::Community],
+            None,
+            false,
+        );
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: Some(org_id),
+        };
+        assert_eq!(
+            authorize_alert_issuance(
+                membership,
+                Some(&deactivated_org),
+                AlertVisibility::Community
+            ),
             Err(AlertIssuanceNotAuthorized)
         );
     }

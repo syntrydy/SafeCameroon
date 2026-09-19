@@ -265,6 +265,8 @@ export interface Translations {
     heading: string;
     createHeading: string;
     name: string;
+    descriptionLabel: string;
+    locationLabel: string;
     creating: string;
     create: string;
     loading: string;
@@ -281,6 +283,18 @@ export interface Translations {
     saving: string;
     inviteOrgAdminHeading: string;
     inviteOrgAdmin: string;
+    profileHeading: string;
+    saveProfile: string;
+    savingProfile: string;
+    noDescription: string;
+    noLocation: string;
+    statusActive: string;
+    statusInactive: string;
+    deactivate: string;
+    deactivating: string;
+    reactivate: string;
+    reactivating: string;
+    inactiveNote: string;
   };
   myOrganization: {
     heading: string;
@@ -562,6 +576,8 @@ export const translations: Record<Locale, Translations> = {
       heading: "Organizations",
       createHeading: "Register a new organization",
       name: "Name",
+      descriptionLabel: "Description (optional)",
+      locationLabel: "Location (optional)",
       creating: "Creating...",
       create: "Create organization",
       loading: "Loading organizations...",
@@ -578,6 +594,19 @@ export const translations: Record<Locale, Translations> = {
       saving: "Saving...",
       inviteOrgAdminHeading: "Invite an org admin",
       inviteOrgAdmin: "Invite org admin",
+      profileHeading: "Profile",
+      saveProfile: "Save profile",
+      savingProfile: "Saving...",
+      noDescription: "No description yet.",
+      noLocation: "No location set.",
+      statusActive: "Active",
+      statusInactive: "Deactivated",
+      deactivate: "Deactivate",
+      deactivating: "Deactivating...",
+      reactivate: "Reactivate",
+      reactivating: "Reactivating...",
+      inactiveNote:
+        "This organization is deactivated. Its members can no longer verify cases, issue alerts, or manage notification settings, and it cannot register new members until reactivated.",
     },
     myOrganization: {
       heading: "My organization",
@@ -859,6 +888,8 @@ export const translations: Record<Locale, Translations> = {
       heading: "Organisations",
       createHeading: "Enregistrer une nouvelle organisation",
       name: "Nom",
+      descriptionLabel: "Description (facultatif)",
+      locationLabel: "Lieu (facultatif)",
       creating: "Création...",
       create: "Créer l'organisation",
       loading: "Chargement des organisations...",
@@ -875,6 +906,19 @@ export const translations: Record<Locale, Translations> = {
       saving: "Enregistrement...",
       inviteOrgAdminHeading: "Inviter un administrateur d'organisation",
       inviteOrgAdmin: "Inviter l'administrateur",
+      profileHeading: "Profil",
+      saveProfile: "Enregistrer le profil",
+      savingProfile: "Enregistrement...",
+      noDescription: "Aucune description pour l'instant.",
+      noLocation: "Aucun lieu défini.",
+      statusActive: "Active",
+      statusInactive: "Désactivée",
+      deactivate: "Désactiver",
+      deactivating: "Désactivation...",
+      reactivate: "Réactiver",
+      reactivating: "Réactivation...",
+      inactiveNote:
+        "Cette organisation est désactivée. Ses membres ne peuvent plus vérifier de dossiers, émettre d'alertes ni gérer les paramètres de notification, et elle ne peut plus inscrire de nouveaux membres jusqu'à sa réactivation.",
     },
     myOrganization: {
       heading: "Mon organisation",

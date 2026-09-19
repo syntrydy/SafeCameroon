@@ -87,9 +87,18 @@ impl std::error::Error for EmptyOrganizationName {}
 pub struct Organization {
     id: OrganizationId,
     name: String,
+    description: Option<String>,
+    location: Option<String>,
     verified_incident_types: Vec<IncidentType>,
     verified_alert_visibilities: Vec<AlertVisibility>,
     consumer_id: Option<ConsumerId>,
+    /// Soft-deactivate flag (migration 0026) -- `true` for every
+    /// organization created before this field existed, and for every newly
+    /// created one. `false` stops the organization's own trust grants,
+    /// membership grants, and consumer/delivery management from being
+    /// usable (`crates/application/src/authorization.rs`), without deleting
+    /// the organization, its memberships, or its subscriptions.
+    is_active: bool,
 }
 
 impl Organization {
@@ -102,28 +111,49 @@ impl Organization {
         Ok(Self {
             id: OrganizationId::new(),
             name: trimmed.to_owned(),
+            description: None,
+            location: None,
             verified_incident_types: Vec::new(),
             verified_alert_visibilities: Vec::new(),
             consumer_id: None,
+            is_active: true,
         })
+    }
+
+    /// Sets the free-text profile fields at creation time
+    /// (`apps/api/src/organizations.rs::create_organization`) -- kept
+    /// separate from `new`'s required-name validation since a description
+    /// and location are both optional and never invalidate an
+    /// otherwise-valid organization.
+    pub fn with_profile(mut self, description: Option<String>, location: Option<String>) -> Self {
+        self.description = description;
+        self.location = location;
+        self
     }
 
     /// Rebuilds an organization from persisted state; infrastructure
     /// adapters use this rather than `new`, which always mints a fresh id,
-    /// empty trust grants, and no linked consumer.
+    /// empty trust grants, no profile, and no linked consumer.
+    #[allow(clippy::too_many_arguments)]
     pub fn reconstitute(
         id: OrganizationId,
         name: String,
+        description: Option<String>,
+        location: Option<String>,
         verified_incident_types: Vec<IncidentType>,
         verified_alert_visibilities: Vec<AlertVisibility>,
         consumer_id: Option<ConsumerId>,
+        is_active: bool,
     ) -> Self {
         Self {
             id,
             name,
+            description,
+            location,
             verified_incident_types,
             verified_alert_visibilities,
             consumer_id,
+            is_active,
         }
     }
 
@@ -133,6 +163,18 @@ impl Organization {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+
+    pub fn location(&self) -> Option<&str> {
+        self.location.as_deref()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.is_active
     }
 
     pub fn verified_incident_types(&self) -> &[IncidentType] {
@@ -178,6 +220,14 @@ mod tests {
     }
 
     #[test]
+    fn a_freshly_created_organization_has_no_profile_and_is_active() {
+        let organization = Organization::new("Douala Police").unwrap();
+        assert_eq!(organization.description(), None);
+        assert_eq!(organization.location(), None);
+        assert!(organization.is_active());
+    }
+
+    #[test]
     fn a_freshly_created_organization_is_trusted_for_nothing() {
         let organization = Organization::new("Douala Police").unwrap();
         assert!(!organization.may_verify(IncidentType::MissingChild));
@@ -189,9 +239,12 @@ mod tests {
         let organization = Organization::reconstitute(
             OrganizationId::new(),
             "Douala Police".into(),
+            None,
+            None,
             vec![IncidentType::MissingChild],
             vec![],
             None,
+            true,
         );
         assert!(organization.may_verify(IncidentType::MissingChild));
         assert!(!organization.may_verify(IncidentType::OtherProtectionIncident));
@@ -202,9 +255,12 @@ mod tests {
         let organization = Organization::reconstitute(
             OrganizationId::new(),
             "Douala Police".into(),
+            None,
+            None,
             vec![],
             vec![AlertVisibility::Community],
             None,
+            true,
         );
         assert!(organization.may_issue_alert(AlertVisibility::Community));
         assert!(!organization.may_issue_alert(AlertVisibility::Public));

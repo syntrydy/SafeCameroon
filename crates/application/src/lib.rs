@@ -10,6 +10,7 @@ pub mod channel;
 pub mod citizen_subscription;
 pub mod delivery_workflow;
 pub mod google_identity;
+pub mod invite_mailer;
 pub mod rate_limit;
 pub mod reviewer_auth;
 pub mod webhook;

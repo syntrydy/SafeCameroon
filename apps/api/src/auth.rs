@@ -117,8 +117,8 @@ pub async fn register(
     authorize_membership_grant(granter, existing_reviewer_count, role, organization_id)
         .map_err(|_| not_authorized(request_id))?;
 
-    if let Some(organization_id) = organization_id {
-        state
+    let organization_name = if let Some(organization_id) = organization_id {
+        let organization = state
             .organizations
             .find_by_id(organization_id)
             .await
@@ -129,7 +129,18 @@ pub async fn register(
                 message: "No organization exists with the given id.",
                 request_id,
             })?;
-    }
+        if !organization.is_active() {
+            return Err(ApiError {
+                status: StatusCode::CONFLICT,
+                code: "ORGANIZATION_INACTIVE",
+                message: "This organization is deactivated and cannot register new members.",
+                request_id,
+            });
+        }
+        Some(organization.name().to_owned())
+    } else {
+        None
+    };
 
     let email = request.email.trim();
     if email.is_empty() || !email.contains('@') {
@@ -159,6 +170,22 @@ pub async fn register(
                 .record_registration(reviewer_id, actor, request_id)
                 .await
                 .map_err(|_| persistence_failed(request_id))?;
+
+            // Best-effort: a failed/disabled send never fails registration
+            // itself -- the membership row above is what actually matters
+            // (see `InviteMailer`'s module doc comment).
+            if let Err(error) = state
+                .invite_mailer
+                .send_invite(email, role, organization_name.as_deref())
+                .await
+            {
+                tracing::warn!(
+                    %request_id,
+                    error = %error,
+                    "invite email could not be sent"
+                );
+            }
+
             Ok((
                 StatusCode::CREATED,
                 Json(RegisterResponse {

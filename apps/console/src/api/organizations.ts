@@ -9,12 +9,15 @@ export type Role = "PLATFORM_ADMIN" | "ORG_ADMIN" | "MEMBER";
 export interface Organization {
   organization_id: string;
   name: string;
+  description: string | null;
+  location: string | null;
   verified_incident_types: IncidentType[];
   verified_alert_visibilities: AlertVisibility[];
   // The consumer this organization's alert subscription and delivery
   // preference live under (Organization::consumer_id). Null only for
   // organizations that predate this link.
   consumer_id: string | null;
+  is_active: boolean;
 }
 
 // Matches apps/api/src/organizations.rs `MemberResponse`.
@@ -32,11 +35,43 @@ export function getOrganization(token: string, organizationId: string): Promise<
   return apiRequest<Organization>(`/v1/organizations/${organizationId}`, { token });
 }
 
-export function createOrganization(token: string, name: string): Promise<Organization> {
+export function createOrganization(
+  token: string,
+  name: string,
+  description?: string,
+  location?: string,
+): Promise<Organization> {
   return apiRequest<Organization>("/v1/organizations", {
     method: "POST",
     token,
-    body: { name },
+    body: { name, description, location },
+  });
+}
+
+export function updateOrganizationProfile(
+  token: string,
+  organizationId: string,
+  description: string,
+  location: string,
+): Promise<Organization> {
+  return apiRequest<Organization>(`/v1/organizations/${organizationId}/profile`, {
+    method: "PUT",
+    token,
+    body: { description, location },
+  });
+}
+
+export function deactivateOrganization(token: string, organizationId: string): Promise<Organization> {
+  return apiRequest<Organization>(`/v1/organizations/${organizationId}/deactivate`, {
+    method: "POST",
+    token,
+  });
+}
+
+export function reactivateOrganization(token: string, organizationId: string): Promise<Organization> {
+  return apiRequest<Organization>(`/v1/organizations/${organizationId}/reactivate`, {
+    method: "POST",
+    token,
   });
 }
 

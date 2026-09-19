@@ -92,6 +92,19 @@ async fn authorize_consumer_access(
         .find_organization_id_by_consumer_id(consumer_id)
         .await
         .map_err(|_| persistence_failed(request_id))?;
+    if let Some(owning_organization_id) = owning_organization_id {
+        let organization = state
+            .organizations
+            .find_by_id(owning_organization_id)
+            .await
+            .map_err(|_| persistence_failed(request_id))?;
+        let is_active = organization
+            .map(|organization| organization.is_active())
+            .unwrap_or(true);
+        if !is_active && membership.role != Role::PlatformAdmin {
+            return Err(not_authorized_for_consumer(request_id));
+        }
+    }
     authorize_consumer_management(membership, owning_organization_id)
         .map_err(|_| not_authorized_for_consumer(request_id))
 }
