@@ -619,6 +619,7 @@ mod tests {
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
             None,
+            None,
         )
         .unwrap();
         alerts.create(&alert_creation).await.unwrap();
@@ -4404,6 +4405,288 @@ mod tests {
 
         let response = app.oneshot(create_alert_request()).await.unwrap();
         assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn cancelling_an_alert_requires_the_issuing_organization_or_a_platform_admin() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let douala_org = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+        let yaounde_org = create_organization(app.clone(), &platform_admin, "Yaounde Police").await;
+
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/organizations/{douala_org}/trust"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(
+                        json!({"verified_incident_types": ["MISSING_CHILD"], "verified_alert_visibilities": ["COMMUNITY"]})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let douala_member =
+            register_and_login(app.clone(), &platform_admin, "MEMBER", Some(&douala_org)).await;
+        let yaounde_member =
+            register_and_login(app.clone(), &platform_admin, "MEMBER", Some(&yaounde_org)).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content": "My child has not returned from school."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let report_id = json_body(response).await["report_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/cases")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {douala_member}"))
+                    .body(Body::from(
+                        json!({"report_id": report_id, "incident_type": "MISSING_CHILD"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let case_id = json_body(response).await["case_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/events"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {douala_member}"))
+                    .body(Body::from(json!({"to": "UNDER_REVIEW"}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/verify"))
+                    .header("Authorization", format!("Bearer {douala_member}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/alerts"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {douala_member}"))
+                    .body(Body::from(
+                        json!({
+                            "policy_id": "MISSING_CHILD_COMMUNITY",
+                            "severity": "HIGH",
+                            "target_geography": "Douala",
+                            "fields": []
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let alert_id = json_body(response).await["alert_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let cancel_request = |token: &str| {
+            Request::builder()
+                .method("POST")
+                .uri(format!("/v1/alerts/{alert_id}/cancel"))
+                .header("Authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap()
+        };
+
+        // A reviewer from a different organization may not cancel it.
+        let response = app
+            .clone()
+            .oneshot(cancel_request(&yaounde_member))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            json_body(response).await["error"]["code"],
+            json!("NOT_AUTHORIZED")
+        );
+
+        // A reviewer from the issuing organization may.
+        let response = app
+            .clone()
+            .oneshot(cancel_request(&douala_member))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await["status"], json!("CANCELLED"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_platform_admin_may_cancel_another_organizations_alert() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let platform_admin = login_reviewer(app.clone()).await;
+        let douala_org = create_organization(app.clone(), &platform_admin, "Douala Police").await;
+
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri(format!("/v1/organizations/{douala_org}/trust"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::from(
+                        json!({"verified_incident_types": ["MISSING_CHILD"], "verified_alert_visibilities": ["COMMUNITY"]})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let douala_member =
+            register_and_login(app.clone(), &platform_admin, "MEMBER", Some(&douala_org)).await;
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/reports")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"content": "My child has not returned from school."}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let report_id = json_body(response).await["report_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/cases")
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {douala_member}"))
+                    .body(Body::from(
+                        json!({"report_id": report_id, "incident_type": "MISSING_CHILD"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let case_id = json_body(response).await["case_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/events"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {douala_member}"))
+                    .body(Body::from(json!({"to": "UNDER_REVIEW"}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/verify"))
+                    .header("Authorization", format!("Bearer {douala_member}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/cases/{case_id}/alerts"))
+                    .header("content-type", "application/json")
+                    .header("Authorization", format!("Bearer {douala_member}"))
+                    .body(Body::from(
+                        json!({
+                            "policy_id": "MISSING_CHILD_COMMUNITY",
+                            "severity": "HIGH",
+                            "target_geography": "Douala",
+                            "fields": []
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let alert_id = json_body(response).await["alert_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/alerts/{alert_id}/cancel"))
+                    .header("Authorization", format!("Bearer {platform_admin}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await["status"], json!("CANCELLED"));
     }
 
     #[tokio::test]

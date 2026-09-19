@@ -6,7 +6,9 @@ use core::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{AlertEventId, AlertId, Case, CaseEventType, CaseId, CaseStatus, IncidentType};
+use crate::{
+    AlertEventId, AlertId, Case, CaseEventType, CaseId, CaseStatus, IncidentType, OrganizationId,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -482,6 +484,16 @@ pub struct Alert {
     status: AlertStatus,
     fields: Vec<AlertFieldValue>,
     version: u64,
+    /// The organization the issuing reviewer belonged to at creation time,
+    /// if any -- `None` for a `PlatformAdmin` (org-independent) or an
+    /// automated actor. Used to scope who may later cancel this alert
+    /// (`authorize_alert_cancellation`, crates/application/src/authorization.rs):
+    /// a platform admin may always cancel; otherwise only a reviewer from
+    /// this same organization may, and `None` falls back to any identified
+    /// reviewer -- mirroring `authorize_consumer_management`'s "no real
+    /// owner" case, since case/org ownership across multiple organizations
+    /// is deliberately left flat elsewhere in this codebase too.
+    issued_by_organization_id: Option<OrganizationId>,
 }
 
 impl Alert {
@@ -494,6 +506,7 @@ impl Alert {
         severity: Severity,
         target_geography: TargetGeography,
         fields: Vec<AlertFieldValue>,
+        issued_by_organization_id: Option<OrganizationId>,
     ) -> Result<(Self, AlertEvent), AlertCreationError> {
         if !is_verified_or_later(case.status()) {
             return Err(AlertCreationError::CaseNotVerified {
@@ -535,6 +548,7 @@ impl Alert {
             status: AlertStatus::Active,
             fields,
             version: 1,
+            issued_by_organization_id,
         };
         let event = alert.event(AlertEventType::AlertCreated);
         Ok((alert, event))
@@ -556,6 +570,7 @@ impl Alert {
         status: AlertStatus,
         fields: Vec<AlertFieldValue>,
         version: u64,
+        issued_by_organization_id: Option<OrganizationId>,
     ) -> Self {
         Self {
             id,
@@ -570,6 +585,7 @@ impl Alert {
             status,
             fields,
             version,
+            issued_by_organization_id,
         }
     }
 
@@ -590,6 +606,9 @@ impl Alert {
     }
     pub fn case_id(&self) -> CaseId {
         self.case_id
+    }
+    pub fn issued_by_organization_id(&self) -> Option<OrganizationId> {
+        self.issued_by_organization_id
     }
     pub fn policy_id(&self) -> &AlertPolicyId {
         &self.policy_id
@@ -800,6 +819,7 @@ mod tests {
                 Severity::High,
                 geography.clone(),
                 safe_fields(),
+                None,
             );
             let expected_allowed = is_verified_or_later(status);
             assert_eq!(
@@ -831,6 +851,7 @@ mod tests {
             Severity::High,
             geography,
             vec![field(AlertField::ExactLocation, "12 Rue de la Paix")],
+            None,
         )
         .unwrap_err();
         assert_eq!(
@@ -863,6 +884,7 @@ mod tests {
                 Severity::High,
                 geography.clone(),
                 vec![field(restricted, "should never appear")],
+                None,
             )
             .unwrap_err();
             assert_eq!(
@@ -871,9 +893,15 @@ mod tests {
             );
         }
 
-        let (alert, _) =
-            Alert::create_from_case(&case, &policy, Severity::High, geography, safe_fields())
-                .unwrap();
+        let (alert, _) = Alert::create_from_case(
+            &case,
+            &policy,
+            Severity::High,
+            geography,
+            safe_fields(),
+            None,
+        )
+        .unwrap();
         for restricted in [
             AlertField::ReporterIdentity,
             AlertField::InternalNotes,
@@ -890,9 +918,15 @@ mod tests {
         let policy = AlertPolicy::missing_child_community_v1();
         let geography = TargetGeography::new("Douala").unwrap();
 
-        let error =
-            Alert::create_from_case(&case, &policy, Severity::High, geography, safe_fields())
-                .unwrap_err();
+        let error = Alert::create_from_case(
+            &case,
+            &policy,
+            Severity::High,
+            geography,
+            safe_fields(),
+            None,
+        )
+        .unwrap_err();
         assert_eq!(
             error,
             AlertCreationError::IncidentTypeMismatch {
@@ -917,6 +951,7 @@ mod tests {
                 field(AlertField::ApproximateAge, "8 years old"),
                 field(AlertField::ApproximateAge, "9 years old"),
             ],
+            None,
         )
         .unwrap_err();
         assert_eq!(
@@ -932,9 +967,15 @@ mod tests {
         let case = verified_case(IncidentType::MissingChild);
         let policy = AlertPolicy::missing_child_community_v1();
         let geography = TargetGeography::new("Douala").unwrap();
-        let (mut alert, _) =
-            Alert::create_from_case(&case, &policy, Severity::High, geography, safe_fields())
-                .unwrap();
+        let (mut alert, _) = Alert::create_from_case(
+            &case,
+            &policy,
+            Severity::High,
+            geography,
+            safe_fields(),
+            None,
+        )
+        .unwrap();
 
         let event = alert.cancel().unwrap();
         assert_eq!(event.event_type, AlertEventType::AlertCancelled);

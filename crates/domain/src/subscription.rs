@@ -376,6 +376,7 @@ mod tests {
                 field: AlertField::IncidentCategory,
                 value: "MISSING_CHILD".into(),
             }],
+            None,
         )
         .unwrap();
         alert

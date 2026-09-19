@@ -118,6 +118,7 @@ async fn creates_a_community_alert_from_a_verified_case() {
         Actor::Reviewer(Uuid::new_v4()),
         Uuid::new_v4(),
         None,
+        None,
     )
     .unwrap();
     alert_repository.create(&creation).await.unwrap();
@@ -177,6 +178,7 @@ async fn cancels_an_alert_and_rejects_a_stale_retry() {
         safe_fields(),
         Actor::Reviewer(Uuid::new_v4()),
         Uuid::new_v4(),
+        None,
         None,
     )
     .unwrap();
@@ -260,6 +262,7 @@ async fn list_filters_by_status_and_visibility_most_recently_created_first() {
         Actor::Reviewer(Uuid::new_v4()),
         Uuid::new_v4(),
         None,
+        None,
     )
     .unwrap();
     alert_repository.create(&community_creation).await.unwrap();
@@ -276,6 +279,7 @@ async fn list_filters_by_status_and_visibility_most_recently_created_first() {
         }],
         Actor::Automated,
         Uuid::new_v4(),
+        None,
         None,
     )
     .unwrap();
@@ -339,6 +343,7 @@ async fn list_respects_limit_and_offset() {
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
             None,
+            None,
         )
         .unwrap();
         alert_repository.create(&creation).await.unwrap();
@@ -376,6 +381,7 @@ async fn a_retried_alert_creation_with_the_same_idempotency_key_is_rejected_as_a
         Actor::Reviewer(Uuid::new_v4()),
         Uuid::new_v4(),
         Some("client-retry-key-1"),
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -392,6 +398,7 @@ async fn a_retried_alert_creation_with_the_same_idempotency_key_is_rejected_as_a
         Actor::Reviewer(Uuid::new_v4()),
         Uuid::new_v4(),
         Some("client-retry-key-1"),
+        None,
     )
     .unwrap();
     assert_eq!(
@@ -426,6 +433,7 @@ async fn alert_creations_without_an_idempotency_key_are_never_treated_as_duplica
             safe_fields(),
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
+            None,
             None,
         )
         .unwrap();

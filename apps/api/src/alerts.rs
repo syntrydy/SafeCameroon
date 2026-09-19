@@ -11,12 +11,14 @@ use safe_cameroon_application::alert_workflow::{
     AlertCancellationError, AlertCreationUseCaseError, cancel_alert, create_alert_from_case,
     resolve_policy,
 };
-use safe_cameroon_application::authorization::{Capability, authorize, authorize_alert_issuance};
+use safe_cameroon_application::authorization::{
+    Capability, authorize, authorize_alert_cancellation, authorize_alert_issuance,
+};
 use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_domain::{
     AlertCreationError, AlertField, AlertFieldValue, AlertId, AlertStatus, AlertTransitionError,
-    AlertVisibility, CaseEventType, CaseId, IncidentType, Membership, Role, Severity,
-    TargetGeography,
+    AlertVisibility, CaseEventType, CaseId, IncidentType, Membership, OrganizationId, Role,
+    Severity, TargetGeography,
 };
 use safe_cameroon_infrastructure::postgres::{
     AlertCancelOutcome, AlertCreationOutcome, AlertFilter,
@@ -108,20 +110,70 @@ fn alert_response(alert: &safe_cameroon_domain::Alert) -> AlertResponse {
     }
 }
 
-/// Only meaningful for a visibility that already requires an identified
-/// reviewer (community/public); internal/partner alerts are unaffected
-/// (docs/OPEN_QUESTIONS.md: "which organizations may issue community/public
-/// alerts" — resolved per-organization by crates/domain/src/organization.rs
-/// rather than a policy baked in here).
-async fn authorize_issuance_by_organization(
+/// Checks organization trust (only meaningful for a visibility that already
+/// requires an identified reviewer -- community/public; internal/partner
+/// alerts are unaffected, docs/OPEN_QUESTIONS.md: "which organizations may
+/// issue community/public alerts" — resolved per-organization by
+/// crates/domain/src/organization.rs rather than a policy baked in here) and
+/// returns the creating reviewer's own organization regardless of
+/// visibility, so it can be stamped onto the alert as
+/// `issued_by_organization_id` — later used to scope who may cancel it
+/// (`authorize_alert_cancellation`).
+async fn issuing_organization(
     state: &AppState,
     actor: Actor,
     visibility: AlertVisibility,
     request_id: Uuid,
-) -> Result<(), ApiError> {
-    if visibility.admits_internal_only_fields() {
-        return Ok(());
+) -> Result<Option<OrganizationId>, ApiError> {
+    let Actor::Reviewer(reviewer_id) = actor else {
+        return Ok(None);
+    };
+    let membership = state
+        .organizations
+        .find_membership(reviewer_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .unwrap_or(Membership {
+            role: Role::Member,
+            organization_id: None,
+        });
+
+    if !visibility.admits_internal_only_fields() {
+        let organization = match membership.organization_id {
+            Some(organization_id) => Some(
+                state
+                    .organizations
+                    .find_by_id(organization_id)
+                    .await
+                    .map_err(|_| persistence_failed(request_id))?
+                    .expect("a reviewer's membership never references a deleted organization"),
+            ),
+            None => None,
+        };
+        authorize_alert_issuance(membership, organization.as_ref(), visibility).map_err(|_| {
+            ApiError {
+                status: StatusCode::FORBIDDEN,
+                code: "ORGANIZATION_NOT_TRUSTED_FOR_ALERT_VISIBILITY",
+                message: "Your organization is not trusted to issue alerts at this visibility.",
+                request_id,
+            }
+        })?;
     }
+
+    Ok(membership.organization_id)
+}
+
+/// Whether `actor` may cancel an alert issued by `issued_by_organization_id`
+/// (`authorize_alert_cancellation`, crates/application/src/authorization.rs).
+/// `cancel_alert`'s own `authorize_alert_cancellation` (a differently-scoped,
+/// same-named check in `alert_workflow`) already rejects `Actor::Automated`
+/// before this org-scoping matters.
+async fn authorize_cancellation_by_organization(
+    state: &AppState,
+    actor: Actor,
+    issued_by_organization_id: Option<OrganizationId>,
+    request_id: Uuid,
+) -> Result<(), ApiError> {
     let Actor::Reviewer(reviewer_id) = actor else {
         return Ok(());
     };
@@ -134,21 +186,10 @@ async fn authorize_issuance_by_organization(
             role: Role::Member,
             organization_id: None,
         });
-    let organization = match membership.organization_id {
-        Some(organization_id) => Some(
-            state
-                .organizations
-                .find_by_id(organization_id)
-                .await
-                .map_err(|_| persistence_failed(request_id))?
-                .expect("a reviewer's membership never references a deleted organization"),
-        ),
-        None => None,
-    };
-    authorize_alert_issuance(membership, organization.as_ref(), visibility).map_err(|_| ApiError {
+    authorize_alert_cancellation(membership, issued_by_organization_id).map_err(|_| ApiError {
         status: StatusCode::FORBIDDEN,
-        code: "ORGANIZATION_NOT_TRUSTED_FOR_ALERT_VISIBILITY",
-        message: "Your organization is not trusted to issue alerts at this visibility.",
+        code: "NOT_AUTHORIZED",
+        message: "You may not cancel an alert issued by another organization.",
         request_id,
     })
 }
@@ -203,7 +244,8 @@ pub async fn create_alert(
             request_id,
         })?;
 
-    authorize_issuance_by_organization(&state, actor, policy.visibility(), request_id).await?;
+    let issued_by_organization_id =
+        issuing_organization(&state, actor, policy.visibility(), request_id).await?;
 
     let creation = create_alert_from_case(
         &case,
@@ -214,6 +256,7 @@ pub async fn create_alert(
         actor,
         request_id,
         idempotency_key,
+        issued_by_organization_id,
     )
     .map_err(|error| match error {
         AlertCreationUseCaseError::NotAuthorized(_) => ApiError {
@@ -379,6 +422,14 @@ pub async fn cancel(
         .await
         .map_err(|_| persistence_failed(request_id))?
         .ok_or_else(|| alert_not_found(request_id))?;
+
+    authorize_cancellation_by_organization(
+        &state,
+        actor,
+        alert.issued_by_organization_id(),
+        request_id,
+    )
+    .await?;
 
     let cancellation =
         cancel_alert(&mut alert, actor, request_id).map_err(|error| match error {

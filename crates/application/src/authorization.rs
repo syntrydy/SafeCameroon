@@ -280,6 +280,47 @@ pub fn authorize_consumer_management(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AlertCancellationNotAuthorized;
+
+impl fmt::Display for AlertCancellationNotAuthorized {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "reviewer may not cancel an alert issued by another organization"
+        )
+    }
+}
+
+impl std::error::Error for AlertCancellationNotAuthorized {}
+
+/// Whether `membership` may cancel an alert issued by
+/// `issued_by_organization_id` (`Alert::issued_by_organization_id`,
+/// `apps/api/src/alerts.rs::cancel`). A `PlatformAdmin` may cancel any
+/// alert. An `OrgAdmin`/`Member` may cancel only an alert their own
+/// organization issued. An alert with no issuing organization (issued by a
+/// `PlatformAdmin`, or automatically for an internal/partner alert) has no
+/// real owner to scope against, so any identified reviewer may still cancel
+/// it — mirroring [`authorize_consumer_management`]'s same "no owner"
+/// fallback.
+pub fn authorize_alert_cancellation(
+    membership: Membership,
+    issued_by_organization_id: Option<OrganizationId>,
+) -> Result<(), AlertCancellationNotAuthorized> {
+    if membership.role == Role::PlatformAdmin {
+        return Ok(());
+    }
+    match issued_by_organization_id {
+        None => Ok(()),
+        Some(issued_by_organization_id)
+            if membership.organization_id == Some(issued_by_organization_id) =>
+        {
+            Ok(())
+        }
+        Some(_) => Err(AlertCancellationNotAuthorized),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -616,6 +657,51 @@ mod tests {
         assert_eq!(
             authorize_consumer_management(membership, Some(OrganizationId::new())),
             Err(ConsumerManagementNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn a_platform_admin_may_cancel_any_alert() {
+        let membership = Membership {
+            role: Role::PlatformAdmin,
+            organization_id: None,
+        };
+        assert!(authorize_alert_cancellation(membership, Some(OrganizationId::new())).is_ok());
+        assert!(authorize_alert_cancellation(membership, None).is_ok());
+    }
+
+    #[test]
+    fn an_alert_with_no_issuing_organization_is_cancellable_by_any_reviewer() {
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: Some(OrganizationId::new()),
+        };
+        assert!(authorize_alert_cancellation(membership, None).is_ok());
+    }
+
+    #[test]
+    fn a_member_may_cancel_only_an_alert_their_own_organization_issued() {
+        let org_id = OrganizationId::new();
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: Some(org_id),
+        };
+        assert!(authorize_alert_cancellation(membership, Some(org_id)).is_ok());
+        assert_eq!(
+            authorize_alert_cancellation(membership, Some(OrganizationId::new())),
+            Err(AlertCancellationNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn a_member_with_no_organization_may_not_cancel_an_org_issued_alert() {
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: None,
+        };
+        assert_eq!(
+            authorize_alert_cancellation(membership, Some(OrganizationId::new())),
+            Err(AlertCancellationNotAuthorized)
         );
     }
 }

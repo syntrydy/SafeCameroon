@@ -4,7 +4,7 @@ use safe_cameroon_application::alert_workflow::{
 use safe_cameroon_application::case_workflow::Actor;
 use safe_cameroon_domain::{
     Alert, AlertEvent, AlertField, AlertFieldValue, AlertId, AlertPolicyId, AlertStatus,
-    AlertVisibility, CaseEventType, IncidentType, Severity,
+    AlertVisibility, CaseEventType, IncidentType, OrganizationId, Severity,
 };
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -57,11 +57,12 @@ impl PostgresAlertRepository {
             String,
             String,
             i64,
+            Option<Uuid>,
         )> = sqlx::query_as(
             r#"
             SELECT case_id, policy_id, policy_version, incident_type::text, severity::text,
                    visibility::text, trigger::text, target_geography, status::text,
-                   aggregate_version
+                   aggregate_version, issued_by_organization_id
             FROM alerts
             WHERE id = $1
             "#,
@@ -83,6 +84,7 @@ impl PostgresAlertRepository {
             target_geography,
             status,
             aggregate_version,
+            issued_by_organization_id,
         ) = row;
 
         let field_rows: Vec<(String, String)> =
@@ -118,6 +120,7 @@ impl PostgresAlertRepository {
                 .expect("alerts.status is constrained by the alert_status enum"),
             fields,
             aggregate_version as u64,
+            issued_by_organization_id.map(OrganizationId::from_uuid),
         )))
     }
 
@@ -144,11 +147,12 @@ impl PostgresAlertRepository {
             String,
             String,
             i64,
+            Option<Uuid>,
         )> = sqlx::query_as(
             r#"
             SELECT id, case_id, policy_id, policy_version, incident_type::text, severity::text,
                    visibility::text, trigger::text, target_geography, status::text,
-                   aggregate_version
+                   aggregate_version, issued_by_organization_id
             FROM alerts
             WHERE ($1::alert_status IS NULL OR status = $1::alert_status)
               AND ($2::alert_visibility IS NULL OR visibility = $2::alert_visibility)
@@ -203,6 +207,7 @@ impl PostgresAlertRepository {
                     target_geography,
                     status,
                     aggregate_version,
+                    issued_by_organization_id,
                 )| {
                     Alert::reconstitute(
                         AlertId::from_uuid(id),
@@ -226,6 +231,7 @@ impl PostgresAlertRepository {
                             .expect("alerts.status is constrained by the alert_status enum"),
                         fields_by_alert.remove(&id).unwrap_or_default(),
                         aggregate_version as u64,
+                        issued_by_organization_id.map(OrganizationId::from_uuid),
                     )
                 },
             )
@@ -339,11 +345,12 @@ async fn insert_alert(
         r#"
         INSERT INTO alerts (
             id, case_id, policy_id, policy_version, incident_type, severity, visibility,
-            trigger, target_geography, status, aggregate_version, idempotency_key_hash
+            trigger, target_geography, status, aggregate_version, idempotency_key_hash,
+            issued_by_organization_id
         )
         VALUES (
             $1, $2, $3, $4, $5::incident_type, $6::severity_level, $7::alert_visibility,
-            $8::case_event_type, $9, $10::alert_status, $11, $12
+            $8::case_event_type, $9, $10::alert_status, $11, $12, $13
         )
         ON CONFLICT (idempotency_key_hash) WHERE idempotency_key_hash IS NOT NULL DO NOTHING
         "#,
@@ -360,6 +367,11 @@ async fn insert_alert(
     .bind(alert.status().as_database_value())
     .bind(alert.version() as i64)
     .bind(idempotency_key_hash)
+    .bind(
+        alert
+            .issued_by_organization_id()
+            .map(OrganizationId::as_uuid),
+    )
     .execute(&mut **transaction)
     .await?;
 
