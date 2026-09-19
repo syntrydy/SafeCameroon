@@ -44,7 +44,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             {t.layout.signOut}
           </button>
         </header>
-        <main className="relative mx-auto w-full max-w-5xl flex-1 p-6">{children}</main>
+        <main className="relative w-full flex-1 p-6">{children}</main>
         <Footer />
       </div>
     </div>
