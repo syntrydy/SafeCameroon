@@ -9,6 +9,7 @@ import { BRAND_NAME } from "./config/brand";
 import { AlertList } from "./pages/alerts/AlertList";
 import { AlertPreview } from "./pages/alerts/AlertPreview";
 import { CaseDetail } from "./pages/case-detail/CaseDetail";
+import { CaseList } from "./pages/case-detail/CaseList";
 import { DeliveryDetail } from "./pages/deliveries/DeliveryDetail";
 import { DeliveryList } from "./pages/deliveries/DeliveryList";
 import { Login } from "./pages/Login";
@@ -39,6 +40,7 @@ export function App() {
         <Route path="/login" element={<Login />} />
         <Route element={<ProtectedLayout />}>
           <Route path="/" element={<ReviewQueue />} />
+          <Route path="/cases" element={<CaseList />} />
           <Route path="/cases/:id" element={<CaseDetail />} />
           <Route path="/alerts" element={<AlertList />} />
           <Route path="/alerts/:id" element={<AlertPreview />} />

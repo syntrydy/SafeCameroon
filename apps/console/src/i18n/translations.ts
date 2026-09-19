@@ -16,6 +16,7 @@ export interface Translations {
   };
   layout: {
     reports: string;
+    cases: string;
     alerts: string;
     subscriptions: string;
     organizations: string;
@@ -135,6 +136,26 @@ export interface Translations {
     colVisibility: string;
     colStatus: string;
     colTargetGeography: string;
+  };
+  caseList: {
+    heading: string;
+    statusLabel: string;
+    statusAll: string;
+    statusReported: string;
+    statusUnderReview: string;
+    statusVerified: string;
+    statusActive: string;
+    statusResolved: string;
+    statusCancelled: string;
+    statusRejected: string;
+    loading: string;
+    noCases: string;
+    colCase: string;
+    colIncidentType: string;
+    colStatus: string;
+    colReports: string;
+    incidentTypeMissingChild: string;
+    incidentTypeOtherProtection: string;
   };
   alertPreview: {
     heading: (shortId: string) => string;
@@ -330,6 +351,7 @@ export const translations: Record<Locale, Translations> = {
     },
     layout: {
       reports: "Reports",
+      cases: "Cases",
       alerts: "Alerts",
       subscriptions: "Subscriptions",
       organizations: "Organizations",
@@ -451,6 +473,26 @@ export const translations: Record<Locale, Translations> = {
       colVisibility: "Visibility",
       colStatus: "Status",
       colTargetGeography: "Target geography",
+    },
+    caseList: {
+      heading: "Cases",
+      statusLabel: "Status:",
+      statusAll: "All",
+      statusReported: "Reported",
+      statusUnderReview: "Under review",
+      statusVerified: "Verified",
+      statusActive: "Active",
+      statusResolved: "Resolved",
+      statusCancelled: "Cancelled",
+      statusRejected: "Rejected",
+      loading: "Loading cases...",
+      noCases: "No cases match this filter.",
+      colCase: "Case",
+      colIncidentType: "Incident type",
+      colStatus: "Status",
+      colReports: "Reports",
+      incidentTypeMissingChild: "Missing child",
+      incidentTypeOtherProtection: "Other protection incident",
     },
     alertPreview: {
       heading: (shortId) => `Alert ${shortId}`,
@@ -645,6 +687,7 @@ export const translations: Record<Locale, Translations> = {
     },
     layout: {
       reports: "Signalements",
+      cases: "Dossiers",
       alerts: "Alertes",
       subscriptions: "Abonnements",
       organizations: "Organisations",
@@ -768,6 +811,26 @@ export const translations: Record<Locale, Translations> = {
       colVisibility: "Visibilité",
       colStatus: "Statut",
       colTargetGeography: "Zone ciblée",
+    },
+    caseList: {
+      heading: "Dossiers",
+      statusLabel: "Statut :",
+      statusAll: "Tous",
+      statusReported: "Signalé",
+      statusUnderReview: "En cours d'examen",
+      statusVerified: "Vérifié",
+      statusActive: "Actif",
+      statusResolved: "Résolu",
+      statusCancelled: "Annulé",
+      statusRejected: "Rejeté",
+      loading: "Chargement des dossiers...",
+      noCases: "Aucun dossier ne correspond à ce filtre.",
+      colCase: "Dossier",
+      colIncidentType: "Type d'incident",
+      colStatus: "Statut",
+      colReports: "Signalements",
+      incidentTypeMissingChild: "Enfant disparu",
+      incidentTypeOtherProtection: "Autre incident de protection",
     },
     alertPreview: {
       heading: (shortId) => `Alerte ${shortId}`,
