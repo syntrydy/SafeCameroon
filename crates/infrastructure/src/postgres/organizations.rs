@@ -31,8 +31,27 @@ fn parse_alert_visibilities(values: Vec<String>) -> Vec<AlertVisibility> {
         .collect()
 }
 
-type OrganizationRow = (String, Vec<String>, Vec<String>, Option<Uuid>);
-type OrganizationListRow = (Uuid, String, Vec<String>, Vec<String>, Option<Uuid>);
+#[allow(clippy::type_complexity)]
+type OrganizationRow = (
+    String,
+    Option<String>,
+    Option<String>,
+    Vec<String>,
+    Vec<String>,
+    Option<Uuid>,
+    bool,
+);
+#[allow(clippy::type_complexity)]
+type OrganizationListRow = (
+    Uuid,
+    String,
+    Option<String>,
+    Option<String>,
+    Vec<String>,
+    Vec<String>,
+    Option<Uuid>,
+    bool,
+);
 
 pub struct MembershipRecord {
     pub reviewer_id: Uuid,
@@ -51,11 +70,15 @@ impl PostgresOrganizationRepository {
     }
 
     pub async fn create(&self, organization: &Organization) -> Result<(), sqlx::Error> {
-        sqlx::query("INSERT INTO organizations (id, name) VALUES ($1, $2)")
-            .bind(organization.id().as_uuid())
-            .bind(organization.name())
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "INSERT INTO organizations (id, name, description, location) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(organization.id().as_uuid())
+        .bind(organization.name())
+        .bind(organization.description())
+        .bind(organization.location())
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -64,30 +87,45 @@ impl PostgresOrganizationRepository {
         organization_id: OrganizationId,
     ) -> Result<Option<Organization>, sqlx::Error> {
         let row: Option<OrganizationRow> = sqlx::query_as(
-            "SELECT name, verified_incident_types, verified_alert_visibilities, consumer_id \
+            "SELECT name, description, location, verified_incident_types, \
+             verified_alert_visibilities, consumer_id, is_active \
              FROM organizations WHERE id = $1",
         )
         .bind(organization_id.as_uuid())
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(
-            row.map(|(name, incident_types, visibilities, consumer_id)| {
+        Ok(row.map(
+            |(
+                name,
+                description,
+                location,
+                incident_types,
+                visibilities,
+                consumer_id,
+                is_active,
+            )| {
                 Organization::reconstitute(
                     organization_id,
                     name,
+                    description,
+                    location,
                     parse_incident_types(incident_types),
                     parse_alert_visibilities(visibilities),
                     consumer_id.map(ConsumerId::from_uuid),
+                    is_active,
                 )
-            }),
-        )
+            },
+        ))
     }
 
     /// Most recently created first, mirroring every other list endpoint.
+    /// Returns every organization regardless of `is_active`, so a platform
+    /// admin can still find and reactivate a deactivated one.
     pub async fn list(&self, limit: i64, offset: i64) -> Result<Vec<Organization>, sqlx::Error> {
         let rows: Vec<OrganizationListRow> = sqlx::query_as(
-            "SELECT id, name, verified_incident_types, verified_alert_visibilities, consumer_id \
+            "SELECT id, name, description, location, verified_incident_types, \
+             verified_alert_visibilities, consumer_id, is_active \
              FROM organizations ORDER BY created_at DESC LIMIT $1 OFFSET $2",
         )
         .bind(limit)
@@ -97,16 +135,65 @@ impl PostgresOrganizationRepository {
 
         Ok(rows
             .into_iter()
-            .map(|(id, name, incident_types, visibilities, consumer_id)| {
-                Organization::reconstitute(
-                    OrganizationId::from_uuid(id),
+            .map(
+                |(
+                    id,
                     name,
-                    parse_incident_types(incident_types),
-                    parse_alert_visibilities(visibilities),
-                    consumer_id.map(ConsumerId::from_uuid),
-                )
-            })
+                    description,
+                    location,
+                    incident_types,
+                    visibilities,
+                    consumer_id,
+                    is_active,
+                )| {
+                    Organization::reconstitute(
+                        OrganizationId::from_uuid(id),
+                        name,
+                        description,
+                        location,
+                        parse_incident_types(incident_types),
+                        parse_alert_visibilities(visibilities),
+                        consumer_id.map(ConsumerId::from_uuid),
+                        is_active,
+                    )
+                },
+            )
             .collect())
+    }
+
+    /// Updates the organization's description/location wholesale -- both
+    /// nullable, so `None` clears the field rather than leaving it
+    /// unchanged (matching `set_trust_grants`'s wholesale-replace
+    /// semantics, not an incremental patch).
+    pub async fn set_profile(
+        &self,
+        organization_id: OrganizationId,
+        description: Option<&str>,
+        location: Option<&str>,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE organizations SET description = $2, location = $3 WHERE id = $1")
+            .bind(organization_id.as_uuid())
+            .bind(description)
+            .bind(location)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Flips the soft-deactivate flag (migration 0026). Never deletes the
+    /// organization or anything it owns -- see `Organization::is_active`'s
+    /// doc comment.
+    pub async fn set_active(
+        &self,
+        organization_id: OrganizationId,
+        is_active: bool,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE organizations SET is_active = $2 WHERE id = $1")
+            .bind(organization_id.as_uuid())
+            .bind(is_active)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// Links this organization to the consumer alerts are actually

@@ -37,6 +37,19 @@ export function listSubscriptionsForConsumer(token: string, consumerId: string):
   return apiRequest<Subscription[]>(`/v1/consumers/${consumerId}/subscriptions`, { token });
 }
 
+// Every subscription across every consumer, most recently created first --
+// apps/api/src/subscriptions.rs `list_all_subscriptions`.
+export function listAllSubscriptions(
+  token: string,
+  params: { limit?: number; offset?: number } = {},
+): Promise<Subscription[]> {
+  const query = new URLSearchParams();
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  if (params.offset !== undefined) query.set("offset", String(params.offset));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return apiRequest<Subscription[]>(`/v1/subscriptions${suffix}`, { token });
+}
+
 export function updateSubscription(
   token: string,
   subscriptionId: string,

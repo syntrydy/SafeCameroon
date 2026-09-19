@@ -209,6 +209,27 @@ impl PostgresSubscriptionRepository {
         Ok(rows.into_iter().map(subscription_from_row).collect())
     }
 
+    /// A paginated, most-recently-created-first counterpart to `list_all`
+    /// for the admin-facing `GET /v1/subscriptions` listing
+    /// (apps/api/src/subscriptions.rs::list_all_subscriptions) -- kept
+    /// separate so `list_all`'s unfiltered/unpaginated contract for the
+    /// worker's matching engine never changes.
+    pub async fn list_all_page(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Subscription>, sqlx::Error> {
+        let rows: Vec<SubscriptionRow> = sqlx::query_as(
+            "SELECT id, consumer_id, version, rules FROM subscriptions \
+             ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(subscription_from_row).collect())
+    }
+
     /// `subscription` must already reflect the desired new state (i.e. the
     /// caller already called `Subscription::update_rules` on it); this
     /// applies it with optimistic concurrency on `version` and records an

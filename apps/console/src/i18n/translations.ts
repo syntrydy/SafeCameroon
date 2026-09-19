@@ -56,6 +56,7 @@ export interface Translations {
     statusClosed: string;
     caseCreated: string;
     linkedToCase: string;
+    reviewStarted: string;
     viewCase: string;
     loading: string;
     noReports: string;
@@ -63,7 +64,8 @@ export interface Translations {
     colChannel: string;
     colStatus: string;
     colReceived: string;
-    colContentActions: string;
+    colContent: string;
+    colActions: string;
   };
   reportRow: {
     showMore: string;
@@ -73,6 +75,7 @@ export interface Translations {
     incidentTypeOtherProtection: string;
     existingCaseIdLabel: (reportId: string) => string;
     existingCaseIdPlaceholder: string;
+    startReview: string;
     createCase: string;
     linkToCase: string;
     reporterSuggested: string;
@@ -215,6 +218,11 @@ export interface Translations {
     addSubscription: string;
     creating: string;
     createSubscription: string;
+    allSubscriptionsHeading: string;
+    noSubscriptionsAtAll: string;
+    consumerLabel: string;
+    viewConsumer: string;
+    loadMore: string;
   };
   subscriptionCard: {
     edit: string;
@@ -262,6 +270,8 @@ export interface Translations {
     heading: string;
     createHeading: string;
     name: string;
+    descriptionLabel: string;
+    locationLabel: string;
     creating: string;
     create: string;
     loading: string;
@@ -278,6 +288,18 @@ export interface Translations {
     saving: string;
     inviteOrgAdminHeading: string;
     inviteOrgAdmin: string;
+    profileHeading: string;
+    saveProfile: string;
+    savingProfile: string;
+    noDescription: string;
+    noLocation: string;
+    statusActive: string;
+    statusInactive: string;
+    deactivate: string;
+    deactivating: string;
+    reactivate: string;
+    reactivating: string;
+    inactiveNote: string;
   };
   myOrganization: {
     heading: string;
@@ -349,6 +371,7 @@ export const translations: Record<Locale, Translations> = {
       statusClosed: "Closed",
       caseCreated: "Case created.",
       linkedToCase: "Linked to case.",
+      reviewStarted: "Review started.",
       viewCase: "View case",
       loading: "Loading reports...",
       noReports: "No reports match this filter.",
@@ -356,7 +379,8 @@ export const translations: Record<Locale, Translations> = {
       colChannel: "Channel",
       colStatus: "Status",
       colReceived: "Received",
-      colContentActions: "Content & actions",
+      colContent: "Content",
+      colActions: "Actions",
     },
     reportRow: {
       showMore: "Show more",
@@ -366,6 +390,7 @@ export const translations: Record<Locale, Translations> = {
       incidentTypeOtherProtection: "Other protection incident",
       existingCaseIdLabel: (reportId) => `Existing case id for report ${reportId}`,
       existingCaseIdPlaceholder: "Existing case id",
+      startReview: "Start review",
       createCase: "Create case",
       linkToCase: "Link to case",
       reporterSuggested: "Reporter suggested:",
@@ -509,6 +534,11 @@ export const translations: Record<Locale, Translations> = {
       addSubscription: "Add subscription",
       creating: "Creating...",
       createSubscription: "Create subscription",
+      allSubscriptionsHeading: "All subscriptions",
+      noSubscriptionsAtAll: "No subscriptions exist yet.",
+      consumerLabel: "Consumer",
+      viewConsumer: "View consumer",
+      loadMore: "Load more",
     },
     subscriptionCard: {
       edit: "Edit",
@@ -556,6 +586,8 @@ export const translations: Record<Locale, Translations> = {
       heading: "Organizations",
       createHeading: "Register a new organization",
       name: "Name",
+      descriptionLabel: "Description (optional)",
+      locationLabel: "Location (optional)",
       creating: "Creating...",
       create: "Create organization",
       loading: "Loading organizations...",
@@ -572,6 +604,19 @@ export const translations: Record<Locale, Translations> = {
       saving: "Saving...",
       inviteOrgAdminHeading: "Invite an org admin",
       inviteOrgAdmin: "Invite org admin",
+      profileHeading: "Profile",
+      saveProfile: "Save profile",
+      savingProfile: "Saving...",
+      noDescription: "No description yet.",
+      noLocation: "No location set.",
+      statusActive: "Active",
+      statusInactive: "Deactivated",
+      deactivate: "Deactivate",
+      deactivating: "Deactivating...",
+      reactivate: "Reactivate",
+      reactivating: "Reactivating...",
+      inactiveNote:
+        "This organization is deactivated. Its members can no longer verify cases, issue alerts, or manage notification settings, and it cannot register new members until reactivated.",
     },
     myOrganization: {
       heading: "My organization",
@@ -643,6 +688,7 @@ export const translations: Record<Locale, Translations> = {
       statusClosed: "Clôturé",
       caseCreated: "Dossier créé.",
       linkedToCase: "Lié au dossier.",
+      reviewStarted: "Examen commencé.",
       viewCase: "Voir le dossier",
       loading: "Chargement des signalements...",
       noReports: "Aucun signalement ne correspond à ce filtre.",
@@ -650,7 +696,8 @@ export const translations: Record<Locale, Translations> = {
       colChannel: "Canal",
       colStatus: "Statut",
       colReceived: "Reçu le",
-      colContentActions: "Contenu et actions",
+      colContent: "Contenu",
+      colActions: "Actions",
     },
     reportRow: {
       showMore: "Afficher plus",
@@ -660,6 +707,7 @@ export const translations: Record<Locale, Translations> = {
       incidentTypeOtherProtection: "Autre incident de protection",
       existingCaseIdLabel: (reportId) => `Identifiant de dossier existant pour le signalement ${reportId}`,
       existingCaseIdPlaceholder: "Identifiant de dossier existant",
+      startReview: "Commencer l'examen",
       createCase: "Créer un dossier",
       linkToCase: "Lier à un dossier",
       reporterSuggested: "Suggéré par le rapporteur :",
@@ -803,6 +851,11 @@ export const translations: Record<Locale, Translations> = {
       addSubscription: "Ajouter un abonnement",
       creating: "Création...",
       createSubscription: "Créer l'abonnement",
+      allSubscriptionsHeading: "Tous les abonnements",
+      noSubscriptionsAtAll: "Aucun abonnement n'existe pour l'instant.",
+      consumerLabel: "Consommateur",
+      viewConsumer: "Voir le consommateur",
+      loadMore: "Charger plus",
     },
     subscriptionCard: {
       edit: "Modifier",
@@ -850,6 +903,8 @@ export const translations: Record<Locale, Translations> = {
       heading: "Organisations",
       createHeading: "Enregistrer une nouvelle organisation",
       name: "Nom",
+      descriptionLabel: "Description (facultatif)",
+      locationLabel: "Lieu (facultatif)",
       creating: "Création...",
       create: "Créer l'organisation",
       loading: "Chargement des organisations...",
@@ -866,6 +921,19 @@ export const translations: Record<Locale, Translations> = {
       saving: "Enregistrement...",
       inviteOrgAdminHeading: "Inviter un administrateur d'organisation",
       inviteOrgAdmin: "Inviter l'administrateur",
+      profileHeading: "Profil",
+      saveProfile: "Enregistrer le profil",
+      savingProfile: "Enregistrement...",
+      noDescription: "Aucune description pour l'instant.",
+      noLocation: "Aucun lieu défini.",
+      statusActive: "Active",
+      statusInactive: "Désactivée",
+      deactivate: "Désactiver",
+      deactivating: "Désactivation...",
+      reactivate: "Réactiver",
+      reactivating: "Réactivation...",
+      inactiveNote:
+        "Cette organisation est désactivée. Ses membres ne peuvent plus vérifier de dossiers, émettre d'alertes ni gérer les paramètres de notification, et elle ne peut plus inscrire de nouveaux membres jusqu'à sa réactivation.",
     },
     myOrganization: {
       heading: "Mon organisation",

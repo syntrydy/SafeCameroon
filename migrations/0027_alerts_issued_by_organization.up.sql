@@ -1,0 +1,12 @@
+-- Records which organization the issuing reviewer belonged to at alert
+-- creation time (crates/domain/src/alert.rs `Alert::issued_by_organization_id`)
+-- so alert cancellation can be scoped to a platform admin or that same
+-- organization (authorize_alert_cancellation,
+-- crates/application/src/authorization.rs), rather than any identified
+-- reviewer being able to cancel any organization's alert. Nullable: `NULL`
+-- for a platform-admin-issued or automated (internal/partner) alert, which
+-- falls back to "any identified reviewer may cancel" -- there is no real
+-- owner to scope against, mirroring how a consumer with no linked
+-- organization is flat-managed. Alerts that predate this column are
+-- unaffected (NULL), so they keep the old flat-cancellation behavior.
+ALTER TABLE alerts ADD COLUMN issued_by_organization_id UUID REFERENCES organizations (id);

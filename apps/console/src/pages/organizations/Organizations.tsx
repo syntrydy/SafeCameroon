@@ -6,15 +6,27 @@ import type { AlertVisibility } from "../../api/alerts";
 import type { IncidentType } from "../../api/cases";
 import {
   createOrganization,
+  deactivateOrganization,
   listMembers,
   listOrganizations,
+  reactivateOrganization,
   setTrustGrants,
+  updateOrganizationProfile,
   type Member,
   type Organization,
 } from "../../api/organizations";
+import {
+  getDeliveryPreference,
+  listSubscriptionsForConsumer,
+  type DeliveryPreference,
+  type Subscription,
+} from "../../api/subscriptions";
 import { useAuth } from "../../auth/AuthContext";
 import { useTranslation } from "../../i18n/LanguageContext";
 import type { Translations } from "../../i18n/translations";
+import { CreateSubscriptionForm } from "../subscriptions/CreateSubscriptionForm";
+import { DeliveryPreferenceForm } from "../subscriptions/DeliveryPreferenceForm";
+import { SubscriptionCard } from "../subscriptions/SubscriptionCard";
 
 const INCIDENT_TYPES: IncidentType[] = ["MISSING_CHILD", "OTHER_PROTECTION_INCIDENT"];
 const ALERT_VISIBILITIES: AlertVisibility[] = ["INTERNAL", "PARTNER", "COMMUNITY", "PUBLIC"];
@@ -32,6 +44,8 @@ function CreateOrganizationForm({
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [location, setLocation] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,9 +54,16 @@ function CreateOrganizationForm({
     setSubmitting(true);
     setError(null);
     try {
-      const created = await createOrganization(token, name);
+      const created = await createOrganization(
+        token,
+        name,
+        description.trim() || undefined,
+        location.trim() || undefined,
+      );
       onCreated(created);
       setName("");
+      setDescription("");
+      setLocation("");
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
     } finally {
@@ -76,6 +97,30 @@ function CreateOrganizationForm({
           {submitting ? t.organizations.creating : t.organizations.create}
         </button>
       </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <div className="flex-1">
+          <label htmlFor="new-organization-description" className="mb-1 block text-xs text-slate-400">
+            {t.organizations.descriptionLabel}
+          </label>
+          <input
+            id="new-organization-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+          />
+        </div>
+        <div className="flex-1">
+          <label htmlFor="new-organization-location" className="mb-1 block text-xs text-slate-400">
+            {t.organizations.locationLabel}
+          </label>
+          <input
+            id="new-organization-location"
+            value={location}
+            onChange={(event) => setLocation(event.target.value)}
+            className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+          />
+        </div>
+      </div>
       {error && (
         <p role="alert" className="mt-2 text-sm text-red-300">
           {error}
@@ -104,6 +149,187 @@ function TrustGrantSummary({ organization, t }: { organization: Organization; t:
   );
 }
 
+function OrganizationProfileForm({
+  token,
+  organization,
+  onUpdated,
+}: {
+  token: string;
+  organization: Organization;
+  onUpdated: (organization: Organization) => void;
+}) {
+  const { t } = useTranslation();
+  const [description, setDescription] = useState(organization.description ?? "");
+  const [location, setLocation] = useState(organization.location ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await updateOrganizationProfile(
+        token,
+        organization.organization_id,
+        description.trim(),
+        location.trim(),
+      );
+      onUpdated(updated);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mb-3">
+      <h3 className="mb-2 text-xs font-semibold tracking-wide text-slate-300 uppercase">
+        {t.organizations.profileHeading}
+      </h3>
+      <div className="flex flex-wrap gap-2">
+        <div className="flex-1">
+          <label
+            htmlFor={`org-description-${organization.organization_id}`}
+            className="mb-1 block text-xs text-slate-400"
+          >
+            {t.organizations.descriptionLabel}
+          </label>
+          <input
+            id={`org-description-${organization.organization_id}`}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder={t.organizations.noDescription}
+            className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+          />
+        </div>
+        <div className="flex-1">
+          <label
+            htmlFor={`org-location-${organization.organization_id}`}
+            className="mb-1 block text-xs text-slate-400"
+          >
+            {t.organizations.locationLabel}
+          </label>
+          <input
+            id={`org-location-${organization.organization_id}`}
+            value={location}
+            onChange={(event) => setLocation(event.target.value)}
+            placeholder={t.organizations.noLocation}
+            className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+          />
+        </div>
+      </div>
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-red-300">
+          {error}
+        </p>
+      )}
+      <button
+        type="button"
+        disabled={saving}
+        onClick={() => void handleSave()}
+        className="mt-2 rounded-lg border border-white/[0.08] px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {saving ? t.organizations.savingProfile : t.organizations.saveProfile}
+      </button>
+    </div>
+  );
+}
+
+function OrganizationContact({ token, organization }: { token: string; organization: Organization }) {
+  const { t } = useTranslation();
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [deliveryPreference, setDeliveryPreference] = useState<DeliveryPreference | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const consumerId = organization.consumer_id;
+
+  useEffect(() => {
+    if (!consumerId) {
+      return;
+    }
+    let cancelled = false;
+    async function load() {
+      try {
+        const result = await listSubscriptionsForConsumer(token, consumerId!);
+        if (!cancelled) {
+          setSubscriptions(result);
+        }
+      } catch (cause) {
+        if (!cancelled) {
+          setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
+        }
+      }
+      try {
+        const preference = await getDeliveryPreference(token, consumerId!);
+        if (!cancelled) {
+          setDeliveryPreference(preference);
+        }
+      } catch (cause) {
+        if (cancelled) {
+          return;
+        }
+        if (cause instanceof ApiError && cause.code === "DELIVERY_PREFERENCE_NOT_FOUND") {
+          setDeliveryPreference(null);
+        } else {
+          setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
+        }
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, consumerId, t]);
+
+  if (!consumerId) {
+    return null;
+  }
+
+  return (
+    <div className="mb-3">
+      <h3 className="mb-2 text-xs font-semibold tracking-wide text-slate-300 uppercase">
+        {t.subscriptions.subscriptionsHeading}
+      </h3>
+      {error && (
+        <p role="alert" className="mb-2 text-sm text-red-300">
+          {error}
+        </p>
+      )}
+      {subscriptions.map((subscription) => (
+        <SubscriptionCard
+          key={subscription.subscription_id}
+          token={token}
+          subscription={subscription}
+          onUpdated={(updated) =>
+            setSubscriptions((current) =>
+              current.map((s) => (s.subscription_id === updated.subscription_id ? updated : s)),
+            )
+          }
+        />
+      ))}
+      <CreateSubscriptionForm
+        token={token}
+        consumerId={consumerId}
+        onCreated={(created) => setSubscriptions((current) => [...current, created])}
+      />
+
+      <h3 className="mt-4 mb-2 text-xs font-semibold tracking-wide text-slate-300 uppercase">
+        {t.subscriptions.deliveryPreferenceHeading}
+      </h3>
+      {!deliveryPreference && (
+        <p className="mb-2 text-sm text-slate-500">{t.subscriptions.noDeliveryPreference}</p>
+      )}
+      <DeliveryPreferenceForm
+        token={token}
+        consumerId={consumerId}
+        initial={deliveryPreference}
+        onSaved={setDeliveryPreference}
+      />
+    </div>
+  );
+}
+
 function OrganizationDetail({
   token,
   organization,
@@ -127,6 +353,8 @@ function OrganizationDetail({
   const [orgAdminEmail, setOrgAdminEmail] = useState("");
   const [invitingOrgAdmin, setInvitingOrgAdmin] = useState(false);
   const [inviteOrgAdminError, setInviteOrgAdminError] = useState<string | null>(null);
+  const [togglingActive, setTogglingActive] = useState(false);
+  const [toggleActiveError, setToggleActiveError] = useState<string | null>(null);
 
   const loadMembers = useCallback(async () => {
     try {
@@ -168,8 +396,61 @@ function OrganizationDetail({
     }
   }
 
+  async function handleToggleActive() {
+    setTogglingActive(true);
+    setToggleActiveError(null);
+    try {
+      const updated = organization.is_active
+        ? await deactivateOrganization(token, organization.organization_id)
+        : await reactivateOrganization(token, organization.organization_id);
+      onUpdated(updated);
+    } catch (cause) {
+      setToggleActiveError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
+    } finally {
+      setTogglingActive(false);
+    }
+  }
+
   return (
     <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span
+          className={`rounded px-2 py-0.5 text-xs font-medium ${
+            organization.is_active
+              ? "bg-emerald-500/10 text-emerald-300"
+              : "bg-red-500/10 text-red-300"
+          }`}
+        >
+          {organization.is_active ? t.organizations.statusActive : t.organizations.statusInactive}
+        </span>
+        <button
+          type="button"
+          disabled={togglingActive}
+          onClick={() => void handleToggleActive()}
+          className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {organization.is_active
+            ? togglingActive
+              ? t.organizations.deactivating
+              : t.organizations.deactivate
+            : togglingActive
+              ? t.organizations.reactivating
+              : t.organizations.reactivate}
+        </button>
+      </div>
+      {toggleActiveError && (
+        <p role="alert" className="mb-3 text-sm text-red-300">
+          {toggleActiveError}
+        </p>
+      )}
+      {!organization.is_active && (
+        <p className="mb-3 text-xs text-amber-300">{t.organizations.inactiveNote}</p>
+      )}
+
+      <OrganizationProfileForm token={token} organization={organization} onUpdated={onUpdated} />
+
+      <OrganizationContact token={token} organization={organization} />
+
       <h3 className="mb-2 text-xs font-semibold tracking-wide text-slate-300 uppercase">
         {t.organizations.trustGrantsHeading}
       </h3>
@@ -243,7 +524,7 @@ function OrganizationDetail({
           </div>
           <button
             type="submit"
-            disabled={invitingOrgAdmin || !orgAdminEmail.trim()}
+            disabled={invitingOrgAdmin || !orgAdminEmail.trim() || !organization.is_active}
             className="rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-700 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:from-emerald-500 hover:to-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {invitingOrgAdmin ? t.myOrganization.inviting : t.organizations.inviteOrgAdmin}
@@ -343,7 +624,14 @@ export function Organizations() {
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="font-medium text-white">{organization.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-white">{organization.name}</p>
+                    {!organization.is_active && (
+                      <span className="rounded bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-300">
+                        {t.organizations.statusInactive}
+                      </span>
+                    )}
+                  </div>
                   <TrustGrantSummary organization={organization} t={t} />
                 </div>
                 <button

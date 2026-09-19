@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -77,9 +77,12 @@ function stubBackend(role: string = "MEMBER", organizationId: string | null = nu
           jsonResponse(200, {
             organization_id: organizationId,
             name: "Douala Police",
+            description: null,
+            location: null,
             verified_incident_types: [],
             verified_alert_visibilities: [],
             consumer_id: CONSUMER_ID,
+            is_active: true,
           }),
         );
       }
@@ -114,8 +117,12 @@ function stubBackend(role: string = "MEMBER", organizationId: string | null = nu
           jsonResponse(201, {
             organization_id: "66666666-6666-6666-6666-666666666666",
             name: body.name ?? "",
+            description: body.description ?? null,
+            location: body.location ?? null,
             verified_incident_types: [],
             verified_alert_visibilities: [],
+            consumer_id: null,
+            is_active: true,
           }),
         );
       }
@@ -124,6 +131,58 @@ function stubBackend(role: string = "MEMBER", organizationId: string | null = nu
         (init?.method ?? "GET") === "GET"
       ) {
         return Promise.resolve(jsonResponse(200, []));
+      }
+      {
+        const profileMatch = /^\/v1\/organizations\/([0-9a-fA-F-]+)\/profile$/.exec(url.pathname);
+        if (profileMatch && init?.method === "PUT") {
+          const body = init?.body ? JSON.parse(String(init.body)) : {};
+          return Promise.resolve(
+            jsonResponse(200, {
+              organization_id: profileMatch[1],
+              name: "Douala Police",
+              description: body.description || null,
+              location: body.location || null,
+              verified_incident_types: [],
+              verified_alert_visibilities: [],
+              consumer_id: null,
+              is_active: true,
+            }),
+          );
+        }
+        const deactivateMatch = /^\/v1\/organizations\/([0-9a-fA-F-]+)\/deactivate$/.exec(
+          url.pathname,
+        );
+        if (deactivateMatch && init?.method === "POST") {
+          return Promise.resolve(
+            jsonResponse(200, {
+              organization_id: deactivateMatch[1],
+              name: "Douala Police",
+              description: null,
+              location: null,
+              verified_incident_types: [],
+              verified_alert_visibilities: [],
+              consumer_id: null,
+              is_active: false,
+            }),
+          );
+        }
+        const reactivateMatch = /^\/v1\/organizations\/([0-9a-fA-F-]+)\/reactivate$/.exec(
+          url.pathname,
+        );
+        if (reactivateMatch && init?.method === "POST") {
+          return Promise.resolve(
+            jsonResponse(200, {
+              organization_id: reactivateMatch[1],
+              name: "Douala Police",
+              description: null,
+              location: null,
+              verified_incident_types: [],
+              verified_alert_visibilities: [],
+              consumer_id: null,
+              is_active: true,
+            }),
+          );
+        }
       }
       if (url.pathname === "/v1/auth/register" && init?.method === "POST") {
         return Promise.resolve(
@@ -315,6 +374,52 @@ describe("console auth flow", () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText("Email")).toHaveValue("");
+    });
+  });
+
+  it("lets a platform admin edit an organization's profile and deactivate/reactivate it", async () => {
+    stubBackend("PLATFORM_ADMIN");
+    const user = userEvent.setup();
+    renderApp("/login");
+
+    await user.click(screen.getByRole("button", { name: "Fake Google Sign-In" }));
+    await screen.findByRole("heading", { name: "Review queue" });
+
+    await user.click(screen.getByRole("link", { name: "Organizations" }));
+    await screen.findByRole("heading", { name: "Organizations" });
+
+    await user.type(screen.getByLabelText("Name"), "Douala Police");
+    await user.click(screen.getByRole("button", { name: "Create organization" }));
+
+    const viewDetailsButton = await screen.findByRole("button", { name: "View details" });
+    await user.click(viewDetailsButton);
+    const row = viewDetailsButton.closest("li")!;
+
+    await user.type(within(row).getByLabelText("Description (optional)"), "Municipal police unit");
+    await user.type(within(row).getByLabelText("Location (optional)"), "Douala, Cameroon");
+    await user.click(within(row).getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(within(row).getByLabelText("Description (optional)")).toHaveValue(
+        "Municipal police unit",
+      );
+    });
+
+    await user.type(within(row).getByLabelText("Email"), "admin@douala-police.example");
+    expect(within(row).getByRole("button", { name: "Invite org admin" })).toBeEnabled();
+
+    await user.click(within(row).getByRole("button", { name: "Deactivate" }));
+
+    await within(row).findByRole("button", { name: "Reactivate" });
+    expect(within(row).getByRole("button", { name: "Invite org admin" })).toBeDisabled();
+    expect(
+      within(row).getByText(/This organization is deactivated\./),
+    ).toBeInTheDocument();
+
+    await user.click(within(row).getByRole("button", { name: "Reactivate" }));
+
+    await waitFor(() => {
+      expect(within(row).getByRole("button", { name: "Invite org admin" })).toBeEnabled();
     });
   });
 });

@@ -6,7 +6,7 @@ use core::fmt;
 
 use safe_cameroon_domain::{
     Alert, AlertCreationError, AlertEvent, AlertFieldValue, AlertPolicy, AlertTransitionError,
-    AlertVisibility, AuditEventId, Case, OutboxEventId, Severity, TargetGeography,
+    AlertVisibility, AuditEventId, Case, OrganizationId, OutboxEventId, Severity, TargetGeography,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -115,11 +115,19 @@ pub fn create_alert_from_case(
     actor: Actor,
     request_id: Uuid,
     idempotency_key: Option<&str>,
+    issued_by_organization_id: Option<OrganizationId>,
 ) -> Result<AlertCreation, AlertCreationUseCaseError> {
     authorize_alert_action(actor, policy.visibility())
         .map_err(AlertCreationUseCaseError::NotAuthorized)?;
-    let (alert, event) = Alert::create_from_case(case, policy, severity, target_geography, fields)
-        .map_err(AlertCreationUseCaseError::InvalidAlert)?;
+    let (alert, event) = Alert::create_from_case(
+        case,
+        policy,
+        severity,
+        target_geography,
+        fields,
+        issued_by_organization_id,
+    )
+    .map_err(AlertCreationUseCaseError::InvalidAlert)?;
     let idempotency_key_hash = idempotency_key.map(|key| Sha256::digest(key.as_bytes()).to_vec());
     Ok(AlertCreation {
         alert,
@@ -241,6 +249,7 @@ mod tests {
             Actor::Automated,
             Uuid::new_v4(),
             None,
+            None,
         )
         .unwrap_err();
 
@@ -267,6 +276,7 @@ mod tests {
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
             None,
+            None,
         )
         .unwrap();
 
@@ -290,6 +300,7 @@ mod tests {
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
             Some("client-retry-key-1"),
+            None,
         )
         .unwrap();
 
@@ -313,6 +324,7 @@ mod tests {
             safe_fields(),
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
+            None,
             None,
         )
         .unwrap();
@@ -343,6 +355,7 @@ mod tests {
             Actor::Automated,
             Uuid::new_v4(),
             None,
+            None,
         )
         .unwrap();
         assert_eq!(creation.alert.visibility(), AlertVisibility::Internal);
@@ -370,6 +383,7 @@ mod tests {
             Actor::Automated,
             Uuid::new_v4(),
             None,
+            None,
         )
         .unwrap();
         let mut alert = creation.alert;
@@ -396,6 +410,7 @@ mod tests {
             safe_fields(),
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
+            None,
             None,
         )
         .unwrap();

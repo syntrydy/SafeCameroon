@@ -118,6 +118,8 @@ async fn require_platform_admin_or_org_admin_of(
 pub struct OrganizationResponse {
     organization_id: Uuid,
     name: String,
+    description: Option<String>,
+    location: Option<String>,
     verified_incident_types: Vec<IncidentType>,
     verified_alert_visibilities: Vec<AlertVisibility>,
     /// The consumer this organization's alert subscription and delivery
@@ -127,21 +129,29 @@ pub struct OrganizationResponse {
     /// `/v1/consumers/{id}/delivery-preference` endpoints with this id
     /// directly.
     consumer_id: Option<Uuid>,
+    is_active: bool,
 }
 
 fn organization_response(organization: &Organization) -> OrganizationResponse {
     OrganizationResponse {
         organization_id: organization.id().as_uuid(),
         name: organization.name().to_owned(),
+        description: organization.description().map(str::to_owned),
+        location: organization.location().map(str::to_owned),
         verified_incident_types: organization.verified_incident_types().to_vec(),
         verified_alert_visibilities: organization.verified_alert_visibilities().to_vec(),
         consumer_id: organization.consumer_id().map(|id| id.as_uuid()),
+        is_active: organization.is_active(),
     }
 }
 
 #[derive(Deserialize)]
 pub struct CreateOrganizationRequest {
     name: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    location: Option<String>,
 }
 
 pub async fn create_organization(
@@ -166,6 +176,10 @@ pub async fn create_organization(
             message: "name cannot be blank.",
             request_id,
         })?;
+    let organization = organization.with_profile(
+        request.description.filter(|value| !value.trim().is_empty()),
+        request.location.filter(|value| !value.trim().is_empty()),
+    );
 
     state
         .organizations
@@ -322,6 +336,121 @@ pub async fn set_trust_grants(
         .expect("the organization was just confirmed to exist above");
 
     Ok(Json(organization_response(&updated)))
+}
+
+#[derive(Deserialize)]
+pub struct UpdateOrganizationProfileRequest {
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    location: Option<String>,
+}
+
+/// Updates the organization's description/location wholesale -- a platform
+/// admin, or that organization's own org admin, may edit its profile
+/// (distinct from trust grants, which stay platform-admin-only: a profile
+/// is self-descriptive information, not an institutional-trust decision).
+pub async fn update_organization_profile(
+    State(state): State<AppState>,
+    Path(organization_id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<UpdateOrganizationProfileRequest>,
+) -> Result<Json<OrganizationResponse>, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    let organization_id = OrganizationId::from_uuid(organization_id);
+    require_platform_admin_or_org_admin_of(&state, actor, organization_id, request_id).await?;
+
+    state
+        .organizations
+        .find_by_id(organization_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .ok_or_else(|| organization_not_found(request_id))?;
+
+    let description = request.description.filter(|value| !value.trim().is_empty());
+    let location = request.location.filter(|value| !value.trim().is_empty());
+    state
+        .organizations
+        .set_profile(organization_id, description.as_deref(), location.as_deref())
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+
+    let updated = state
+        .organizations
+        .find_by_id(organization_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .expect("the organization was just confirmed to exist above");
+
+    Ok(Json(organization_response(&updated)))
+}
+
+/// Soft-deactivates/reactivates an organization -- platform-admin only,
+/// mirroring `set_trust_grants`'s authority (both are institutional
+/// decisions about the organization, not something it grants itself).
+/// Never deletes the organization or anything it owns; see
+/// `Organization::is_active`'s doc comment for what this actually gates.
+async fn set_organization_active(
+    state: &AppState,
+    organization_id: Uuid,
+    headers: &HeaderMap,
+    is_active: bool,
+) -> Result<Json<OrganizationResponse>, ApiError> {
+    let request_id = request_id_from_headers(headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        headers,
+        request_id,
+    )
+    .await?;
+    require_platform_admin(state, actor, request_id).await?;
+
+    let organization_id = OrganizationId::from_uuid(organization_id);
+    state
+        .organizations
+        .find_by_id(organization_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .ok_or_else(|| organization_not_found(request_id))?;
+
+    state
+        .organizations
+        .set_active(organization_id, is_active)
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+
+    let updated = state
+        .organizations
+        .find_by_id(organization_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))?
+        .expect("the organization was just confirmed to exist above");
+
+    Ok(Json(organization_response(&updated)))
+}
+
+pub async fn deactivate_organization(
+    State(state): State<AppState>,
+    Path(organization_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Result<Json<OrganizationResponse>, ApiError> {
+    set_organization_active(&state, organization_id, &headers, false).await
+}
+
+pub async fn reactivate_organization(
+    State(state): State<AppState>,
+    Path(organization_id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Result<Json<OrganizationResponse>, ApiError> {
+    set_organization_active(&state, organization_id, &headers, true).await
 }
 
 #[derive(Serialize)]

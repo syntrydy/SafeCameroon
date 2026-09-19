@@ -194,6 +194,7 @@ async fn main() {
         reviewer,
         Uuid::new_v4(),
         None,
+        None,
     )
     .expect("alert is valid for a verified case");
     let alert_id = alert_creation.alert.id();
@@ -518,6 +519,7 @@ async fn main() {
         followup_fields,
         reviewer,
         Uuid::new_v4(),
+        None,
         None,
     )
     .expect("a resolved case may still carry a follow-up community update");

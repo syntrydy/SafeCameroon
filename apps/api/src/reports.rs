@@ -276,6 +276,66 @@ pub async fn list_reports(
     Ok(Json(reports.iter().map(report_summary_response).collect()))
 }
 
+/// Moves a report from RECEIVED to UNDER_REVIEW so the queue reflects that
+/// a reviewer has started looking at it, distinct from `create_case`/
+/// `link_report` (`apps/api/src/cases.rs`), which move it to
+/// LINKED_TO_CASE. Purely a queue-triage signal -- creating/linking a case
+/// still works directly from RECEIVED, this isn't a required step.
+pub async fn start_report_review(
+    State(state): State<AppState>,
+    Path(report_id): Path<Uuid>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<ReportSummaryResponse>, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    authorize(actor, Capability::ReviewReport).map_err(|_| ApiError {
+        status: StatusCode::FORBIDDEN,
+        code: "NOT_AUTHORIZED",
+        message: "Only an identified reviewer may start reviewing a report.",
+        request_id,
+    })?;
+
+    let changed = state
+        .reports
+        .mark_under_review(ReportId::from_uuid(report_id))
+        .await
+        .map_err(|_| ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            code: "REPORT_PERSISTENCE_FAILED",
+            message: "The report could not be updated. Please try again.",
+            request_id,
+        })?;
+
+    if !changed {
+        return Err(ApiError {
+            status: StatusCode::CONFLICT,
+            code: "REPORT_NOT_RECEIVED",
+            message: "This report is no longer awaiting review.",
+            request_id,
+        });
+    }
+
+    let report = state
+        .reports
+        .find_by_id(ReportId::from_uuid(report_id))
+        .await
+        .map_err(|_| ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            code: "REPORT_QUERY_FAILED",
+            message: "The report could not be read. Please try again.",
+            request_id,
+        })?
+        .expect("the report was just updated above");
+
+    Ok(Json(report_summary_response(&report)))
+}
+
 pub async fn get_report(
     State(state): State<AppState>,
     Path(report_id): Path<Uuid>,

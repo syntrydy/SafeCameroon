@@ -192,7 +192,11 @@ pub fn authorize_case_verification(
         return Ok(());
     }
     match organization {
-        Some(organization) if organization.may_verify(incident_type) => Ok(()),
+        Some(organization)
+            if organization.is_active() && organization.may_verify(incident_type) =>
+        {
+            Ok(())
+        }
         _ => Err(CaseVerificationNotAuthorized),
     }
 }
@@ -225,7 +229,11 @@ pub fn authorize_alert_issuance(
         return Ok(());
     }
     match organization {
-        Some(organization) if organization.may_issue_alert(visibility) => Ok(()),
+        Some(organization)
+            if organization.is_active() && organization.may_issue_alert(visibility) =>
+        {
+            Ok(())
+        }
         _ => Err(AlertIssuanceNotAuthorized),
     }
 }
@@ -269,6 +277,47 @@ pub fn authorize_consumer_management(
             Ok(())
         }
         Some(_) => Err(ConsumerManagementNotAuthorized),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AlertCancellationNotAuthorized;
+
+impl fmt::Display for AlertCancellationNotAuthorized {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "reviewer may not cancel an alert issued by another organization"
+        )
+    }
+}
+
+impl std::error::Error for AlertCancellationNotAuthorized {}
+
+/// Whether `membership` may cancel an alert issued by
+/// `issued_by_organization_id` (`Alert::issued_by_organization_id`,
+/// `apps/api/src/alerts.rs::cancel`). A `PlatformAdmin` may cancel any
+/// alert. An `OrgAdmin`/`Member` may cancel only an alert their own
+/// organization issued. An alert with no issuing organization (issued by a
+/// `PlatformAdmin`, or automatically for an internal/partner alert) has no
+/// real owner to scope against, so any identified reviewer may still cancel
+/// it — mirroring [`authorize_consumer_management`]'s same "no owner"
+/// fallback.
+pub fn authorize_alert_cancellation(
+    membership: Membership,
+    issued_by_organization_id: Option<OrganizationId>,
+) -> Result<(), AlertCancellationNotAuthorized> {
+    if membership.role == Role::PlatformAdmin {
+        return Ok(());
+    }
+    match issued_by_organization_id {
+        None => Ok(()),
+        Some(issued_by_organization_id)
+            if membership.organization_id == Some(issued_by_organization_id) =>
+        {
+            Ok(())
+        }
+        Some(_) => Err(AlertCancellationNotAuthorized),
     }
 }
 
@@ -412,9 +461,12 @@ mod tests {
         let trusted_org = Organization::reconstitute(
             org_id,
             "Douala Police".into(),
+            None,
+            None,
             vec![IncidentType::MissingChild],
             vec![],
             None,
+            true,
         );
         let membership = Membership {
             role: Role::Member,
@@ -447,6 +499,60 @@ mod tests {
     }
 
     #[test]
+    fn a_member_of_a_deactivated_organization_may_not_verify_cases_even_if_trusted() {
+        let org_id = OrganizationId::new();
+        let deactivated_org = Organization::reconstitute(
+            org_id,
+            "Douala Police".into(),
+            None,
+            None,
+            vec![IncidentType::MissingChild],
+            vec![],
+            None,
+            false,
+        );
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: Some(org_id),
+        };
+        assert_eq!(
+            authorize_case_verification(
+                membership,
+                Some(&deactivated_org),
+                IncidentType::MissingChild
+            ),
+            Err(CaseVerificationNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn a_platform_admin_may_verify_a_case_even_for_a_deactivated_organization() {
+        let org_id = OrganizationId::new();
+        let membership = Membership {
+            role: Role::PlatformAdmin,
+            organization_id: None,
+        };
+        let deactivated_org = Organization::reconstitute(
+            org_id,
+            "Douala Police".into(),
+            None,
+            None,
+            vec![],
+            vec![],
+            None,
+            false,
+        );
+        assert!(
+            authorize_case_verification(
+                membership,
+                Some(&deactivated_org),
+                IncidentType::MissingChild
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
     fn a_platform_admin_may_issue_any_alert_visibility() {
         let membership = Membership {
             role: Role::PlatformAdmin,
@@ -461,9 +567,12 @@ mod tests {
         let trusted_org = Organization::reconstitute(
             org_id,
             "Douala Police".into(),
+            None,
+            None,
             vec![],
             vec![AlertVisibility::Community],
             None,
+            true,
         );
         let membership = Membership {
             role: Role::Member,
@@ -475,6 +584,33 @@ mod tests {
         );
         assert_eq!(
             authorize_alert_issuance(membership, Some(&trusted_org), AlertVisibility::Public),
+            Err(AlertIssuanceNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn a_member_of_a_deactivated_organization_may_not_issue_alerts_even_if_trusted() {
+        let org_id = OrganizationId::new();
+        let deactivated_org = Organization::reconstitute(
+            org_id,
+            "Douala Police".into(),
+            None,
+            None,
+            vec![],
+            vec![AlertVisibility::Community],
+            None,
+            false,
+        );
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: Some(org_id),
+        };
+        assert_eq!(
+            authorize_alert_issuance(
+                membership,
+                Some(&deactivated_org),
+                AlertVisibility::Community
+            ),
             Err(AlertIssuanceNotAuthorized)
         );
     }
@@ -521,6 +657,51 @@ mod tests {
         assert_eq!(
             authorize_consumer_management(membership, Some(OrganizationId::new())),
             Err(ConsumerManagementNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn a_platform_admin_may_cancel_any_alert() {
+        let membership = Membership {
+            role: Role::PlatformAdmin,
+            organization_id: None,
+        };
+        assert!(authorize_alert_cancellation(membership, Some(OrganizationId::new())).is_ok());
+        assert!(authorize_alert_cancellation(membership, None).is_ok());
+    }
+
+    #[test]
+    fn an_alert_with_no_issuing_organization_is_cancellable_by_any_reviewer() {
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: Some(OrganizationId::new()),
+        };
+        assert!(authorize_alert_cancellation(membership, None).is_ok());
+    }
+
+    #[test]
+    fn a_member_may_cancel_only_an_alert_their_own_organization_issued() {
+        let org_id = OrganizationId::new();
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: Some(org_id),
+        };
+        assert!(authorize_alert_cancellation(membership, Some(org_id)).is_ok());
+        assert_eq!(
+            authorize_alert_cancellation(membership, Some(OrganizationId::new())),
+            Err(AlertCancellationNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn a_member_with_no_organization_may_not_cancel_an_org_issued_alert() {
+        let membership = Membership {
+            role: Role::Member,
+            organization_id: None,
+        };
+        assert_eq!(
+            authorize_alert_cancellation(membership, Some(OrganizationId::new())),
+            Err(AlertCancellationNotAuthorized)
         );
     }
 }

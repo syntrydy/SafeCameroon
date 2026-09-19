@@ -4,6 +4,7 @@ use safe_cameroon_application::ai_extraction::ReportExtractor;
 use safe_cameroon_application::attachment_workflow::AttachmentStorage;
 use safe_cameroon_application::audio_transcription::AudioTranscriber;
 use safe_cameroon_application::google_identity::GoogleIdentityVerifier;
+use safe_cameroon_application::invite_mailer::InviteMailer;
 use safe_cameroon_application::rate_limit::RateLimiter;
 use safe_cameroon_application::webhook::{WebhookReplayGuard, WebhookVerifierRegistry};
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
@@ -39,4 +40,5 @@ pub struct AppState {
     /// Operator kill-switch (`VOICE_REPORTS_ENABLED`, on by default) --
     /// distinct from whether a real transcriber is configured (issue #160).
     pub voice_reports_enabled: bool,
+    pub invite_mailer: Arc<dyn InviteMailer>,
 }

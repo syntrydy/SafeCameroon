@@ -55,6 +55,33 @@ function stubBackend() {
         const filtered = status ? reports.filter((report) => report.status === status) : reports;
         return Promise.resolve(jsonResponse(200, filtered));
       }
+      if (url.pathname === `/v1/reports/${REPORT.report_id}/attachments` && method === "GET") {
+        return Promise.resolve(
+          jsonResponse(200, [
+            {
+              attachment_id: "cccccccc-3333-3333-3333-333333333333",
+              object_key: "reports/x/photo.jpg",
+              content_type: "image/jpeg",
+              size_bytes: 1024,
+              checksum: "deadbeef",
+            },
+          ]),
+        );
+      }
+      if (
+        url.pathname === "/v1/attachments/cccccccc-3333-3333-3333-333333333333/download-url" &&
+        method === "GET"
+      ) {
+        return Promise.resolve(
+          jsonResponse(200, { download_url: "https://storage.example/signed", expires_in_seconds: 60 }),
+        );
+      }
+      if (url.pathname === `/v1/reports/${REPORT.report_id}/review` && method === "POST") {
+        reports = reports.map((report) =>
+          report.report_id === REPORT.report_id ? { ...report, status: "UNDER_REVIEW" } : report,
+        );
+        return Promise.resolve(jsonResponse(200, { ...REPORT, status: "UNDER_REVIEW" }));
+      }
       if (url.pathname === "/v1/cases" && method === "POST") {
         const body = JSON.parse(init?.body as string) as { report_id: string; incident_type: string };
         reports = reports.map((report) =>
@@ -173,6 +200,32 @@ describe("ReviewQueue", () => {
 
     await screen.findByRole("status");
     expect(screen.getByRole("status")).toHaveTextContent("Case created.");
+  });
+
+  it("starts reviewing a received report and removes it from the received queue", async () => {
+    const user = await loginAndReachQueue();
+    const row = (await screen.findByText(/My child has not returned/)).closest("tr")!;
+
+    await user.click(within(row).getByRole("button", { name: "Start review" }));
+
+    await screen.findByRole("status");
+    expect(screen.getByRole("status")).toHaveTextContent("Review started.");
+    await waitFor(() => {
+      expect(screen.getByText("No reports match this filter.")).toBeInTheDocument();
+    });
+  });
+
+  it("lists a report's attachments and fetches a download link on demand", async () => {
+    const user = await loginAndReachQueue();
+    const row = (await screen.findByText(/My child has not returned/)).closest("tr")!;
+
+    await user.click(within(row).getByRole("button", { name: "Show attachments" }));
+    await within(row).findByText(/image\/jpeg/);
+
+    await user.click(within(row).getByRole("button", { name: "Get download link" }));
+
+    const link = await within(row).findByRole("link", { name: "Open" });
+    expect(link).toHaveAttribute("href", "https://storage.example/signed");
   });
 
   it("surfaces a backend error without losing the row", async () => {

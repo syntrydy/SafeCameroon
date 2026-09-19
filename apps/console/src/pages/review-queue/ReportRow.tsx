@@ -3,6 +3,8 @@ import { useState } from "react";
 import { ApiError } from "../../api/client";
 import type { IncidentType } from "../../api/cases";
 import type { ReportSummary } from "../../api/reports";
+import { AttachmentsBody } from "../../components/AttachmentsBody";
+import { useReportAttachments } from "../../components/useReportAttachments";
 import { useTranslation } from "../../i18n/LanguageContext";
 import { ExtractionPanel } from "./ExtractionPanel";
 
@@ -18,9 +20,10 @@ interface ReportRowProps {
   token: string;
   onCreateCase: (reportId: string, incidentType: IncidentType) => Promise<void>;
   onLinkToCase: (reportId: string, caseId: string) => Promise<void>;
+  onStartReview: (reportId: string) => Promise<void>;
 }
 
-export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportRowProps) {
+export function ReportRow({ report, token, onCreateCase, onLinkToCase, onStartReview }: ReportRowProps) {
   const { t } = useTranslation();
   const incidentTypes: { value: IncidentType; label: string }[] = [
     { value: "MISSING_CHILD", label: t.reportRow.incidentTypeMissingChild },
@@ -33,6 +36,15 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
   const [caseId, setCaseId] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const {
+    expanded: attachmentsExpanded,
+    toggleExpanded: toggleAttachments,
+    loading: attachmentsLoading,
+    error: attachmentsError,
+    attachments,
+    downloadUrls,
+    getDownloadUrl,
+  } = useReportAttachments(token, report.report_id);
 
   // A successful action re-fetches the queue, which can remove this row
   // immediately (e.g. a created case takes the report out of "received").
@@ -62,7 +74,7 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
         </span>
       </td>
       <td className="py-3 pr-4 text-sm text-slate-500">{new Date(report.received_at).toLocaleString()}</td>
-      <td className="py-3 pr-4">
+      <td className="max-w-sm min-w-[16rem] py-3 pr-4">
         <p className={expanded ? "whitespace-pre-wrap text-sm text-slate-300" : "truncate text-sm text-slate-300"}>
           {report.raw_content}
         </p>
@@ -86,7 +98,39 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
           </p>
         )}
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => void toggleAttachments()}
+            className="text-xs font-medium text-slate-400 underline"
+          >
+            {attachmentsExpanded ? t.linkedAttachments.hideAttachments : t.linkedAttachments.showAttachments}
+          </button>
+          {attachmentsExpanded && (
+            <div className="mt-2">
+              <AttachmentsBody
+                loading={attachmentsLoading}
+                error={attachmentsError}
+                attachments={attachments}
+                downloadUrls={downloadUrls}
+                onGetDownloadUrl={(attachmentId) => void getDownloadUrl(attachmentId)}
+              />
+            </div>
+          )}
+        </div>
+      </td>
+      <td className="min-w-[14rem] py-3 align-top">
+        {report.status === "RECEIVED" && (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void runAction(() => onStartReview(report.report_id))}
+            className="mb-2 rounded-lg border border-white/[0.08] px-3 py-1 text-xs font-medium text-slate-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {t.reportRow.startReview}
+          </button>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={incidentType}
             onChange={(event) => setIncidentType(event.target.value as IncidentType)}
