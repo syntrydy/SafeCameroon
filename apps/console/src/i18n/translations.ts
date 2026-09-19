@@ -56,6 +56,7 @@ export interface Translations {
     statusClosed: string;
     caseCreated: string;
     linkedToCase: string;
+    reviewStarted: string;
     viewCase: string;
     loading: string;
     noReports: string;
@@ -74,6 +75,7 @@ export interface Translations {
     incidentTypeOtherProtection: string;
     existingCaseIdLabel: (reportId: string) => string;
     existingCaseIdPlaceholder: string;
+    startReview: string;
     createCase: string;
     linkToCase: string;
     reporterSuggested: string;
@@ -350,6 +352,7 @@ export const translations: Record<Locale, Translations> = {
       statusClosed: "Closed",
       caseCreated: "Case created.",
       linkedToCase: "Linked to case.",
+      reviewStarted: "Review started.",
       viewCase: "View case",
       loading: "Loading reports...",
       noReports: "No reports match this filter.",
@@ -368,6 +371,7 @@ export const translations: Record<Locale, Translations> = {
       incidentTypeOtherProtection: "Other protection incident",
       existingCaseIdLabel: (reportId) => `Existing case id for report ${reportId}`,
       existingCaseIdPlaceholder: "Existing case id",
+      startReview: "Start review",
       createCase: "Create case",
       linkToCase: "Link to case",
       reporterSuggested: "Reporter suggested:",
@@ -645,6 +649,7 @@ export const translations: Record<Locale, Translations> = {
       statusClosed: "Clôturé",
       caseCreated: "Dossier créé.",
       linkedToCase: "Lié au dossier.",
+      reviewStarted: "Examen commencé.",
       viewCase: "Voir le dossier",
       loading: "Chargement des signalements...",
       noReports: "Aucun signalement ne correspond à ce filtre.",
@@ -663,6 +668,7 @@ export const translations: Record<Locale, Translations> = {
       incidentTypeOtherProtection: "Autre incident de protection",
       existingCaseIdLabel: (reportId) => `Identifiant de dossier existant pour le signalement ${reportId}`,
       existingCaseIdPlaceholder: "Identifiant de dossier existant",
+      startReview: "Commencer l'examen",
       createCase: "Créer un dossier",
       linkToCase: "Lier à un dossier",
       reporterSuggested: "Suggéré par le rapporteur :",

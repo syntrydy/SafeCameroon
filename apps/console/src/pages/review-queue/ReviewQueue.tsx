@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 import { createCase, linkReportToCase, type IncidentType } from "../../api/cases";
 import { ApiError } from "../../api/client";
-import { listReports, type ReportStatus, type ReportSummary } from "../../api/reports";
+import { listReports, startReportReview, type ReportStatus, type ReportSummary } from "../../api/reports";
 import { useAuth } from "../../auth/AuthContext";
 import { useTranslation } from "../../i18n/LanguageContext";
 import { ReportRow } from "./ReportRow";
@@ -27,7 +27,7 @@ export function ReviewQueue() {
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<{ text: string; caseId: string } | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ text: string; caseId: string | null } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,6 +60,12 @@ export function ReviewQueue() {
     await load();
   }
 
+  async function handleStartReview(reportId: string) {
+    await startReportReview(token, reportId);
+    setActionMessage({ text: t.reviewQueue.reviewStarted, caseId: null });
+    await load();
+  }
+
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
@@ -86,9 +92,11 @@ export function ReviewQueue() {
       {actionMessage && (
         <p role="status" className="mb-4 rounded border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
           {actionMessage.text}{" "}
-          <Link to={`/cases/${actionMessage.caseId}`} className="underline">
-            {t.reviewQueue.viewCase}
-          </Link>
+          {actionMessage.caseId && (
+            <Link to={`/cases/${actionMessage.caseId}`} className="underline">
+              {t.reviewQueue.viewCase}
+            </Link>
+          )}
         </p>
       )}
 
@@ -123,6 +131,7 @@ export function ReviewQueue() {
                   token={token}
                   onCreateCase={handleCreateCase}
                   onLinkToCase={handleLinkToCase}
+                  onStartReview={handleStartReview}
                 />
               ))}
             </tbody>

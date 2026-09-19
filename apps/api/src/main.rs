@@ -253,6 +253,10 @@ fn build_router(state: AppState) -> Router {
         )
         .route("/v1/reports/{id}", get(reports::get_report))
         .route(
+            "/v1/reports/{id}/review",
+            post(reports::start_report_review),
+        )
+        .route(
             "/v1/reports/transcribe-audio",
             post(reports::transcribe_audio).layer(DefaultBodyLimit::max(reports::MAX_AUDIO_BYTES)),
         )
@@ -2471,6 +2475,77 @@ mod tests {
             body["raw_content"],
             json!("My child has not returned from school.")
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_starts_reviewing_a_received_report() {
+        let pool = test_pool().await;
+        let report_id = seeded_report(&pool).await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/reports/{}/review", report_id.as_uuid()))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["status"], json!("UNDER_REVIEW"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn starting_review_twice_returns_conflict() {
+        let pool = test_pool().await;
+        let report_id = seeded_report(&pool).await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+
+        let review = |app: Router, report_id: ReportId, reviewer: &str| {
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/reports/{}/review", report_id.as_uuid()))
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+        };
+
+        let first = review(app.clone(), report_id, &reviewer).await.unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+
+        let second = review(app, report_id, &reviewer).await.unwrap();
+        assert_eq!(second.status(), StatusCode::CONFLICT);
+        let body = json_body(second).await;
+        assert_eq!(body["error"]["code"], json!("REPORT_NOT_RECEIVED"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn starting_review_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/reports/{}/review", Uuid::new_v4()))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

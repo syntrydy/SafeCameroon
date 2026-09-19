@@ -33,3 +33,10 @@ export function listReports(token: string, params: ListReportsParams = {}): Prom
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return apiRequest<ReportSummary[]>(`/v1/reports${suffix}`, { token });
 }
+
+// Moves a report from RECEIVED to UNDER_REVIEW (apps/api/src/reports.rs
+// `start_report_review`) -- a queue-triage signal only, not required
+// before creating or linking a case.
+export function startReportReview(token: string, reportId: string): Promise<ReportSummary> {
+  return apiRequest<ReportSummary>(`/v1/reports/${reportId}/review`, { method: "POST", token });
+}

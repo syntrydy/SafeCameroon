@@ -20,9 +20,10 @@ interface ReportRowProps {
   token: string;
   onCreateCase: (reportId: string, incidentType: IncidentType) => Promise<void>;
   onLinkToCase: (reportId: string, caseId: string) => Promise<void>;
+  onStartReview: (reportId: string) => Promise<void>;
 }
 
-export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportRowProps) {
+export function ReportRow({ report, token, onCreateCase, onLinkToCase, onStartReview }: ReportRowProps) {
   const { t } = useTranslation();
   const incidentTypes: { value: IncidentType; label: string }[] = [
     { value: "MISSING_CHILD", label: t.reportRow.incidentTypeMissingChild },
@@ -119,6 +120,16 @@ export function ReportRow({ report, token, onCreateCase, onLinkToCase }: ReportR
         </div>
       </td>
       <td className="min-w-[14rem] py-3 align-top">
+        {report.status === "RECEIVED" && (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void runAction(() => onStartReview(report.report_id))}
+            className="mb-2 rounded-lg border border-white/[0.08] px-3 py-1 text-xs font-medium text-slate-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {t.reportRow.startReview}
+          </button>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <select
             value={incidentType}

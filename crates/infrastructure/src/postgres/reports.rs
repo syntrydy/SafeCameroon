@@ -99,6 +99,26 @@ impl PostgresReportRepository {
         ))
     }
 
+    /// Moves a report from RECEIVED to UNDER_REVIEW, so the queue reflects
+    /// that a reviewer has started looking at it -- distinct from actually
+    /// creating/linking a case. Conditioned on the current status so it can
+    /// never clobber a report that already moved on (case created/linked,
+    /// or another reviewer already started reviewing it); returns whether
+    /// the row actually changed.
+    pub async fn mark_under_review(&self, report_id: ReportId) -> Result<bool, sqlx::Error> {
+        let result = sqlx::query(
+            r#"
+            UPDATE reports
+            SET status = 'UNDER_REVIEW', updated_at = now()
+            WHERE id = $1 AND status = 'RECEIVED'
+            "#,
+        )
+        .bind(report_id.as_uuid())
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
     /// Most recently received first (`reports_status_received_at_idx`),
     /// optionally narrowed by status. `limit`/`offset` are taken as given —
     /// the API layer clamps `limit` to a sane maximum before it ever reaches
