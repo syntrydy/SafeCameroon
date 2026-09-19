@@ -71,6 +71,7 @@ function stubBackend() {
           consumer_id: CONSUMER.consumer_id,
           version: 1,
           rules: body.rules,
+          created_at: "2026-09-15T12:00:00Z",
         };
         subscriptions = [...subscriptions, created];
         return Promise.resolve(jsonResponse(201, created));
@@ -83,6 +84,7 @@ function stubBackend() {
           consumer_id: CONSUMER.consumer_id,
           version: 2,
           rules: body.rules,
+          created_at: "2026-09-15T12:00:00Z",
         };
         subscriptions = subscriptions.map((s) => (s.subscription_id === id ? updated : s));
         return Promise.resolve(jsonResponse(200, updated));
@@ -144,14 +146,15 @@ describe("Subscriptions", () => {
         consumer_id: CONSUMER.consumer_id,
         version: 1,
         rules: [{ rule: "INCIDENT_TYPE", values: ["MISSING_CHILD"] }],
+        created_at: "2026-09-15T12:00:00Z",
       },
     ];
     const user = await loginAndReachSubscriptions();
 
     await screen.findByText("Incident type: MISSING_CHILD");
-    expect(screen.getByText(CONSUMER.consumer_id)).toBeInTheDocument();
+    expect(screen.getByText(CONSUMER.consumer_id.slice(0, 8))).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "View consumer" }));
+    await user.click(screen.getByRole("button", { name: "View subscriber" }));
 
     await screen.findByText("Douala Police");
   });
@@ -159,7 +162,7 @@ describe("Subscriptions", () => {
   it("looks up an existing consumer by id and shows it has no subscriptions yet", async () => {
     const user = await loginAndReachSubscriptions();
 
-    await user.type(screen.getByLabelText("Consumer id"), CONSUMER.consumer_id);
+    await user.type(screen.getByLabelText("Subscriber id"), CONSUMER.consumer_id);
     await user.click(screen.getByRole("button", { name: "Load" }));
 
     await screen.findByText("Douala Police");
@@ -170,14 +173,14 @@ describe("Subscriptions", () => {
     const user = await loginAndReachSubscriptions();
 
     await user.type(screen.getByLabelText("Name"), "Douala Police");
-    await user.click(screen.getByRole("button", { name: "Create consumer" }));
+    await user.click(screen.getByRole("button", { name: "Create subscriber" }));
 
     await screen.findByText("Douala Police");
   });
 
   it("creates a subscription with an incident-type rule", async () => {
     const user = await loginAndReachSubscriptions();
-    await user.type(screen.getByLabelText("Consumer id"), CONSUMER.consumer_id);
+    await user.type(screen.getByLabelText("Subscriber id"), CONSUMER.consumer_id);
     await user.click(screen.getByRole("button", { name: "Load" }));
     await screen.findByText("Douala Police");
 
@@ -195,10 +198,11 @@ describe("Subscriptions", () => {
         consumer_id: CONSUMER.consumer_id,
         version: 1,
         rules: [{ rule: "GEOGRAPHY", areas: ["Douala"] }],
+        created_at: "2026-09-15T12:00:00Z",
       },
     ];
     const user = await loginAndReachSubscriptions();
-    await user.type(screen.getByLabelText("Consumer id"), CONSUMER.consumer_id);
+    await user.type(screen.getByLabelText("Subscriber id"), CONSUMER.consumer_id);
     await user.click(screen.getByRole("button", { name: "Load" }));
     await screen.findByText("Geography: Douala");
 
@@ -216,7 +220,7 @@ describe("Subscriptions", () => {
   it("adds multiple areas to a geography rule", async () => {
     subscriptions = [];
     const user = await loginAndReachSubscriptions();
-    await user.type(screen.getByLabelText("Consumer id"), CONSUMER.consumer_id);
+    await user.type(screen.getByLabelText("Subscriber id"), CONSUMER.consumer_id);
     await user.click(screen.getByRole("button", { name: "Load" }));
     await screen.findByText("Douala Police");
 
@@ -233,7 +237,7 @@ describe("Subscriptions", () => {
 
   it("sets a delivery preference", async () => {
     const user = await loginAndReachSubscriptions();
-    await user.type(screen.getByLabelText("Consumer id"), CONSUMER.consumer_id);
+    await user.type(screen.getByLabelText("Subscriber id"), CONSUMER.consumer_id);
     await user.click(screen.getByRole("button", { name: "Load" }));
     await screen.findByText("No delivery preference is set yet.");
 
@@ -266,7 +270,7 @@ describe("Subscriptions", () => {
     );
     const user = await loginAndReachSubscriptions();
 
-    await user.type(screen.getByLabelText("Consumer id"), "nonexistent");
+    await user.type(screen.getByLabelText("Subscriber id"), "nonexistent");
     await user.click(screen.getByRole("button", { name: "Load" }));
 
     const alert = await screen.findByRole("alert");

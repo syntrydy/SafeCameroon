@@ -193,6 +193,14 @@ pub struct Subscription {
     consumer_id: ConsumerId,
     version: u32,
     rules: Vec<SubscriptionRule>,
+    /// `None` for a subscription just constructed in memory before its
+    /// first persist (`Subscription::new` has no DB-assigned value to put
+    /// here yet); `Some` once read back from a persisted row
+    /// (`with_created_at`, set by
+    /// `crates/infrastructure/src/postgres/subscriptions.rs::subscription_from_row`).
+    /// See `AuditEventRecord::occurred_at`'s doc comment for why this stays
+    /// a plain `String` rather than a decoded date/time type.
+    created_at: Option<String>,
 }
 
 impl Subscription {
@@ -210,7 +218,16 @@ impl Subscription {
             consumer_id,
             version,
             rules,
+            created_at: None,
         })
+    }
+
+    /// Attaches the persisted creation timestamp; infrastructure adapters
+    /// use this after reading a row back, mirroring
+    /// `Organization::with_profile`'s post-construction-setter shape.
+    pub fn with_created_at(mut self, created_at: String) -> Self {
+        self.created_at = Some(created_at);
+        self
     }
 
     pub fn id(&self) -> SubscriptionId {
@@ -227,6 +244,10 @@ impl Subscription {
 
     pub fn rules(&self) -> &[SubscriptionRule] {
         &self.rules
+    }
+
+    pub fn created_at(&self) -> Option<&str> {
+        self.created_at.as_deref()
     }
 
     /// Replaces the rule set and increments `version` in place
@@ -384,6 +405,17 @@ mod tests {
 
     fn subscription(rules: Vec<SubscriptionRule>) -> Subscription {
         Subscription::new(SubscriptionId::new(), ConsumerId::new(), 1, rules).unwrap()
+    }
+
+    #[test]
+    fn a_freshly_constructed_subscription_has_no_created_at_until_read_back() {
+        let fresh = subscription(vec![SubscriptionRule::IncidentType(vec![
+            IncidentType::MissingChild,
+        ])]);
+        assert_eq!(fresh.created_at(), None);
+
+        let read_back = fresh.with_created_at("2026-09-19T12:00:00Z".into());
+        assert_eq!(read_back.created_at(), Some("2026-09-19T12:00:00Z"));
     }
 
     #[test]

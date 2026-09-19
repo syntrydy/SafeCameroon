@@ -124,10 +124,10 @@ pub enum SubscriptionUpdateOutcome {
     Conflict,
 }
 
-type SubscriptionRow = (Uuid, Uuid, i32, Value);
+type SubscriptionRow = (Uuid, Uuid, i32, Value, String);
 
 fn subscription_from_row(row: SubscriptionRow) -> Subscription {
-    let (id, consumer_id, version, rules) = row;
+    let (id, consumer_id, version, rules, created_at) = row;
     let rules = rules
         .as_array()
         .expect("subscriptions.rules is constrained to be a JSON array by the CHECK constraint")
@@ -141,6 +141,7 @@ fn subscription_from_row(row: SubscriptionRow) -> Subscription {
         rules,
     )
     .expect("subscriptions.rules is constrained to be non-empty by the CHECK constraint")
+    .with_created_at(created_at)
 }
 
 #[derive(Clone)]
@@ -174,7 +175,7 @@ impl PostgresSubscriptionRepository {
         id: SubscriptionId,
     ) -> Result<Option<Subscription>, sqlx::Error> {
         let row: Option<SubscriptionRow> = sqlx::query_as(
-            "SELECT id, consumer_id, version, rules FROM subscriptions WHERE id = $1",
+            "SELECT id, consumer_id, version, rules, created_at::text FROM subscriptions WHERE id = $1",
         )
         .bind(id.as_uuid())
         .fetch_optional(&self.pool)
@@ -187,7 +188,8 @@ impl PostgresSubscriptionRepository {
         consumer_id: ConsumerId,
     ) -> Result<Vec<Subscription>, sqlx::Error> {
         let rows: Vec<SubscriptionRow> = sqlx::query_as(
-            "SELECT id, consumer_id, version, rules FROM subscriptions WHERE consumer_id = $1 ORDER BY created_at",
+            "SELECT id, consumer_id, version, rules, created_at::text FROM subscriptions \
+             WHERE consumer_id = $1 ORDER BY created_at",
         )
         .bind(consumer_id.as_uuid())
         .fetch_all(&self.pool)
@@ -202,7 +204,8 @@ impl PostgresSubscriptionRepository {
     /// `safe_cameroon_domain::evaluate_subscriptions` against the result.
     pub async fn list_all(&self) -> Result<Vec<Subscription>, sqlx::Error> {
         let rows: Vec<SubscriptionRow> = sqlx::query_as(
-            "SELECT id, consumer_id, version, rules FROM subscriptions ORDER BY created_at",
+            "SELECT id, consumer_id, version, rules, created_at::text FROM subscriptions \
+             ORDER BY created_at",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -220,7 +223,7 @@ impl PostgresSubscriptionRepository {
         offset: i64,
     ) -> Result<Vec<Subscription>, sqlx::Error> {
         let rows: Vec<SubscriptionRow> = sqlx::query_as(
-            "SELECT id, consumer_id, version, rules FROM subscriptions \
+            "SELECT id, consumer_id, version, rules, created_at::text FROM subscriptions \
              ORDER BY created_at DESC LIMIT $1 OFFSET $2",
         )
         .bind(limit)

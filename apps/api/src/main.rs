@@ -4897,6 +4897,10 @@ mod tests {
         assert_eq!(body["consumer_id"], json!(consumer_id));
         assert_eq!(body["version"], json!(1));
         assert_eq!(body["rules"].as_array().unwrap().len(), 3);
+        assert!(
+            body["created_at"].is_string(),
+            "a freshly created subscription's response carries its DB-assigned created_at"
+        );
 
         let response = app
             .oneshot(
@@ -4965,6 +4969,12 @@ mod tests {
             .collect();
         assert!(consumer_ids.contains(&json!(first_consumer_id)));
         assert!(consumer_ids.contains(&json!(second_consumer_id)));
+        assert!(
+            listed
+                .iter()
+                .all(|subscription| subscription["created_at"].is_string()),
+            "every listed subscription carries its created_at"
+        );
     }
 
     #[tokio::test]
