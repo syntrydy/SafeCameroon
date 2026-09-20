@@ -14,11 +14,13 @@ impl PostgresConsumerRepository {
 
     pub async fn create(&self, consumer: &Consumer) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "INSERT INTO consumers (id, name, consumer_type) VALUES ($1, $2, $3::consumer_type)",
+            "INSERT INTO consumers (id, name, consumer_type, locale) \
+             VALUES ($1, $2, $3::consumer_type, $4)",
         )
         .bind(consumer.id().as_uuid())
         .bind(consumer.name())
         .bind(consumer.consumer_type().as_database_value())
+        .bind(consumer.locale())
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -34,13 +36,14 @@ impl PostgresConsumerRepository {
         management_token_hash: &[u8],
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "INSERT INTO consumers (id, name, consumer_type, management_token_hash) \
-             VALUES ($1, $2, $3::consumer_type, $4)",
+            "INSERT INTO consumers (id, name, consumer_type, management_token_hash, locale) \
+             VALUES ($1, $2, $3::consumer_type, $4, $5)",
         )
         .bind(consumer.id().as_uuid())
         .bind(consumer.name())
         .bind(consumer.consumer_type().as_database_value())
         .bind(management_token_hash)
+        .bind(consumer.locale())
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -65,18 +68,19 @@ impl PostgresConsumerRepository {
         &self,
         consumer_id: ConsumerId,
     ) -> Result<Option<Consumer>, sqlx::Error> {
-        let row: Option<(String, String)> =
-            sqlx::query_as("SELECT name, consumer_type::text FROM consumers WHERE id = $1")
+        let row: Option<(String, String, Option<String>)> =
+            sqlx::query_as("SELECT name, consumer_type::text, locale FROM consumers WHERE id = $1")
                 .bind(consumer_id.as_uuid())
                 .fetch_optional(&self.pool)
                 .await?;
 
-        Ok(row.map(|(name, consumer_type)| {
+        Ok(row.map(|(name, consumer_type, locale)| {
             Consumer::reconstitute(
                 consumer_id,
                 name,
                 ConsumerType::from_database_value(&consumer_type)
                     .expect("consumers.consumer_type is constrained by the consumer_type enum"),
+                locale,
             )
         }))
     }
@@ -91,9 +95,9 @@ impl PostgresConsumerRepository {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Consumer>, sqlx::Error> {
-        let rows: Vec<(Uuid, String, String)> = sqlx::query_as(
+        let rows: Vec<(Uuid, String, String, Option<String>)> = sqlx::query_as(
             r#"
-            SELECT id, name, consumer_type::text
+            SELECT id, name, consumer_type::text, locale
             FROM consumers
             WHERE ($1::consumer_type IS NULL OR consumer_type = $1::consumer_type)
             ORDER BY created_at DESC
@@ -108,12 +112,13 @@ impl PostgresConsumerRepository {
 
         Ok(rows
             .into_iter()
-            .map(|(id, name, consumer_type)| {
+            .map(|(id, name, consumer_type, locale)| {
                 Consumer::reconstitute(
                     ConsumerId::from_uuid(id),
                     name,
                     ConsumerType::from_database_value(&consumer_type)
                         .expect("consumers.consumer_type is constrained by the consumer_type enum"),
+                    locale,
                 )
             })
             .collect())

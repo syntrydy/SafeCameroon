@@ -48,6 +48,14 @@ pub struct Consumer {
     id: ConsumerId,
     name: String,
     consumer_type: ConsumerType,
+    /// The recipient's preferred language, e.g. `"en"`/`"fr"` (a citizen
+    /// subscriber's browser-detected locale, captured at subscribe time --
+    /// `apps/citizen/src/i18n/locale.ts`'s `detectLocale`). Advisory only:
+    /// nothing reads this yet to translate an alert's content, it is just
+    /// captured so that can be added later without touching the subscribe
+    /// flow again. `None` for a consumer that never supplied one (every
+    /// organization, and any citizen subscription predating this field).
+    locale: Option<String>,
 }
 
 impl Consumer {
@@ -64,16 +72,36 @@ impl Consumer {
             id: ConsumerId::new(),
             name: trimmed.to_owned(),
             consumer_type,
+            locale: None,
         })
+    }
+
+    /// Sets the preferred-language hint at creation time
+    /// (`crates/application/src/citizen_subscription.rs`). A blank/whitespace
+    /// value normalizes to `None` rather than storing a meaningless empty
+    /// string; not otherwise validated against a closed set of language
+    /// codes, so a new language can be added on the frontend without a
+    /// backend change.
+    pub fn with_locale(mut self, locale: Option<String>) -> Self {
+        self.locale = locale
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+        self
     }
 
     /// Rebuilds a consumer from persisted state; infrastructure adapters use
     /// this rather than `new`, which always mints a fresh id.
-    pub fn reconstitute(id: ConsumerId, name: String, consumer_type: ConsumerType) -> Self {
+    pub fn reconstitute(
+        id: ConsumerId,
+        name: String,
+        consumer_type: ConsumerType,
+        locale: Option<String>,
+    ) -> Self {
         Self {
             id,
             name,
             consumer_type,
+            locale,
         }
     }
 
@@ -87,6 +115,10 @@ impl Consumer {
 
     pub fn consumer_type(&self) -> ConsumerType {
         self.consumer_type
+    }
+
+    pub fn locale(&self) -> Option<&str> {
+        self.locale.as_deref()
     }
 }
 
@@ -107,6 +139,25 @@ mod tests {
         let consumer = Consumer::new("  Douala Police  ", ConsumerType::Organization).unwrap();
         assert_eq!(consumer.name(), "Douala Police");
         assert_eq!(consumer.consumer_type(), ConsumerType::Organization);
+    }
+
+    #[test]
+    fn a_freshly_created_consumer_has_no_locale() {
+        let consumer = Consumer::new("Douala Police", ConsumerType::Organization).unwrap();
+        assert_eq!(consumer.locale(), None);
+    }
+
+    #[test]
+    fn with_locale_trims_and_normalizes_a_blank_value_to_none() {
+        let consumer = Consumer::new("Citizen (self-subscribed)", ConsumerType::Citizen)
+            .unwrap()
+            .with_locale(Some("  fr  ".into()));
+        assert_eq!(consumer.locale(), Some("fr"));
+
+        let consumer = Consumer::new("Citizen (self-subscribed)", ConsumerType::Citizen)
+            .unwrap()
+            .with_locale(Some("   ".into()));
+        assert_eq!(consumer.locale(), None);
     }
 
     #[test]

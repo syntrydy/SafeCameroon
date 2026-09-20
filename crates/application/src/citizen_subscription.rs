@@ -99,6 +99,10 @@ pub struct CitizenSubscriptionRequest {
     /// -- kept a plain `String` here so this crate never depends on a
     /// specific push provider's types (a channel is not a provider).
     pub push_subscription_json: String,
+    /// The citizen's browser-detected locale (`apps/citizen/src/i18n/locale.ts`),
+    /// e.g. `"en"`/`"fr"` -- see `Consumer::with_locale`'s doc comment for
+    /// what this is (and isn't yet) used for.
+    pub locale: Option<String>,
 }
 
 #[derive(Debug)]
@@ -126,8 +130,9 @@ pub fn prepare_citizen_subscription(
     }
     let endpoint = ChannelEndpoint::new(ChannelType::Push, request.push_subscription_json)?;
 
-    let consumer =
-        Consumer::new(CONSUMER_NAME, ConsumerType::Citizen).expect("CONSUMER_NAME is non-blank");
+    let consumer = Consumer::new(CONSUMER_NAME, ConsumerType::Citizen)
+        .expect("CONSUMER_NAME is non-blank")
+        .with_locale(request.locale);
 
     let delivery_preference = DeliveryPreference::new(DeliveryStrategy::All, vec![endpoint])
         .unwrap_or_else(|error| match error {
@@ -175,6 +180,7 @@ mod tests {
             push_subscription_json:
                 r#"{"endpoint":"https://push.example/abc","keys":{"p256dh":"key","auth":"secret"}}"#
                     .into(),
+            locale: Some("fr".into()),
         }
     }
 
@@ -195,6 +201,7 @@ mod tests {
             prepared.delivery_preference.channels()[0].channel(),
             ChannelType::Push
         );
+        assert_eq!(prepared.consumer.locale(), Some("fr"));
     }
 
     #[test]
@@ -209,6 +216,14 @@ mod tests {
             "a-completely-different-token",
             &prepared.management_token_hash
         ));
+    }
+
+    #[test]
+    fn a_request_with_no_locale_produces_a_consumer_with_no_locale() {
+        let mut request = valid_request();
+        request.locale = None;
+        let prepared = prepare_citizen_subscription(request).unwrap();
+        assert_eq!(prepared.consumer.locale(), None);
     }
 
     #[test]
