@@ -28,10 +28,20 @@ export function App() {
   );
 }
 
+// Clicking a received push notification lands here (sw.ts's
+// notificationclick handler deep-links to "/?tab=alerts") so the citizen
+// sees their subscription, not the report form "/" alone defaults to.
+function initialTab(): Tab {
+  if (typeof window === "undefined") {
+    return "report";
+  }
+  return new URLSearchParams(window.location.search).get("tab") === "alerts" ? "alerts" : "report";
+}
+
 function AppContent() {
   const { t } = useTranslation();
   const online = useOnlineStatus();
-  const [tab, setTab] = useState<Tab>("report");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [view, setView] = useState<View>({ kind: "form" });
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
