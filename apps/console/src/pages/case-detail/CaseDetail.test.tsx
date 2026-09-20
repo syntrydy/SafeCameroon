@@ -282,7 +282,7 @@ describe("CaseDetail", () => {
     const user = await loginAndReachCase();
 
     await user.type(screen.getByLabelText("Target geography"), "Douala, Bonamoussadi");
-    await user.type(screen.getByLabelText("Safe description"), "Last seen wearing a red shirt.");
+    await user.type(screen.getByLabelText("Alert description"), "Last seen wearing a red shirt.");
     await user.click(screen.getByRole("button", { name: "Create alert" }));
 
     await screen.findByRole("heading", { name: `Alert ${ALERT_ID.slice(0, 8)}` });
@@ -298,21 +298,31 @@ describe("CaseDetail", () => {
 
     // The auto-apply round trip is gated (see extractionsListGate) until
     // released below, so this is guaranteed to land in state first.
-    await user.type(screen.getByLabelText("Approximate age"), "9 years old, per a witness");
+    await user.type(screen.getByLabelText("Alert description"), "Reviewer's own draft.");
     releaseExtractionsListGate();
 
     expect(
       await screen.findByText("Filled in from the report's AI suggestion -- review every value before sending."),
     ).toBeInTheDocument();
+    // Target geography wasn't typed into, so it's still auto-filled from the
+    // extraction's `place`.
     expect(screen.getByLabelText("Target geography")).toHaveValue("Carrefour Bonamoussadi, Douala");
-    expect(screen.getByLabelText("Last seen (general area)")).toHaveValue("Carrefour Bonamoussadi, Douala");
-    expect(screen.getByLabelText("Time window")).toHaveValue("around 3:15 PM");
-    expect(screen.getByLabelText("Incident category")).toHaveValue("Did not return from school");
-    expect(screen.getByLabelText("Safe description")).toHaveValue(
-      "an 8-year-old girl in a blue school uniform",
+    // The description was already typed into, so the composed suggestion
+    // never overwrites it.
+    expect(screen.getByLabelText("Alert description")).toHaveValue("Reviewer's own draft.");
+  });
+
+  it("composes the alert description from the report's AI extraction when untouched", async () => {
+    caseData = { ...caseData, status: "VERIFIED" };
+    await loginAndReachCase();
+
+    expect(
+      await screen.findByText("Filled in from the report's AI suggestion -- review every value before sending."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Alert description")).toHaveValue(
+      "an 8-year-old girl in a blue school uniform. Age: 8 years old. Time: around 3:15 PM. " +
+        "Location: Carrefour Bonamoussadi, Douala. Category: Did not return from school.",
     );
-    // Already-typed fields are never clobbered by an applied suggestion.
-    expect(screen.getByLabelText("Approximate age")).toHaveValue("9 years old, per a witness");
   });
 
   it("does not offer alert creation before a case is verified", async () => {

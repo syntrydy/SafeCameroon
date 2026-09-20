@@ -186,13 +186,7 @@ export interface Translations {
     targetGeographyPlaceholder: string;
     creating: string;
     createAlert: string;
-    fieldIncidentCategory: string;
-    fieldApproximateAge: string;
-    fieldLastSeenArea: string;
-    fieldTimeWindow: string;
-    fieldSafeDescription: string;
-    fieldOfficialContact: string;
-    fieldCaseReference: string;
+    description: string;
     suggestionsApplied: string;
   };
   deliveryList: {
@@ -533,13 +527,7 @@ export const translations: Record<Locale, Translations> = {
       targetGeographyPlaceholder: "e.g. Douala, Bonamoussadi",
       creating: "Creating...",
       createAlert: "Create alert",
-      fieldIncidentCategory: "Incident category",
-      fieldApproximateAge: "Approximate age",
-      fieldLastSeenArea: "Last seen (general area)",
-      fieldTimeWindow: "Time window",
-      fieldSafeDescription: "Safe description",
-      fieldOfficialContact: "Official contact",
-      fieldCaseReference: "Case reference",
+      description: "Alert description",
       suggestionsApplied:
         "Filled in from the report's AI suggestion -- review every value before sending.",
     },
@@ -882,13 +870,7 @@ export const translations: Record<Locale, Translations> = {
       targetGeographyPlaceholder: "ex. Douala, Bonamoussadi",
       creating: "Création...",
       createAlert: "Créer l'alerte",
-      fieldIncidentCategory: "Catégorie d'incident",
-      fieldApproximateAge: "Âge approximatif",
-      fieldLastSeenArea: "Dernière localisation (zone générale)",
-      fieldTimeWindow: "Période",
-      fieldSafeDescription: "Description sécurisée",
-      fieldOfficialContact: "Contact officiel",
-      fieldCaseReference: "Référence du dossier",
+      description: "Description de l'alerte",
       suggestionsApplied:
         "Rempli à partir de la suggestion IA du signalement -- vérifiez chaque valeur avant l'envoi.",
     },
