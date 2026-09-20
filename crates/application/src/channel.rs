@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use safe_cameroon_domain::{Alert, ChannelType, Delivery};
+use safe_cameroon_domain::{Alert, AlertField, ChannelType, Delivery, Severity};
 
 /// What a channel needs to send one message. `body` is a single,
 /// channel-agnostic rendering of the alert's safe fields
@@ -76,16 +76,42 @@ pub trait Channel: Send + Sync {
     async fn send(&self, message: OutboundMessage) -> Result<ChannelSendOutcome, ChannelError>;
 }
 
+fn severity_label(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Low => "Low",
+        Severity::Medium => "Medium",
+        Severity::High => "High",
+        Severity::Critical => "Critical",
+    }
+}
+
 /// Builds the message a worker hands to whichever [`Channel`] matches
 /// `delivery.channel()`. Kept deliberately plain-text and identical across
 /// channels for now; per-channel rendering is a prompt 08 adapter concern.
+/// A short severity/geography header, then the alert's free-text
+/// `SafeDescription` (the reviewer-authored content a recipient actually
+/// reads) if present, then `OfficialContact`/`CaseReference` if the alert
+/// carries them -- an alert created with none of these (e.g. an
+/// internal/partner alert raised with only `IncidentCategory`) still
+/// produces a valid, if minimal, message.
 pub fn build_outbound_message(alert: &Alert, delivery: &Delivery) -> OutboundMessage {
-    let body = alert
-        .fields()
-        .iter()
-        .map(|field| format!("{}: {}", field.field.as_database_value(), field.value))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let mut body = format!(
+        "[{}] {}",
+        severity_label(alert.severity()),
+        alert.target_geography().as_str()
+    );
+    if let Some(description) = alert.field_value(AlertField::SafeDescription) {
+        if !description.trim().is_empty() {
+            body.push_str("\n\n");
+            body.push_str(description);
+        }
+    }
+    if let Some(contact) = alert.field_value(AlertField::OfficialContact) {
+        body.push_str(&format!("\n\nContact: {contact}"));
+    }
+    if let Some(reference) = alert.field_value(AlertField::CaseReference) {
+        body.push_str(&format!("\nRef: {reference}"));
+    }
     OutboundMessage {
         endpoint_address: delivery.endpoint_address().to_owned(),
         body,
@@ -152,7 +178,7 @@ mod tests {
         }
     }
 
-    fn alert_and_delivery() -> (Alert, Delivery) {
+    fn alert_and_delivery(fields: Vec<AlertFieldValue>) -> (Alert, Delivery) {
         let (mut case, _) = Case::create(IncidentType::MissingChild, ReportId::new());
         case.transition_to(CaseStatus::UnderReview).unwrap();
         case.transition_to(CaseStatus::Verified).unwrap();
@@ -162,10 +188,7 @@ mod tests {
             &policy,
             Severity::High,
             TargetGeography::new("Douala").unwrap(),
-            vec![AlertFieldValue {
-                field: AlertField::IncidentCategory,
-                value: "MISSING_CHILD".into(),
-            }],
+            fields,
             None,
         )
         .unwrap();
@@ -196,11 +219,37 @@ mod tests {
     }
 
     #[test]
-    fn builds_a_message_from_the_alerts_safe_fields_and_the_deliverys_endpoint() {
-        let (alert, delivery) = alert_and_delivery();
+    fn builds_a_severity_and_geography_header_when_no_description_is_present() {
+        let (alert, delivery) = alert_and_delivery(vec![AlertFieldValue {
+            field: AlertField::IncidentCategory,
+            value: "MISSING_CHILD".into(),
+        }]);
         let message = build_outbound_message(&alert, &delivery);
         assert_eq!(message.endpoint_address, "+237600000000");
-        assert!(message.body.contains("INCIDENT_CATEGORY: MISSING_CHILD"));
+        assert_eq!(message.body, "[High] Douala");
+    }
+
+    #[test]
+    fn builds_a_readable_message_from_description_contact_and_reference() {
+        let (alert, delivery) = alert_and_delivery(vec![
+            AlertFieldValue {
+                field: AlertField::SafeDescription,
+                value: "An 8-year-old girl last seen near the central market.".into(),
+            },
+            AlertFieldValue {
+                field: AlertField::OfficialContact,
+                value: "+237600000099".into(),
+            },
+            AlertFieldValue {
+                field: AlertField::CaseReference,
+                value: "335b05b6".into(),
+            },
+        ]);
+        let message = build_outbound_message(&alert, &delivery);
+        assert_eq!(
+            message.body,
+            "[High] Douala\n\nAn 8-year-old girl last seen near the central market.\n\nContact: +237600000099\nRef: 335b05b6"
+        );
     }
 
     #[tokio::test]

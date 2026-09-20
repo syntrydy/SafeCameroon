@@ -1,42 +1,31 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import { createAlert, MISSING_CHILD_COMMUNITY_FIELDS, type Alert, type AlertField, type Severity } from "../../api/alerts";
+import { createAlert, type Alert, type Severity } from "../../api/alerts";
 import type { ExtractedFields } from "../../api/extractions";
 import { ApiError } from "../../api/client";
 import { useTranslation } from "../../i18n/LanguageContext";
-import type { Translations } from "../../i18n/translations";
 
 const SEVERITIES: Severity[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
-
-function fieldLabels(t: Translations): Record<string, string> {
-  return {
-    INCIDENT_CATEGORY: t.createAlertForm.fieldIncidentCategory,
-    APPROXIMATE_AGE: t.createAlertForm.fieldApproximateAge,
-    LAST_SEEN_GENERAL_AREA: t.createAlertForm.fieldLastSeenArea,
-    TIME_WINDOW: t.createAlertForm.fieldTimeWindow,
-    SAFE_DESCRIPTION: t.createAlertForm.fieldSafeDescription,
-    OFFICIAL_CONTACT: t.createAlertForm.fieldOfficialContact,
-    CASE_REFERENCE: t.createAlertForm.fieldCaseReference,
-  };
-}
 
 const fieldInputClassName =
   "w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20";
 
-// Maps a report's AI-extracted fields onto this policy's alert fields.
-// Deliberately excludes `contact_request` (the citizen reporter's own
-// contact info -- never the alert's OFFICIAL_CONTACT, which would leak
-// reporter PII into a public/community alert) and CASE_REFERENCE (an
-// internal reviewer-chosen id the report text has no bearing on).
-function mappedFieldValues(fields: ExtractedFields): Partial<Record<AlertField, string>> {
-  const mapped: Partial<Record<AlertField, string>> = {};
-  if (fields.age) mapped.APPROXIMATE_AGE = fields.age;
-  if (fields.time) mapped.TIME_WINDOW = fields.time;
-  if (fields.place) mapped.LAST_SEEN_GENERAL_AREA = fields.place;
-  if (fields.incident_category) mapped.INCIDENT_CATEGORY = fields.incident_category;
-  const description = [fields.person_description, fields.vehicle_details].filter(Boolean).join(" ");
-  if (description) mapped.SAFE_DESCRIPTION = description;
-  return mapped;
+// Drafts a starting alert description from the report's AI extraction --
+// a mechanical join of whatever fragments were found, not fluent prose, so
+// the reviewer is expected to read and edit it before sending. Deliberately
+// excludes `contact_request` (the citizen reporter's own contact info --
+// must never leak into a public/community alert).
+function composeAlertDescription(fields: ExtractedFields): string {
+  return [
+    fields.person_description && `${fields.person_description}.`,
+    fields.age && `Age: ${fields.age}.`,
+    fields.time && `Time: ${fields.time}.`,
+    fields.place && `Location: ${fields.place}.`,
+    fields.incident_category && `Category: ${fields.incident_category}.`,
+    fields.vehicle_details && `Vehicle: ${fields.vehicle_details}.`,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 interface CreateAlertFormProps {
@@ -51,10 +40,9 @@ interface CreateAlertFormProps {
 
 export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: CreateAlertFormProps) {
   const { t } = useTranslation();
-  const labels = fieldLabels(t);
   const [severity, setSeverity] = useState<Severity>("HIGH");
   const [targetGeography, setTargetGeography] = useState("");
-  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestionsAppliedAt, setSuggestionsAppliedAt] = useState<number | null>(null);
@@ -68,14 +56,12 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
 
   useEffect(() => {
     if (!suggestedFields) return;
-    const mapped = mappedFieldValues(suggestedFields.fields);
-    setFieldValues((current) => {
-      const next = { ...current };
-      for (const [field, value] of Object.entries(mapped) as [AlertField, string][]) {
-        if (!touchedFieldsRef.current.has(field) && !next[field]?.trim()) next[field] = value;
+    if (!touchedFieldsRef.current.has("description")) {
+      const composed = composeAlertDescription(suggestedFields.fields);
+      if (composed) {
+        setDescription((current) => (current.trim() ? current : composed));
       }
-      return next;
-    });
+    }
     if (suggestedFields.fields.place && !touchedFieldsRef.current.has("targetGeography")) {
       setTargetGeography((current) => (current.trim() ? current : suggestedFields.fields.place!));
     }
@@ -94,9 +80,7 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
       const alert = await createAlert(token, caseId, {
         severity,
         targetGeography,
-        fields: MISSING_CHILD_COMMUNITY_FIELDS.filter((field) => fieldValues[field]?.trim()).map(
-          (field) => ({ field, value: fieldValues[field].trim() }),
-        ),
+        fields: description.trim() ? [{ field: "SAFE_DESCRIPTION", value: description.trim() }] : [],
       });
       onCreated(alert);
     } catch (cause) {
@@ -105,8 +89,6 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
       setSubmitting(false);
     }
   }
-
-  const gridFields = MISSING_CHILD_COMMUNITY_FIELDS.filter((field) => field !== "SAFE_DESCRIPTION");
 
   return (
     <form onSubmit={handleSubmit} className="rounded border border-white/[0.08] p-4">
@@ -147,30 +129,16 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
             className={fieldInputClassName}
           />
         </label>
-
-        {gridFields.map((field) => (
-          <label key={field} className="block text-sm">
-            <span className="mb-1 block font-medium text-slate-300">{labels[field]}</span>
-            <input
-              value={fieldValues[field] ?? ""}
-              onChange={(event) => {
-                touchedFieldsRef.current.add(field);
-                setFieldValues((current) => ({ ...current, [field]: event.target.value }));
-              }}
-              className={fieldInputClassName}
-            />
-          </label>
-        ))}
       </div>
 
       <label className="mt-3 block text-sm">
-        <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.fieldSafeDescription}</span>
+        <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.description}</span>
         <textarea
-          rows={3}
-          value={fieldValues.SAFE_DESCRIPTION ?? ""}
+          rows={5}
+          value={description}
           onChange={(event) => {
-            touchedFieldsRef.current.add("SAFE_DESCRIPTION");
-            setFieldValues((current) => ({ ...current, SAFE_DESCRIPTION: event.target.value }));
+            touchedFieldsRef.current.add("description");
+            setDescription(event.target.value);
           }}
           className={fieldInputClassName}
         />
