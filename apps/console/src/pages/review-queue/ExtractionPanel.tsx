@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import { createExtraction, listExtractions, type Extraction, type ExtractedFields } from "../../api/extractions";
 import { ApiError } from "../../api/client";
@@ -42,15 +42,29 @@ interface ExtractionPanelProps {
   // used by the case detail page to prefill the create-alert form. Omitted
   // entirely on the review queue, where there is no form to fill yet.
   onApply?: (fields: ExtractedFields) => void;
+  // When true (the case detail page's *first* linked report, only while the
+  // create-alert form is actually rendered), this panel opens, fetches this
+  // report's extractions on mount, creates one if none exist yet, and hands
+  // the most recent one to `onApply` automatically -- once -- so the form
+  // starts pre-filled without the reviewer needing to find and click
+  // through this panel first. Fields stay fully editable; this only saves
+  // the extra clicks to see the AI's suggestion in the first place.
+  autoApply?: boolean;
 }
 
-export function ExtractionPanel({ token, reportId, onApply }: ExtractionPanelProps) {
+export function ExtractionPanel({ token, reportId, onApply, autoApply }: ExtractionPanelProps) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(Boolean(autoApply));
   const [extractions, setExtractions] = useState<Extraction[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Starts `true` when auto-applying, so the effect below never sees a
+  // "not loading, no extractions yet" state before the initial fetch (kicked
+  // off by the `open`-load effect below) has actually run -- otherwise it
+  // would create a redundant duplicate extraction racing that fetch.
+  const [loading, setLoading] = useState(Boolean(autoApply));
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasAutoAppliedRef = useRef(false);
+  const hasAutoExtractedRef = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,7 +84,7 @@ export function ExtractionPanel({ token, reportId, onApply }: ExtractionPanelPro
     }
   }, [open, load]);
 
-  async function handleExtract() {
+  const handleExtract = useCallback(async () => {
     setExtracting(true);
     setError(null);
     try {
@@ -81,7 +95,18 @@ export function ExtractionPanel({ token, reportId, onApply }: ExtractionPanelPro
     } finally {
       setExtracting(false);
     }
-  }
+  }, [token, reportId, t]);
+
+  useEffect(() => {
+    if (!autoApply || !onApply || loading || hasAutoAppliedRef.current) return;
+    if (extractions.length > 0) {
+      hasAutoAppliedRef.current = true;
+      onApply(extractions[0].fields);
+    } else if (!hasAutoExtractedRef.current) {
+      hasAutoExtractedRef.current = true;
+      void handleExtract();
+    }
+  }, [autoApply, onApply, loading, extractions, handleExtract]);
 
   if (!open) {
     return (

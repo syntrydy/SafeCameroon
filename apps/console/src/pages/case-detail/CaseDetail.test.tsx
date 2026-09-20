@@ -37,6 +37,14 @@ const ALERT_ID = "dddddddd-4444-4444-4444-444444444444";
 
 let caseData: Case;
 let events: CaseEvent[];
+// Gates the mocked GET .../extractions response, which the case detail
+// page's auto-apply-on-load kicks off immediately. Resolved instantly by
+// default (every other test); one test below replaces it with a promise it
+// controls, so it can type into a field *before* the auto-apply round trip
+// is allowed to complete -- otherwise, since these mocked fetches resolve
+// far faster than simulated keystrokes, there's no reliable way to observe
+// "typed before the suggestion landed" versus "typed after."
+let extractionsListGate: Promise<void> = Promise.resolve();
 
 function stubBackend() {
   vi.stubGlobal(
@@ -97,7 +105,7 @@ function stubBackend() {
         );
       }
       if (url.pathname === `/v1/reports/${REPORT_ID}/extractions` && method === "GET") {
-        return Promise.resolve(jsonResponse(200, []));
+        return extractionsListGate.then(() => jsonResponse(200, []));
       }
       if (url.pathname === `/v1/reports/${REPORT_ID}/extractions` && method === "POST") {
         return Promise.resolve(
@@ -181,6 +189,7 @@ async function loginAndReachCase() {
 }
 
 beforeEach(() => {
+  extractionsListGate = Promise.resolve();
   caseData = {
     case_id: CASE_ID,
     incident_type: "MISSING_CHILD",
@@ -231,7 +240,9 @@ describe("CaseDetail", () => {
     await waitFor(() => {
       expect(screen.getByText("Verified")).toBeInTheDocument();
     });
-    expect(screen.getByRole("status")).toHaveTextContent("Case moved to Verified.");
+    // (Scoped by text, not role="status" alone -- verifying also auto-applies
+    // the linked report's AI extraction, which renders its own status text.)
+    expect(screen.getByText("Case moved to Verified.")).toBeInTheDocument();
     // Now that the case is VERIFIED, the next actions change accordingly.
     expect(screen.getByRole("button", { name: "Mark Active" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Mark Verified" })).not.toBeInTheDocument();
@@ -277,15 +288,18 @@ describe("CaseDetail", () => {
     await screen.findByRole("heading", { name: `Alert ${ALERT_ID.slice(0, 8)}` });
   });
 
-  it("applies a report's AI extraction into the create-alert form without overwriting typed fields", async () => {
+  it("auto-applies the first linked report's AI extraction into the create-alert form without overwriting typed fields", async () => {
     caseData = { ...caseData, status: "VERIFIED" };
+    let releaseExtractionsListGate!: () => void;
+    extractionsListGate = new Promise((resolve) => {
+      releaseExtractionsListGate = resolve;
+    });
     const user = await loginAndReachCase();
 
+    // The auto-apply round trip is gated (see extractionsListGate) until
+    // released below, so this is guaranteed to land in state first.
     await user.type(screen.getByLabelText("Approximate age"), "9 years old, per a witness");
-
-    await user.click(screen.getByRole("button", { name: "AI extraction" }));
-    await user.click(await screen.findByRole("button", { name: "Extract candidate info" }));
-    await user.click(await screen.findByRole("button", { name: "Apply to alert form" }));
+    releaseExtractionsListGate();
 
     expect(
       await screen.findByText("Filled in from the report's AI suggestion -- review every value before sending."),

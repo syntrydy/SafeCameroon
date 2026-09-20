@@ -14,9 +14,16 @@ interface LinkedReportAttachmentsProps {
   // Forwarded to ExtractionPanel so a reviewer can pull this report's AI
   // extraction straight into the case's create-alert form.
   onApplyToAlertForm?: (fields: ExtractedFields) => void;
+  // Forwarded to ExtractionPanel's `autoApply` -- see its doc comment.
+  autoApplyExtraction?: boolean;
 }
 
-export function LinkedReportAttachments({ token, reportId, onApplyToAlertForm }: LinkedReportAttachmentsProps) {
+export function LinkedReportAttachments({
+  token,
+  reportId,
+  onApplyToAlertForm,
+  autoApplyExtraction,
+}: LinkedReportAttachmentsProps) {
   const { t } = useTranslation();
   const { expanded, toggleExpanded, loading, error, attachments, downloadUrls, getDownloadUrl } =
     useReportAttachments(token, reportId);
@@ -58,7 +65,12 @@ export function LinkedReportAttachments({ token, reportId, onApplyToAlertForm }:
       )}
       {report && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-300">{report.raw_content}</p>}
 
-      <ExtractionPanel token={token} reportId={reportId} onApply={onApplyToAlertForm} />
+      <ExtractionPanel
+        token={token}
+        reportId={reportId}
+        onApply={onApplyToAlertForm}
+        autoApply={autoApplyExtraction}
+      />
 
       <button
         type="button"
