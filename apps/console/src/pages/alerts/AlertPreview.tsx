@@ -122,12 +122,14 @@ export function AlertPreview() {
         <dd className="text-white">
           {alert.policy_id} v{alert.policy_version}
         </dd>
+        {session?.role === "PLATFORM_ADMIN" && <>
         <dt className="text-slate-500">{t.alertPreview.deliveriesLabel}</dt>
         <dd className="text-white">
           <Link to={`/alerts/${alert.alert_id}/deliveries`} className="underline">
             {t.alertPreview.viewDeliveries}
           </Link>
         </dd>
+        </>}
       </dl>
 
       <section className="mb-6">
@@ -146,7 +148,7 @@ export function AlertPreview() {
         )}
       </section>
 
-      {alert.status === "ACTIVE" && (
+      {alert.status === "ACTIVE" && (alert.can_cancel ?? session?.role === "PLATFORM_ADMIN") && (
         <button
           type="button"
           disabled={cancelling}

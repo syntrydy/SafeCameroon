@@ -233,7 +233,8 @@ describe("console auth flow", () => {
   });
 
   it("logs in with a verified Google credential and reaches the review queue", async () => {
-    stubBackend();
+    // The review queue is platform-admin-only (RequirePlatformAdmin).
+    stubBackend("PLATFORM_ADMIN");
     const user = userEvent.setup();
     renderApp("/login");
 
@@ -242,7 +243,7 @@ describe("console auth flow", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Review queue" })).toBeInTheDocument();
     });
-    expect(screen.getByText(`Reviewer ${LOGIN_RESPONSE.email}`)).toBeInTheDocument();
+    expect(screen.getByText(`Admin ${LOGIN_RESPONSE.email}`)).toBeInTheDocument();
   });
 
   it("shows the backend's error message and request id when the account isn't a registered reviewer", async () => {
@@ -284,12 +285,17 @@ describe("console auth flow", () => {
   });
 
   it("hides the Organizations link and redirects away from it for a non-admin reviewer", async () => {
-    stubBackend("MEMBER");
+    // A MEMBER has no access to the (platform-admin-only) review queue and
+    // instead lands on their own organization -- mirrors "lands a plain
+    // member on their own organization after login, read-only" below; this
+    // test only cares about the Organizations link's absence.
+    const organizationId = "55555555-5555-5555-5555-555555555555";
+    stubBackend("MEMBER", organizationId);
     const user = userEvent.setup();
     renderApp("/login");
 
     await user.click(screen.getByRole("button", { name: "Fake Google Sign-In" }));
-    await screen.findByRole("heading", { name: "Review queue" });
+    await screen.findByRole("heading", { name: "Douala Police" });
 
     expect(screen.queryByRole("link", { name: "Organizations" })).not.toBeInTheDocument();
   });

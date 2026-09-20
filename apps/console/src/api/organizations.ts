@@ -11,6 +11,7 @@ export interface Organization {
   name: string;
   description: string | null;
   location: string | null;
+  contact?: string | null;
   verified_incident_types: IncidentType[];
   verified_alert_visibilities: AlertVisibility[];
   // The consumer this organization's alert subscription and delivery
@@ -53,11 +54,12 @@ export function updateOrganizationProfile(
   organizationId: string,
   description: string,
   location: string,
+  contact?: string,
 ): Promise<Organization> {
   return apiRequest<Organization>(`/v1/organizations/${organizationId}/profile`, {
     method: "PUT",
     token,
-    body: { description, location },
+    body: { description, location, contact },
   });
 }
 

@@ -53,6 +53,7 @@ export interface Alert {
   status: AlertStatus;
   fields: AlertFieldValue[];
   version: number;
+  can_cancel?: boolean;
 }
 
 export interface ListAlertsParams {

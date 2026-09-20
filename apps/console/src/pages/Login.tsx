@@ -46,7 +46,7 @@ export function Login() {
     // A reviewer with an organization lands on it (my-organization); a
     // platform admin has none and lands on the global review queue instead.
     const defaultDestination = session.organizationId ? "/my-organization" : "/";
-    return <Navigate to={state?.from?.pathname ?? defaultDestination} replace />;
+    return <Navigate to={session.role === "PLATFORM_ADMIN" ? (state?.from?.pathname ?? defaultDestination) : "/my-organization"} replace />;
   }
 
   return (

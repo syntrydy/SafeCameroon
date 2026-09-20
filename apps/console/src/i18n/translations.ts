@@ -317,6 +317,8 @@ export interface Translations {
     saving: string;
     inviteOrgAdminHeading: string;
     inviteOrgAdmin: string;
+    contactLabel: string;
+    profileSaved: string;
     profileHeading: string;
     saveProfile: string;
     savingProfile: string;
@@ -663,6 +665,8 @@ export const translations: Record<Locale, Translations> = {
       saving: "Saving...",
       inviteOrgAdminHeading: "Invite an org admin",
       inviteOrgAdmin: "Invite org admin",
+      contactLabel: "Contact details",
+      profileSaved: "Organization profile saved.",
       profileHeading: "Profile",
       saveProfile: "Save profile",
       savingProfile: "Saving...",
@@ -1010,6 +1014,8 @@ export const translations: Record<Locale, Translations> = {
       saving: "Enregistrement...",
       inviteOrgAdminHeading: "Inviter un administrateur d'organisation",
       inviteOrgAdmin: "Inviter l'administrateur",
+      contactLabel: "Coordonnées",
+      profileSaved: "Profil de l’organisation enregistré.",
       profileHeading: "Profil",
       saveProfile: "Enregistrer le profil",
       savingProfile: "Enregistrement...",

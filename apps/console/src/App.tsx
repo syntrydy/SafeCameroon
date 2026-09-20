@@ -39,14 +39,14 @@ export function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route element={<ProtectedLayout />}>
-          <Route path="/" element={<ReviewQueue />} />
-          <Route path="/cases" element={<CaseList />} />
-          <Route path="/cases/:id" element={<CaseDetail />} />
+          <Route path="/" element={<RequirePlatformAdmin><ReviewQueue /></RequirePlatformAdmin>} />
+          <Route path="/cases" element={<RequirePlatformAdmin><CaseList /></RequirePlatformAdmin>} />
+          <Route path="/cases/:id" element={<RequirePlatformAdmin><CaseDetail /></RequirePlatformAdmin>} />
           <Route path="/alerts" element={<AlertList />} />
           <Route path="/alerts/:id" element={<AlertPreview />} />
-          <Route path="/alerts/:id/deliveries" element={<DeliveryList />} />
-          <Route path="/deliveries/:id" element={<DeliveryDetail />} />
-          <Route path="/subscriptions" element={<Subscriptions />} />
+          <Route path="/alerts/:id/deliveries" element={<RequirePlatformAdmin><DeliveryList /></RequirePlatformAdmin>} />
+          <Route path="/deliveries/:id" element={<RequirePlatformAdmin><DeliveryDetail /></RequirePlatformAdmin>} />
+          <Route path="/subscriptions" element={<RequirePlatformAdmin><Subscriptions /></RequirePlatformAdmin>} />
           <Route
             path="/my-organization"
             element={

@@ -68,6 +68,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 px-3">
+        {session?.role === "PLATFORM_ADMIN" && <>
         <NavLink to="/" end className={linkClassName}>
           <ReportsIcon className="h-5 w-5 flex-shrink-0" />
           {!collapsed && <span className="truncate">{t.layout.reports}</span>}
@@ -76,14 +77,15 @@ export function Sidebar() {
           <CasesIcon className="h-5 w-5 flex-shrink-0" />
           {!collapsed && <span className="truncate">{t.layout.cases}</span>}
         </NavLink>
+        </>}
         <NavLink to="/alerts" className={linkClassName}>
           <AlertsIcon className="h-5 w-5 flex-shrink-0" />
           {!collapsed && <span className="truncate">{t.layout.alerts}</span>}
         </NavLink>
-        <NavLink to="/subscriptions" className={linkClassName}>
+        {session?.role === "PLATFORM_ADMIN" && <NavLink to="/subscriptions" className={linkClassName}>
           <SubscriptionsIcon className="h-5 w-5 flex-shrink-0" />
           {!collapsed && <span className="truncate">{t.layout.subscriptions}</span>}
-        </NavLink>
+        </NavLink>}
         {(session?.role === "ORG_ADMIN" || session?.role === "MEMBER") && (
           <NavLink to="/my-organization" className={linkClassName}>
             <OrganizationsIcon className="h-5 w-5 flex-shrink-0" />

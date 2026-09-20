@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 import { registerMember } from "../../api/auth";
 import { ApiError } from "../../api/client";
-import { getOrganization, listMembers, type Member, type Organization } from "../../api/organizations";
+import { getOrganization, listMembers, updateOrganizationProfile, type Member, type Organization } from "../../api/organizations";
 import {
   getDeliveryPreference,
   listSubscriptionsForConsumer,
@@ -39,6 +39,13 @@ export function MyOrganization() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [description, setDescription] = useState("");
+  const [location, setLocation] = useState("");
+  const [contact, setContact] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSaved, setProfileSaved] = useState(false);
+
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -56,6 +63,9 @@ export function MyOrganization() {
         listMembers(token, organizationId),
       ]);
       setOrganization(org);
+      setDescription(org.description ?? "");
+      setLocation(org.location ?? "");
+      setContact(org.contact ?? "");
       setMembers(orgMembers);
 
       if (org.consumer_id) {
@@ -84,6 +94,20 @@ export function MyOrganization() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function saveProfile(event: FormEvent) {
+    event.preventDefault();
+    if (!organizationId) return;
+    setSavingProfile(true);
+    setProfileError(null);
+    setProfileSaved(false);
+    try {
+      setOrganization(await updateOrganizationProfile(token, organizationId, description, location, contact));
+      setProfileSaved(true);
+    } catch (cause) {
+      setProfileError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
+    } finally { setSavingProfile(false); }
+  }
 
   async function handleInvite(event: FormEvent) {
     event.preventDefault();
@@ -143,6 +167,32 @@ export function MyOrganization() {
               : t.organizations.none}
           </span>
         </div>
+      )}
+
+      {organization && canInviteMembers && (
+        <form onSubmit={(event) => void saveProfile(event)} className="mb-6 space-y-3 rounded-2xl border border-white/10 p-4">
+          <h2 className="text-sm font-semibold text-white">{t.organizations.profileHeading}</h2>
+          <label className="block text-sm text-slate-300">
+            {t.organizations.descriptionLabel}
+            <textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={5000} className="mt-1 block w-full rounded bg-slate-800 p-2 text-white" />
+          </label>
+          <label className="block text-sm text-slate-300">
+            {t.organizations.locationLabel}
+            <input value={location} onChange={(event) => setLocation(event.target.value)} maxLength={500} className="mt-1 block w-full rounded bg-slate-800 p-2 text-white" />
+          </label>
+          <label className="block text-sm text-slate-300">
+            {t.organizations.contactLabel}
+            <input value={contact} onChange={(event) => setContact(event.target.value)} maxLength={1000} className="mt-1 block w-full rounded bg-slate-800 p-2 text-white" />
+          </label>
+          <button disabled={savingProfile} className="rounded bg-emerald-700 px-4 py-2 text-sm text-white disabled:opacity-50">{t.organizations.saveProfile}</button>
+          {profileError && <p role="alert" className="text-red-300">{profileError}</p>}
+          {profileSaved && <p role="status" className="text-emerald-300">{t.organizations.profileSaved}</p>}
+        </form>
+      )}
+      {organization && !canInviteMembers && (
+        <section className="mb-6 text-sm text-slate-300">
+          <p>{organization.description}</p><p>{organization.location}</p><p>{organization.contact}</p>
+        </section>
       )}
 
       {organization && organization.consumer_id && (
