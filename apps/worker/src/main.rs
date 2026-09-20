@@ -41,15 +41,20 @@ fn vapid_private_key_pem() -> Vec<u8> {
 /// adapter, mirroring `attachment_storage_from_env` in apps/api/src/main.rs
 /// -- unlike Web Push, a real email provider was always going to need a
 /// deliberate vendor choice (docs/OPEN_QUESTIONS.md), so this stays
-/// optional rather than required.
+/// optional rather than required. `BRAND_NAME` is this service's own copy
+/// of `apps/api`'s invite-mailer var of the same name (Railway environment
+/// variables are per-service, not shared) -- used to brand the HTML alert
+/// email the same way invites are branded; defaults to "Sentinel" so an
+/// existing deployment needs no new environment variable.
 fn email_channel_from_env() -> Arc<dyn Channel> {
+    let brand_name = std::env::var("BRAND_NAME").unwrap_or_else(|_| "Sentinel".to_owned());
     match (
         std::env::var("RESEND_API_KEY"),
         std::env::var("RESEND_FROM_ADDRESS"),
     ) {
         (Ok(api_key), Ok(from_address)) => {
             tracing::info!("email channel: Resend");
-            Arc::new(ResendEmailChannel::new(api_key, from_address))
+            Arc::new(ResendEmailChannel::new(api_key, from_address, brand_name))
         }
         _ => {
             tracing::info!(
