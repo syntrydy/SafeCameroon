@@ -10,6 +10,7 @@ mod error;
 mod extractions;
 mod health;
 mod idempotency;
+mod organization_access;
 mod organizations;
 mod rate_limit;
 mod reports;
@@ -394,6 +395,10 @@ fn build_router(state: AppState) -> Router {
             "/v1/webhooks/{channel}/{provider}",
             post(webhooks::receive_webhook),
         )
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            organization_access::restrict_incident_access,
+        ))
         .with_state(state)
         // Runs outermost-to-innermost on the request, innermost-to-outermost
         // on the response, so listing SetRequestId last means it sees the

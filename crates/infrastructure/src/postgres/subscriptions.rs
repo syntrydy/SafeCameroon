@@ -13,6 +13,8 @@ use safe_cameroon_domain::{
 };
 use serde_json::{Value, json};
 use sqlx::PgPool;
+
+use super::audit_events::organization_id_for_actor;
 use uuid::Uuid;
 
 fn rule_to_json(rule: &SubscriptionRule) -> Value {
@@ -265,15 +267,18 @@ impl PostgresSubscriptionRepository {
             return Ok(SubscriptionUpdateOutcome::Conflict);
         }
 
+        let organization_id =
+            organization_id_for_actor(&mut *transaction, actor.actor_id()).await?;
         sqlx::query(
             r#"
-            INSERT INTO audit_events (id, actor_type, actor_id, action, resource_type, resource_id, request_id)
-            VALUES ($1, $2, $3, 'SUBSCRIPTION_UPDATED', 'SUBSCRIPTION', $4, $5)
+            INSERT INTO audit_events (id, actor_type, actor_id, organization_id, action, resource_type, resource_id, request_id)
+            VALUES ($1, $2, $3, $4, 'SUBSCRIPTION_UPDATED', 'SUBSCRIPTION', $5, $6)
             "#,
         )
         .bind(Uuid::new_v4())
         .bind(actor.as_database_value())
         .bind(actor.actor_id())
+        .bind(organization_id)
         .bind(subscription.id().as_uuid())
         .bind(request_id)
         .execute(&mut *transaction)

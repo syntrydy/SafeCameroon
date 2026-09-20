@@ -37,6 +37,7 @@ pub struct ListAuditEventsQuery {
     resource_id: Option<Uuid>,
     action: Option<String>,
     actor_id: Option<Uuid>,
+    organization_id: Option<Uuid>,
     limit: Option<u32>,
     offset: Option<u32>,
 }
@@ -46,6 +47,7 @@ pub struct AuditEventResponse {
     id: Uuid,
     actor_type: String,
     actor_id: Option<Uuid>,
+    organization_id: Option<Uuid>,
     action: String,
     resource_type: String,
     resource_id: Option<Uuid>,
@@ -59,6 +61,7 @@ fn audit_event_response(record: &AuditEventRecord) -> AuditEventResponse {
         id: record.id,
         actor_type: record.actor_type.clone(),
         actor_id: record.actor_id,
+        organization_id: record.organization_id,
         action: record.action.clone(),
         resource_type: record.resource_type.clone(),
         resource_id: record.resource_id,
@@ -95,6 +98,7 @@ pub async fn list_audit_events(
         resource_id: query.resource_id,
         action: query.action,
         actor_id: query.actor_id,
+        organization_id: query.organization_id,
     };
 
     let events = state

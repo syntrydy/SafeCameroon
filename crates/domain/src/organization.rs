@@ -89,6 +89,7 @@ pub struct Organization {
     name: String,
     description: Option<String>,
     location: Option<String>,
+    contact: Option<String>,
     verified_incident_types: Vec<IncidentType>,
     verified_alert_visibilities: Vec<AlertVisibility>,
     consumer_id: Option<ConsumerId>,
@@ -113,6 +114,7 @@ impl Organization {
             name: trimmed.to_owned(),
             description: None,
             location: None,
+            contact: None,
             verified_incident_types: Vec::new(),
             verified_alert_visibilities: Vec::new(),
             consumer_id: None,
@@ -150,6 +152,7 @@ impl Organization {
             name,
             description,
             location,
+            contact: None,
             verified_incident_types,
             verified_alert_visibilities,
             consumer_id,
@@ -171,6 +174,15 @@ impl Organization {
 
     pub fn location(&self) -> Option<&str> {
         self.location.as_deref()
+    }
+
+    pub fn with_contact(mut self, contact: Option<String>) -> Self {
+        self.contact = contact;
+        self
+    }
+
+    pub fn contact(&self) -> Option<&str> {
+        self.contact.as_deref()
     }
 
     pub fn is_active(&self) -> bool {

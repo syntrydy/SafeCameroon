@@ -10,6 +10,8 @@ use safe_cameroon_domain::{
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::audit_events::organization_id_for_actor;
+
 fn parse_incident_types(values: Vec<String>) -> Vec<IncidentType> {
     values
         .iter()
@@ -40,6 +42,7 @@ type OrganizationRow = (
     Vec<String>,
     Option<Uuid>,
     bool,
+    Option<String>,
 );
 #[allow(clippy::type_complexity)]
 type OrganizationListRow = (
@@ -51,6 +54,7 @@ type OrganizationListRow = (
     Vec<String>,
     Option<Uuid>,
     bool,
+    Option<String>,
 );
 
 pub struct MembershipRecord {
@@ -88,7 +92,7 @@ impl PostgresOrganizationRepository {
     ) -> Result<Option<Organization>, sqlx::Error> {
         let row: Option<OrganizationRow> = sqlx::query_as(
             "SELECT name, description, location, verified_incident_types, \
-             verified_alert_visibilities, consumer_id, is_active \
+             verified_alert_visibilities, consumer_id, is_active, contact \
              FROM organizations WHERE id = $1",
         )
         .bind(organization_id.as_uuid())
@@ -104,6 +108,7 @@ impl PostgresOrganizationRepository {
                 visibilities,
                 consumer_id,
                 is_active,
+                contact,
             )| {
                 Organization::reconstitute(
                     organization_id,
@@ -115,6 +120,7 @@ impl PostgresOrganizationRepository {
                     consumer_id.map(ConsumerId::from_uuid),
                     is_active,
                 )
+                .with_contact(contact)
             },
         ))
     }
@@ -125,7 +131,7 @@ impl PostgresOrganizationRepository {
     pub async fn list(&self, limit: i64, offset: i64) -> Result<Vec<Organization>, sqlx::Error> {
         let rows: Vec<OrganizationListRow> = sqlx::query_as(
             "SELECT id, name, description, location, verified_incident_types, \
-             verified_alert_visibilities, consumer_id, is_active \
+             verified_alert_visibilities, consumer_id, is_active, contact \
              FROM organizations ORDER BY created_at DESC LIMIT $1 OFFSET $2",
         )
         .bind(limit)
@@ -145,6 +151,7 @@ impl PostgresOrganizationRepository {
                     visibilities,
                     consumer_id,
                     is_active,
+                    contact,
                 )| {
                     Organization::reconstitute(
                         OrganizationId::from_uuid(id),
@@ -156,6 +163,7 @@ impl PostgresOrganizationRepository {
                         consumer_id.map(ConsumerId::from_uuid),
                         is_active,
                     )
+                    .with_contact(contact)
                 },
             )
             .collect())
@@ -178,6 +186,27 @@ impl PostgresOrganizationRepository {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    /// Profile update and audit commit together. Optional contact preserves older clients.
+    pub async fn set_profile_audited(
+        &self,
+        organization_id: OrganizationId,
+        description: Option<&str>,
+        location: Option<&str>,
+        contact: Option<&str>,
+        actor_id: Uuid,
+        request_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("UPDATE organizations SET description = $2, location = $3, contact = CASE WHEN $4::text IS NULL THEN contact ELSE NULLIF(btrim($4), '') END WHERE id = $1")
+            .bind(organization_id.as_uuid()).bind(description).bind(location).bind(contact)
+            .execute(&mut *tx).await?;
+        let actor_organization_id = organization_id_for_actor(&mut *tx, Some(actor_id)).await?;
+        sqlx::query("INSERT INTO audit_events (id, actor_type, actor_id, organization_id, action, resource_type, resource_id, request_id, metadata) VALUES ($1, 'REVIEWER', $2, $3, 'ORGANIZATION_PROFILE_UPDATED', 'ORGANIZATION', $4, $5, '{}'::jsonb)")
+            .bind(Uuid::new_v4()).bind(actor_id).bind(actor_organization_id).bind(organization_id.as_uuid()).bind(request_id)
+            .execute(&mut *tx).await?;
+        tx.commit().await
     }
 
     /// Flips the soft-deactivate flag (migration 0026). Never deletes the

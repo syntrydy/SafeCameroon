@@ -8,6 +8,8 @@ use safe_cameroon_domain::{
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
+use super::audit_events::organization_id_for_actor;
+
 const UNIQUE_VIOLATION: &str = "23505";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -459,15 +461,17 @@ async fn insert_audit_event(
     case_id: Uuid,
     request_id: Uuid,
 ) -> Result<(), sqlx::Error> {
+    let organization_id = organization_id_for_actor(&mut **transaction, actor.actor_id()).await?;
     sqlx::query(
         r#"
-        INSERT INTO audit_events (id, actor_type, actor_id, action, resource_type, resource_id, request_id)
-        VALUES ($1, $2, $3, $4, 'CASE', $5, $6)
+        INSERT INTO audit_events (id, actor_type, actor_id, organization_id, action, resource_type, resource_id, request_id)
+        VALUES ($1, $2, $3, $4, $5, 'CASE', $6, $7)
         "#,
     )
     .bind(audit_event_id)
     .bind(actor.as_database_value())
     .bind(actor.actor_id())
+    .bind(organization_id)
     .bind(action)
     .bind(case_id)
     .bind(request_id)

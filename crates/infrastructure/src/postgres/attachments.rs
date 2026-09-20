@@ -5,6 +5,8 @@ use safe_cameroon_domain::{
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::audit_events::organization_id_for_actor;
+
 #[derive(Clone)]
 pub struct PostgresAttachmentRepository {
     pool: PgPool,
@@ -124,15 +126,17 @@ impl PostgresAttachmentRepository {
         actor: Actor,
         request_id: Uuid,
     ) -> Result<(), sqlx::Error> {
+        let organization_id = organization_id_for_actor(&self.pool, actor.actor_id()).await?;
         sqlx::query(
             r#"
-            INSERT INTO audit_events (id, actor_type, actor_id, action, resource_type, resource_id, request_id)
-            VALUES ($1, $2, $3, 'ATTACHMENT_DOWNLOAD_URL_ISSUED', 'ATTACHMENT', $4, $5)
+            INSERT INTO audit_events (id, actor_type, actor_id, organization_id, action, resource_type, resource_id, request_id)
+            VALUES ($1, $2, $3, $4, 'ATTACHMENT_DOWNLOAD_URL_ISSUED', 'ATTACHMENT', $5, $6)
             "#,
         )
         .bind(Uuid::new_v4())
         .bind(actor.as_database_value())
         .bind(actor.actor_id())
+        .bind(organization_id)
         .bind(attachment_id.as_uuid())
         .bind(request_id)
         .execute(&self.pool)
