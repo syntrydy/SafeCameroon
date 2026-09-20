@@ -57,6 +57,10 @@ pub enum AlertField {
     ApproximateAge,
     LastSeenGeneralArea,
     TimeWindow,
+    /// Superseded by [`Self::SafeDescriptionEn`]/[`Self::SafeDescriptionFr`]
+    /// on the creation form, but kept as a valid variant so alerts created
+    /// before bilingual descriptions shipped keep reading and delivering
+    /// unchanged (`Alert::description_for_locale` falls back to this).
     SafeDescription,
     OfficialContact,
     CaseReference,
@@ -64,6 +68,8 @@ pub enum AlertField {
     InternalNotes,
     ExactLocation,
     WitnessDetails,
+    SafeDescriptionEn,
+    SafeDescriptionFr,
 }
 
 impl AlertField {
@@ -80,6 +86,8 @@ impl AlertField {
             Self::InternalNotes => "INTERNAL_NOTES",
             Self::ExactLocation => "EXACT_LOCATION",
             Self::WitnessDetails => "WITNESS_DETAILS",
+            Self::SafeDescriptionEn => "SAFE_DESCRIPTION_EN",
+            Self::SafeDescriptionFr => "SAFE_DESCRIPTION_FR",
         }
     }
 
@@ -96,6 +104,8 @@ impl AlertField {
             "INTERNAL_NOTES" => Some(Self::InternalNotes),
             "EXACT_LOCATION" => Some(Self::ExactLocation),
             "WITNESS_DETAILS" => Some(Self::WitnessDetails),
+            "SAFE_DESCRIPTION_EN" => Some(Self::SafeDescriptionEn),
+            "SAFE_DESCRIPTION_FR" => Some(Self::SafeDescriptionFr),
             _ => None,
         }
     }
@@ -309,7 +319,8 @@ impl AlertPolicy {
                 AlertField::ApproximateAge,
                 AlertField::LastSeenGeneralArea,
                 AlertField::TimeWindow,
-                AlertField::SafeDescription,
+                AlertField::SafeDescriptionEn,
+                AlertField::SafeDescriptionFr,
                 AlertField::OfficialContact,
                 AlertField::CaseReference,
             ],
@@ -645,6 +656,28 @@ impl Alert {
             .iter()
             .find(|value| value.field == field)
             .map(|value| value.value.as_str())
+    }
+
+    /// Picks the description matching `locale` (a raw locale/language tag,
+    /// e.g. `"fr"`, `"fr-FR"`, `"en-US"`): French when `locale` starts with
+    /// "fr" case-insensitively, else English. Falls back to the other
+    /// language if the preferred one is missing, then to the legacy
+    /// [`AlertField::SafeDescription`] if neither new field is present (an
+    /// alert created before bilingual descriptions shipped) -- so every
+    /// alert still produces some description regardless of recipient
+    /// locale or when it was created.
+    pub fn description_for_locale(&self, locale: Option<&str>) -> Option<&str> {
+        let prefers_french = locale
+            .map(|value| value.trim().to_lowercase().starts_with("fr"))
+            .unwrap_or(false);
+        let (primary, secondary) = if prefers_french {
+            (AlertField::SafeDescriptionFr, AlertField::SafeDescriptionEn)
+        } else {
+            (AlertField::SafeDescriptionEn, AlertField::SafeDescriptionFr)
+        };
+        self.field_value(primary)
+            .or_else(|| self.field_value(secondary))
+            .or_else(|| self.field_value(AlertField::SafeDescription))
     }
 
     fn event(&self, event_type: AlertEventType) -> AlertEvent {
@@ -989,5 +1022,98 @@ mod tests {
     fn target_geography_rejects_blank_input() {
         assert!(TargetGeography::new("   ").is_err());
         assert_eq!(TargetGeography::new(" Douala ").unwrap().as_str(), "Douala");
+    }
+
+    fn alert_with_fields(fields: Vec<AlertFieldValue>) -> Alert {
+        let case = verified_case(IncidentType::MissingChild);
+        let policy = AlertPolicy::new(
+            AlertPolicyId::new("TEST"),
+            1,
+            IncidentType::MissingChild,
+            AlertVisibility::Community,
+            CaseEventType::CaseVerified,
+            vec![
+                AlertField::SafeDescription,
+                AlertField::SafeDescriptionEn,
+                AlertField::SafeDescriptionFr,
+            ],
+        )
+        .unwrap();
+        let geography = TargetGeography::new("Douala").unwrap();
+        let (alert, _) =
+            Alert::create_from_case(&case, &policy, Severity::High, geography, fields, None)
+                .unwrap();
+        alert
+    }
+
+    #[test]
+    fn description_for_locale_picks_french_for_any_french_locale_variant() {
+        let alert = alert_with_fields(vec![
+            field(AlertField::SafeDescriptionEn, "An English description."),
+            field(
+                AlertField::SafeDescriptionFr,
+                "Une description en francais.",
+            ),
+        ]);
+        for locale in ["fr", "fr-FR", "FR", "fr-CA"] {
+            assert_eq!(
+                alert.description_for_locale(Some(locale)),
+                Some("Une description en francais.")
+            );
+        }
+    }
+
+    #[test]
+    fn description_for_locale_picks_english_for_english_or_unset_or_unknown_locale() {
+        let alert = alert_with_fields(vec![
+            field(AlertField::SafeDescriptionEn, "An English description."),
+            field(
+                AlertField::SafeDescriptionFr,
+                "Une description en francais.",
+            ),
+        ]);
+        for locale in [Some("en"), Some("en-US"), Some("de"), None] {
+            assert_eq!(
+                alert.description_for_locale(locale),
+                Some("An English description.")
+            );
+        }
+    }
+
+    #[test]
+    fn description_for_locale_falls_back_to_the_other_language_when_only_one_is_present() {
+        let english_only = alert_with_fields(vec![field(
+            AlertField::SafeDescriptionEn,
+            "An English description.",
+        )]);
+        assert_eq!(
+            english_only.description_for_locale(Some("fr")),
+            Some("An English description.")
+        );
+
+        let french_only = alert_with_fields(vec![field(
+            AlertField::SafeDescriptionFr,
+            "Une description en francais.",
+        )]);
+        assert_eq!(
+            french_only.description_for_locale(Some("en")),
+            Some("Une description en francais.")
+        );
+    }
+
+    #[test]
+    fn description_for_locale_falls_back_to_the_legacy_field_for_a_pre_bilingual_alert() {
+        let alert = alert_with_fields(vec![field(AlertField::SafeDescription, "Legacy text.")]);
+        assert_eq!(
+            alert.description_for_locale(Some("fr")),
+            Some("Legacy text.")
+        );
+        assert_eq!(alert.description_for_locale(None), Some("Legacy text."));
+    }
+
+    #[test]
+    fn description_for_locale_is_none_when_no_description_field_is_present() {
+        let alert = alert_with_fields(vec![]);
+        assert_eq!(alert.description_for_locale(Some("fr")), None);
     }
 }

@@ -4,8 +4,10 @@
 
 pub mod disabled;
 pub mod openrouter;
+pub mod openrouter_description;
 pub mod transcription;
 
-pub use disabled::{DisabledExtractor, DisabledTranscriber};
+pub use disabled::{DisabledExtractor, DisabledGenerator, DisabledTranscriber};
 pub use openrouter::OpenRouterExtractor;
+pub use openrouter_description::OpenRouterDescriptionGenerator;
 pub use transcription::OpenRouterTranscriber;

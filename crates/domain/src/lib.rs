@@ -7,6 +7,7 @@ pub mod attachment;
 pub mod case;
 pub mod consumer;
 pub mod delivery;
+pub mod description_generation;
 pub mod extraction;
 pub mod ids;
 pub mod organization;
@@ -31,11 +32,12 @@ pub use delivery::{
     DeliveryStatus, DeliveryStrategy, DeliveryTransitionError, EmptyChannelEndpointAddress,
     InvalidRetryPolicy, RetryPolicy, plan_deliveries,
 };
+pub use description_generation::GeneratedDescription;
 pub use extraction::ExtractedReportFields;
 pub use ids::{
-    AlertEventId, AlertId, AttachmentId, AuditEventId, CaseEventId, CaseId, ConsumerId,
-    DeliveryAttemptId, DeliveryEventId, DeliveryId, OrganizationId, OutboxEventId,
-    ReportExtractionId, ReportId, SubscriptionId,
+    AlertDescriptionGenerationId, AlertEventId, AlertId, AttachmentId, AuditEventId, CaseEventId,
+    CaseId, ConsumerId, DeliveryAttemptId, DeliveryEventId, DeliveryId, OrganizationId,
+    OutboxEventId, ReportExtractionId, ReportId, SubscriptionId,
 };
 pub use organization::{EmptyOrganizationName, Membership, Organization, Role};
 pub use report::{AnonymousReport, ReportSourceChannel, ReportStatus};

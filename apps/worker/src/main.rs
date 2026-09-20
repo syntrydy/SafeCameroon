@@ -11,8 +11,9 @@ use safe_cameroon_infrastructure::channels::{
     EmailChannel, ResendEmailChannel, SmsChannel, WebPushChannel, WhatsAppChannel,
 };
 use safe_cameroon_infrastructure::postgres::{
-    PostgresAlertRepository, PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository,
-    PostgresOutboxRepository, PostgresRateLimiter, PostgresSubscriptionRepository,
+    PostgresAlertRepository, PostgresConsumerRepository, PostgresDeliveryPreferenceRepository,
+    PostgresDeliveryRepository, PostgresOutboxRepository, PostgresRateLimiter,
+    PostgresSubscriptionRepository,
 };
 use sqlx::postgres::PgPoolOptions;
 
@@ -80,6 +81,7 @@ async fn main() {
 
     let deliveries = PostgresDeliveryRepository::new(pool.clone());
     let alerts = PostgresAlertRepository::new(pool.clone());
+    let consumers = PostgresConsumerRepository::new(pool.clone());
     let outbox = PostgresOutboxRepository::new(pool.clone());
     let subscriptions = PostgresSubscriptionRepository::new(pool.clone());
     let delivery_preferences = PostgresDeliveryPreferenceRepository::new(pool.clone());
@@ -110,7 +112,7 @@ async fn main() {
                 tracing::info!("safe-cameroon-worker: shutting down");
                 break;
             }
-            result = process_cycle(&outbox, &alerts, &subscriptions, &delivery_preferences, &deliveries, &registry) => {
+            result = process_cycle(&outbox, &alerts, &consumers, &subscriptions, &delivery_preferences, &deliveries, &registry) => {
                 match result {
                     Ok(0) => tokio::time::sleep(POLL_INTERVAL).await,
                     Ok(count) => tracing::info!(count, "safe-cameroon-worker: processed job(s)"),
@@ -146,6 +148,7 @@ async fn main() {
 async fn process_cycle(
     outbox: &PostgresOutboxRepository,
     alerts: &PostgresAlertRepository,
+    consumers: &PostgresConsumerRepository,
     subscriptions: &PostgresSubscriptionRepository,
     delivery_preferences: &PostgresDeliveryPreferenceRepository,
     deliveries: &PostgresDeliveryRepository,
@@ -160,6 +163,7 @@ async fn process_cycle(
         BATCH_SIZE,
     )
     .await?;
-    let dispatched = dispatch::process_batch(deliveries, alerts, registry, BATCH_SIZE).await?;
+    let dispatched =
+        dispatch::process_batch(deliveries, alerts, consumers, registry, BATCH_SIZE).await?;
     Ok(matched + dispatched)
 }

@@ -88,19 +88,25 @@ fn severity_label(severity: Severity) -> &'static str {
 /// Builds the message a worker hands to whichever [`Channel`] matches
 /// `delivery.channel()`. Kept deliberately plain-text and identical across
 /// channels for now; per-channel rendering is a prompt 08 adapter concern.
-/// A short severity/geography header, then the alert's free-text
-/// `SafeDescription` (the reviewer-authored content a recipient actually
-/// reads) if present, then `OfficialContact`/`CaseReference` if the alert
-/// carries them -- an alert created with none of these (e.g. an
-/// internal/partner alert raised with only `IncidentCategory`) still
-/// produces a valid, if minimal, message.
-pub fn build_outbound_message(alert: &Alert, delivery: &Delivery) -> OutboundMessage {
+/// A short severity/geography header, then the alert's description in the
+/// recipient's `recipient_locale` (French when it starts with "fr",
+/// English otherwise, falling back across languages and to the legacy
+/// single-language field -- see [`Alert::description_for_locale`]) if
+/// present, then `OfficialContact`/`CaseReference` if the alert carries
+/// them -- an alert created with none of these (e.g. an internal/partner
+/// alert raised with only `IncidentCategory`) still produces a valid, if
+/// minimal, message.
+pub fn build_outbound_message(
+    alert: &Alert,
+    delivery: &Delivery,
+    recipient_locale: Option<&str>,
+) -> OutboundMessage {
     let mut body = format!(
         "[{}] {}",
         severity_label(alert.severity()),
         alert.target_geography().as_str()
     );
-    if let Some(description) = alert.field_value(AlertField::SafeDescription) {
+    if let Some(description) = alert.description_for_locale(recipient_locale) {
         if !description.trim().is_empty() {
             body.push_str("\n\n");
             body.push_str(description);
@@ -224,7 +230,7 @@ mod tests {
             field: AlertField::IncidentCategory,
             value: "MISSING_CHILD".into(),
         }]);
-        let message = build_outbound_message(&alert, &delivery);
+        let message = build_outbound_message(&alert, &delivery, None);
         assert_eq!(message.endpoint_address, "+237600000000");
         assert_eq!(message.body, "[High] Douala");
     }
@@ -233,7 +239,7 @@ mod tests {
     fn builds_a_readable_message_from_description_contact_and_reference() {
         let (alert, delivery) = alert_and_delivery(vec![
             AlertFieldValue {
-                field: AlertField::SafeDescription,
+                field: AlertField::SafeDescriptionEn,
                 value: "An 8-year-old girl last seen near the central market.".into(),
             },
             AlertFieldValue {
@@ -245,11 +251,87 @@ mod tests {
                 value: "335b05b6".into(),
             },
         ]);
-        let message = build_outbound_message(&alert, &delivery);
+        let message = build_outbound_message(&alert, &delivery, None);
         assert_eq!(
             message.body,
             "[High] Douala\n\nAn 8-year-old girl last seen near the central market.\n\nContact: +237600000099\nRef: 335b05b6"
         );
+    }
+
+    #[test]
+    fn picks_the_description_matching_the_recipient_locale() {
+        let (alert, delivery) = alert_and_delivery(vec![
+            AlertFieldValue {
+                field: AlertField::SafeDescriptionEn,
+                value: "An 8-year-old girl last seen near the central market.".into(),
+            },
+            AlertFieldValue {
+                field: AlertField::SafeDescriptionFr,
+                value: "Une fillette de 8 ans vue pour la derniere fois pres du marche central."
+                    .into(),
+            },
+        ]);
+        let french_message = build_outbound_message(&alert, &delivery, Some("fr-FR"));
+        assert!(french_message.body.contains("Une fillette de 8 ans"));
+        let english_message = build_outbound_message(&alert, &delivery, Some("en-US"));
+        assert!(english_message.body.contains("An 8-year-old girl"));
+        let unset_locale_message = build_outbound_message(&alert, &delivery, None);
+        assert!(unset_locale_message.body.contains("An 8-year-old girl"));
+    }
+
+    #[test]
+    fn a_legacy_single_language_description_delivers_regardless_of_locale() {
+        // The community policy's allowlist no longer accepts
+        // `SafeDescription` for *new* alerts, so this reconstitutes one
+        // directly -- exactly how a pre-bilingual alert already persisted
+        // in the database would be loaded back, bypassing `create_from_case`
+        // (and its allowlist check) entirely, same as any other read.
+        let alert = Alert::reconstitute(
+            safe_cameroon_domain::AlertId::new(),
+            safe_cameroon_domain::CaseId::new(),
+            safe_cameroon_domain::AlertPolicyId::new("MISSING_CHILD_COMMUNITY"),
+            1,
+            IncidentType::MissingChild,
+            Severity::High,
+            safe_cameroon_domain::AlertVisibility::Community,
+            safe_cameroon_domain::CaseEventType::CaseVerified,
+            TargetGeography::new("Douala").unwrap(),
+            safe_cameroon_domain::AlertStatus::Active,
+            vec![AlertFieldValue {
+                field: AlertField::SafeDescription,
+                value: "Legacy single-language text.".into(),
+            }],
+            1,
+            None,
+        );
+
+        let consumer_id = ConsumerId::new();
+        let preference = DeliveryPreference::new(
+            DeliveryStrategy::All,
+            vec![ChannelEndpoint::new(ChannelType::WhatsApp, "+237600000000").unwrap()],
+        )
+        .unwrap();
+        let mut preferences = std::collections::HashMap::new();
+        preferences.insert(consumer_id, preference);
+        let consumer_matches = vec![ConsumerMatch {
+            consumer_id,
+            matching_subscriptions: vec![MatchedSubscription {
+                subscription_id: SubscriptionId::new(),
+                subscription_version: 1,
+            }],
+        }];
+        let mut planned = safe_cameroon_domain::plan_deliveries(
+            &alert,
+            &consumer_matches,
+            &preferences,
+            RetryPolicy::standard(),
+        );
+        let (delivery, _) = planned.remove(0);
+
+        for locale in [Some("fr"), Some("en"), None] {
+            let message = build_outbound_message(&alert, &delivery, locale);
+            assert!(message.body.contains("Legacy single-language text."));
+        }
     }
 
     #[tokio::test]

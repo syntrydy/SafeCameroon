@@ -1,5 +1,6 @@
 //! PostgreSQL adapters, one module per aggregate.
 
+pub mod alert_description_generations;
 pub mod alerts;
 pub mod attachments;
 pub mod audit_events;
@@ -15,6 +16,7 @@ pub mod reports;
 pub mod reviewers;
 pub mod subscriptions;
 
+pub use alert_description_generations::PostgresAlertDescriptionGenerationRepository;
 pub use alerts::{AlertCancelOutcome, AlertCreationOutcome, AlertFilter, PostgresAlertRepository};
 pub use attachments::PostgresAttachmentRepository;
 pub use audit_events::{AuditEventFilter, AuditEventRecord, PostgresAuditEventRepository};

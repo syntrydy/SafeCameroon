@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use safe_cameroon_application::ai_extraction::ReportExtractor;
+use safe_cameroon_application::alert_description_generation::AlertDescriptionGenerator;
 use safe_cameroon_application::attachment_workflow::AttachmentStorage;
 use safe_cameroon_application::audio_transcription::AudioTranscriber;
 use safe_cameroon_application::google_identity::GoogleIdentityVerifier;
@@ -9,10 +10,11 @@ use safe_cameroon_application::rate_limit::RateLimiter;
 use safe_cameroon_application::webhook::{WebhookReplayGuard, WebhookVerifierRegistry};
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::postgres::{
-    PostgresAlertRepository, PostgresAttachmentRepository, PostgresAuditEventRepository,
-    PostgresCaseRepository, PostgresConsumerRepository, PostgresDeliveryPreferenceRepository,
-    PostgresDeliveryRepository, PostgresOrganizationRepository, PostgresReportExtractionRepository,
-    PostgresReportRepository, PostgresReviewerRepository, PostgresSubscriptionRepository,
+    PostgresAlertDescriptionGenerationRepository, PostgresAlertRepository,
+    PostgresAttachmentRepository, PostgresAuditEventRepository, PostgresCaseRepository,
+    PostgresConsumerRepository, PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository,
+    PostgresOrganizationRepository, PostgresReportExtractionRepository, PostgresReportRepository,
+    PostgresReviewerRepository, PostgresSubscriptionRepository,
 };
 
 #[derive(Clone)]
@@ -41,4 +43,6 @@ pub struct AppState {
     /// distinct from whether a real transcriber is configured (issue #160).
     pub voice_reports_enabled: bool,
     pub invite_mailer: Arc<dyn InviteMailer>,
+    pub alert_description_generations: PostgresAlertDescriptionGenerationRepository,
+    pub alert_description_generator: Arc<dyn AlertDescriptionGenerator>,
 }
