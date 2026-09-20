@@ -8,7 +8,8 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use safe_cameroon_application::channel::{Channel, ChannelRegistry};
 use safe_cameroon_infrastructure::channels::{
-    EmailChannel, ResendEmailChannel, SmsChannel, WebPushChannel, WhatsAppChannel,
+    EmailChannel, InfobipSmsChannel, ResendEmailChannel, SmsChannel, WebPushChannel,
+    WhatsAppChannel,
 };
 use safe_cameroon_infrastructure::postgres::{
     PostgresAlertRepository, PostgresConsumerRepository, PostgresDeliveryPreferenceRepository,
@@ -59,6 +60,28 @@ fn email_channel_from_env() -> Arc<dyn Channel> {
     }
 }
 
+/// Real Infobip when all three vars are configured; otherwise the
+/// mock/sandbox adapter, same "optional, deliberate vendor choice" stance
+/// as `email_channel_from_env`.
+fn sms_channel_from_env() -> Arc<dyn Channel> {
+    match (
+        std::env::var("INFOBIP_BASE_URL"),
+        std::env::var("INFOBIP_API_KEY"),
+        std::env::var("INFOBIP_SENDER"),
+    ) {
+        (Ok(base_url), Ok(api_key), Ok(sender)) => {
+            tracing::info!("SMS channel: Infobip");
+            Arc::new(InfobipSmsChannel::new(base_url, api_key, sender))
+        }
+        _ => {
+            tracing::info!(
+                "SMS channel: mock/sandbox (INFOBIP_BASE_URL/INFOBIP_API_KEY/INFOBIP_SENDER not fully configured)"
+            );
+            Arc::new(SmsChannel)
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // Optional: a real deployment sets env vars directly and has no .env
@@ -87,13 +110,13 @@ async fn main() {
     let delivery_preferences = PostgresDeliveryPreferenceRepository::new(pool.clone());
     let rate_limiter = PostgresRateLimiter::new(pool);
 
-    // WhatsApp/SMS are still mock/sandbox adapters: real vendor credentials
-    // are not available yet (prompt 08). Endpoint validation and
-    // provider-error mapping are real; only the actual network call is
-    // simulated. Push and (optionally) Email are real.
+    // WhatsApp is still a mock/sandbox adapter: real vendor credentials are
+    // not available yet (prompt 08). Endpoint validation and provider-error
+    // mapping are real; only the actual network call is simulated. Push and
+    // (optionally) Email/SMS are real.
     let mut registry = ChannelRegistry::new();
     registry.register(Arc::new(WhatsAppChannel));
-    registry.register(Arc::new(SmsChannel));
+    registry.register(sms_channel_from_env());
     registry.register(email_channel_from_env());
     registry.register(Arc::new(WebPushChannel::new(
         vapid_private_key_pem(),

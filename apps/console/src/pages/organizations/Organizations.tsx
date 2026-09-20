@@ -241,11 +241,19 @@ function OrganizationContact({ token, organization }: { token: string; organizat
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [deliveryPreference, setDeliveryPreference] = useState<DeliveryPreference | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Gates rendering `DeliveryPreferenceForm` until this effect's fetch has
+  // settled (mirrors pages/subscriptions/Subscriptions.tsx's `!loadingData`
+  // gate): that form seeds its own state from `initial` via `useState`,
+  // which only runs once on mount, so mounting it before `deliveryPreference`
+  // holds its final fetched value would lock the form onto its blank
+  // default forever, even after the real preference arrives.
+  const [loading, setLoading] = useState(true);
 
   const consumerId = organization.consumer_id;
 
   useEffect(() => {
     if (!consumerId) {
+      setLoading(false);
       return;
     }
     let cancelled = false;
@@ -273,6 +281,10 @@ function OrganizationContact({ token, organization }: { token: string; organizat
           setDeliveryPreference(null);
         } else {
           setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
         }
       }
     }
@@ -317,15 +329,17 @@ function OrganizationContact({ token, organization }: { token: string; organizat
       <h3 className="mt-4 mb-2 text-xs font-semibold tracking-wide text-slate-300 uppercase">
         {t.subscriptions.deliveryPreferenceHeading}
       </h3>
-      {!deliveryPreference && (
+      {!loading && !deliveryPreference && (
         <p className="mb-2 text-sm text-slate-500">{t.subscriptions.noDeliveryPreference}</p>
       )}
-      <DeliveryPreferenceForm
-        token={token}
-        consumerId={consumerId}
-        initial={deliveryPreference}
-        onSaved={setDeliveryPreference}
-      />
+      {!loading && (
+        <DeliveryPreferenceForm
+          token={token}
+          consumerId={consumerId}
+          initial={deliveryPreference}
+          onSaved={setDeliveryPreference}
+        />
+      )}
     </div>
   );
 }

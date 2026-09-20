@@ -195,7 +195,17 @@ export function MyOrganization() {
         </section>
       )}
 
-      {organization && organization.consumer_id && (
+      {/* `!loading` matters here, not just `organization`: `load()` still
+          sets `organization` (and thus this block's other truthy condition)
+          well before its own `getDeliveryPreference` call resolves, so
+          mounting `DeliveryPreferenceForm` on that earlier render would
+          capture its blank default via `useState` and never re-sync once
+          the real preference arrives -- `useState`'s initializer only ever
+          runs once per mount. Waiting for the whole `load()` to finish
+          (mirrors pages/subscriptions/Subscriptions.tsx's `!loadingData`
+          gate) guarantees `deliveryPreference` already holds its final
+          value by the time the form first mounts. */}
+      {!loading && organization && organization.consumer_id && (
         <>
           <section className="mb-6">
             <h2 className="mb-2 text-xs font-semibold tracking-wide text-slate-300 uppercase">
