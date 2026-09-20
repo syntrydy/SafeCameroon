@@ -368,6 +368,10 @@ fn build_router(state: AppState) -> Router {
             get(subscriptions::list_all_subscriptions).post(subscriptions::create_subscription),
         )
         .route(
+            "/v1/subscriptions/geography-areas",
+            get(subscriptions::list_geography_areas),
+        )
+        .route(
             "/v1/subscriptions/{id}",
             put(subscriptions::update_subscription),
         )
@@ -5012,6 +5016,77 @@ mod tests {
         let listed = json_body(response).await;
         assert_eq!(listed.as_array().unwrap().len(), 1);
         assert_eq!(listed[0]["subscription_id"], body["subscription_id"]);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn a_reviewer_lists_the_distinct_geography_areas_across_subscriptions() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+        let reviewer = login_reviewer(app.clone()).await;
+        let create = |areas: serde_json::Value| {
+            Request::builder()
+                .method("POST")
+                .uri("/v1/subscriptions")
+                .header("content-type", "application/json")
+                .header("Authorization", format!("Bearer {reviewer}"))
+                .body(Body::from(
+                    json!({
+                        "consumer_id": Uuid::new_v4(),
+                        "rules": [
+                            {"rule": "INCIDENT_TYPE", "values": ["MISSING_CHILD"]},
+                            {"rule": "SEVERITY", "operator": "GREATER_THAN_OR_EQUAL", "value": "HIGH"},
+                            {"rule": "GEOGRAPHY", "areas": areas}
+                        ]
+                    })
+                    .to_string(),
+                ))
+                .unwrap()
+        };
+        app.clone()
+            .oneshot(create(json!(["Douala", "Bonamoussadi"])))
+            .await
+            .unwrap();
+        app.clone()
+            .oneshot(create(json!(["douala", "Yaounde"])))
+            .await
+            .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/subscriptions/geography-areas")
+                    .header("Authorization", format!("Bearer {reviewer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let areas = json_body(response).await;
+        // Case-insensitively deduplicated ("Douala"/"douala" collapse to one
+        // entry, keeping whichever casing was seen first) and sorted.
+        assert_eq!(areas, json!(["Bonamoussadi", "Douala", "Yaounde"]));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn listing_geography_areas_requires_an_identified_reviewer() {
+        let pool = test_pool().await;
+        let app = build_router(test_state(pool));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/subscriptions/geography-areas")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

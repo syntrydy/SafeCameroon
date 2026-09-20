@@ -287,6 +287,53 @@ pub async fn create_subscription(
     ))
 }
 
+/// The distinct set of geography area names across every subscription (any
+/// consumer, any visibility), alphabetically. Surfaced to reviewers
+/// creating an alert so they can target the areas real subscribers
+/// actually chose, instead of typing free text that might match nobody --
+/// `GeoArea::matches_target` requires the alert's `target_geography` to
+/// *contain* a subscriber's exact area string, so a wording mismatch
+/// silently drops that subscriber from the alert. Not sensitive (an area
+/// name, not who subscribed to it), so any identified reviewer may read
+/// this regardless of organization.
+pub async fn list_geography_areas(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<String>>, ApiError> {
+    let request_id = request_id_from_headers(&headers);
+    let actor = actor_from_headers(
+        &state.reviewer_session_tokens,
+        &state.reviewers,
+        &headers,
+        request_id,
+    )
+    .await?;
+    authorize(actor, Capability::CreateAlert).map_err(|_| not_authorized(request_id))?;
+
+    let subscriptions = state
+        .subscriptions
+        .list_all()
+        .await
+        .map_err(|_| persistence_failed(request_id))?;
+
+    let mut seen = std::collections::HashSet::new();
+    let mut areas = Vec::new();
+    for subscription in &subscriptions {
+        for rule in subscription.rules() {
+            if let SubscriptionRule::Geography(rule_areas) = rule {
+                for area in rule_areas {
+                    if seen.insert(area.as_str().to_lowercase()) {
+                        areas.push(area.as_str().to_owned());
+                    }
+                }
+            }
+        }
+    }
+    areas.sort_by_key(|area| area.to_lowercase());
+
+    Ok(Json(areas))
+}
+
 const DEFAULT_LIMIT: u32 = 50;
 /// A hard ceiling regardless of what the caller asks for, so a single
 /// request can never force an unbounded scan/response.
