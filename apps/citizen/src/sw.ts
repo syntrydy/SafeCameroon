@@ -31,15 +31,24 @@ self.addEventListener("push", (event) => {
   );
 });
 
+// There is no alert-detail page to deep-link into (the citizen app has no
+// router, and reading one back requires a reviewer session) -- the
+// notification's own body is already the full, readable alert text
+// (crates/application/src/channel.rs's build_outbound_message). The one
+// thing worth doing on click is landing on the Alerts tab (where the
+// subscription that received it lives) instead of the report form, which
+// is what "/" alone defaults to (App.tsx's initial tab state).
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const targetUrl = "/?tab=alerts";
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      const existing = clients.find((client) => "focus" in client);
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
+      const existing = clients.find((client) => "focus" in client) as WindowClient | undefined;
       if (existing) {
-        return existing.focus();
+        const navigated = await existing.navigate(targetUrl).catch(() => null);
+        return (navigated ?? existing).focus();
       }
-      return self.clients.openWindow("/");
+      return self.clients.openWindow(targetUrl);
     }),
   );
 });

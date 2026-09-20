@@ -1,6 +1,5 @@
-import { useState } from "react";
-
 import type { Comparison, SubscriptionRule } from "../../api/subscriptions";
+import { GeographyTypeahead } from "../../components/GeographyTypeahead";
 import { useTranslation } from "../../i18n/LanguageContext";
 import type { Translations } from "../../i18n/translations";
 
@@ -51,7 +50,6 @@ interface SubscriptionRuleEditorProps {
 
 export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEditorProps) {
   const { t } = useTranslation();
-  const [geographyDrafts, setGeographyDrafts] = useState<Record<number, string>>({});
 
   function updateRule(index: number, rule: SubscriptionRule) {
     onChange(rules.map((existing, i) => (i === index ? rule : existing)));
@@ -59,27 +57,6 @@ export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEdit
 
   function removeRule(index: number) {
     onChange(rules.filter((_, i) => i !== index));
-  }
-
-  function addGeographyArea(index: number) {
-    const rule = rules[index];
-    if (rule.rule !== "GEOGRAPHY") {
-      return;
-    }
-    const draft = (geographyDrafts[index] ?? "").trim();
-    if (!draft) {
-      return;
-    }
-    updateRule(index, { ...rule, areas: [...rule.areas, draft] });
-    setGeographyDrafts((current) => ({ ...current, [index]: "" }));
-  }
-
-  function removeGeographyArea(index: number, areaIndex: number) {
-    const rule = rules[index];
-    if (rule.rule !== "GEOGRAPHY") {
-      return;
-    }
-    updateRule(index, { ...rule, areas: rule.areas.filter((_, i) => i !== areaIndex) });
   }
 
   return (
@@ -169,52 +146,16 @@ export function SubscriptionRuleEditor({ rules, onChange }: SubscriptionRuleEdit
           )}
 
           {rule.rule === "GEOGRAPHY" && (
-            <div>
-              {rule.areas.length > 0 && (
-                <div className="mb-2 flex flex-wrap gap-1.5">
-                  {rule.areas.map((area, areaIndex) => (
-                    <span
-                      key={areaIndex}
-                      className="inline-flex items-center gap-1 rounded bg-white/[0.08] px-2 py-1 text-xs text-slate-300"
-                    >
-                      {area}
-                      <button
-                        type="button"
-                        onClick={() => removeGeographyArea(index, areaIndex)}
-                        aria-label={t.ruleEditor.removeArea(area)}
-                        className="text-slate-500 hover:text-red-300"
-                      >
-                        &times;
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="flex max-w-xs gap-2">
-                <input
-                  aria-label={`Rule ${index + 1} area`}
-                  value={geographyDrafts[index] ?? ""}
-                  onChange={(event) =>
-                    setGeographyDrafts((current) => ({ ...current, [index]: event.target.value }))
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      addGeographyArea(index);
-                    }
-                  }}
-                  placeholder={t.ruleEditor.geographyPlaceholder}
-                  className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-sm text-white placeholder-slate-500 focus:border-emerald-500/50 focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-                <button
-                  type="button"
-                  onClick={() => addGeographyArea(index)}
-                  className="rounded-lg border border-white/[0.08] px-2 py-1 text-xs text-slate-300 hover:bg-white/[0.05]"
-                >
-                  {t.ruleEditor.addArea}
-                </button>
-              </div>
-            </div>
+            <GeographyTypeahead
+              id={`rule-${index}-area`}
+              ariaLabel={`Rule ${index + 1} area`}
+              label={t.ruleEditor.geographyAreaLabel}
+              areas={rule.areas}
+              onChange={(areas) => updateRule(index, { ...rule, areas })}
+              placeholder={t.ruleEditor.geographyPlaceholder}
+              addAreaLabel={t.ruleEditor.addArea}
+              removeAreaLabel={t.ruleEditor.removeArea}
+            />
           )}
         </div>
       ))}

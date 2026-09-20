@@ -1,6 +1,7 @@
 //! Application use cases. Infrastructure implements ports introduced here.
 
 pub mod ai_extraction;
+pub mod alert_description_generation;
 pub mod alert_workflow;
 pub mod attachment_workflow;
 pub mod audio_transcription;

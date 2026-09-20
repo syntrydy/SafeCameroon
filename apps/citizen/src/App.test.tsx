@@ -97,4 +97,16 @@ describe("citizen reporting app", () => {
 
     expect(await screen.findByLabelText("Que se passe-t-il ?")).toBeInTheDocument();
   });
+
+  it("opens on the Alerts tab when reached via a notification's ?tab=alerts link", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+    window.history.pushState({}, "", "/?tab=alerts");
+
+    render(<App />);
+
+    await screen.findByText("Get protection alerts");
+    expect(screen.queryByLabelText("What is happening?")).not.toBeInTheDocument();
+
+    window.history.pushState({}, "", "/");
+  });
 });

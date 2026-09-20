@@ -189,7 +189,10 @@ export interface Translations {
     removeArea: (area: string) => string;
     creating: string;
     createAlert: string;
-    description: string;
+    descriptionEn: string;
+    descriptionFr: string;
+    generateDescription: string;
+    generatingDescription: string;
     suggestionsApplied: string;
   };
   deliveryList: {
@@ -264,6 +267,7 @@ export interface Translations {
     remove: string;
     addRule: string;
     geographyPlaceholder: string;
+    geographyAreaLabel: string;
     addArea: string;
     removeArea: (area: string) => string;
     comparisonGreaterThan: string;
@@ -533,7 +537,10 @@ export const translations: Record<Locale, Translations> = {
       removeArea: (area) => `Remove ${area}`,
       creating: "Creating...",
       createAlert: "Create alert",
-      description: "Alert description",
+      descriptionEn: "Alert description (EN)",
+      descriptionFr: "Alert description (FR)",
+      generateDescription: "Generate formal description",
+      generatingDescription: "Generating...",
       suggestionsApplied:
         "Filled in from the report's AI suggestion -- review every value before sending.",
     },
@@ -609,6 +616,7 @@ export const translations: Record<Locale, Translations> = {
       remove: "Remove",
       addRule: "Add rule",
       geographyPlaceholder: "e.g. Douala",
+      geographyAreaLabel: "Area",
       addArea: "Add",
       removeArea: (area) => `Remove ${area}`,
       comparisonGreaterThan: "> greater than",
@@ -879,7 +887,10 @@ export const translations: Record<Locale, Translations> = {
       removeArea: (area) => `Retirer ${area}`,
       creating: "Création...",
       createAlert: "Créer l'alerte",
-      description: "Description de l'alerte",
+      descriptionEn: "Description de l'alerte (EN)",
+      descriptionFr: "Description de l'alerte (FR)",
+      generateDescription: "Générer une description formelle",
+      generatingDescription: "Génération...",
       suggestionsApplied:
         "Rempli à partir de la suggestion IA du signalement -- vérifiez chaque valeur avant l'envoi.",
     },
@@ -955,6 +966,7 @@ export const translations: Record<Locale, Translations> = {
       remove: "Retirer",
       addRule: "Ajouter une règle",
       geographyPlaceholder: "ex. Douala",
+      geographyAreaLabel: "Zone",
       addArea: "Ajouter",
       removeArea: (area) => `Retirer ${area}`,
       comparisonGreaterThan: "> supérieur à",

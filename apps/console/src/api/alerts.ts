@@ -10,13 +10,18 @@ export type AlertField =
   | "APPROXIMATE_AGE"
   | "LAST_SEEN_GENERAL_AREA"
   | "TIME_WINDOW"
+  // Superseded by SAFE_DESCRIPTION_EN/SAFE_DESCRIPTION_FR on the creation
+  // form, but kept as a valid value so alerts created before bilingual
+  // descriptions shipped keep reading and displaying unchanged.
   | "SAFE_DESCRIPTION"
   | "OFFICIAL_CONTACT"
   | "CASE_REFERENCE"
   | "REPORTER_IDENTITY"
   | "INTERNAL_NOTES"
   | "EXACT_LOCATION"
-  | "WITNESS_DETAILS";
+  | "WITNESS_DETAILS"
+  | "SAFE_DESCRIPTION_EN"
+  | "SAFE_DESCRIPTION_FR";
 
 // The only alert policy this deployment knows about
 // (crates/application/src/alert_workflow.rs `resolve_policy`).
@@ -29,7 +34,8 @@ export const MISSING_CHILD_COMMUNITY_FIELDS: AlertField[] = [
   "APPROXIMATE_AGE",
   "LAST_SEEN_GENERAL_AREA",
   "TIME_WINDOW",
-  "SAFE_DESCRIPTION",
+  "SAFE_DESCRIPTION_EN",
+  "SAFE_DESCRIPTION_FR",
   "OFFICIAL_CONTACT",
   "CASE_REFERENCE",
 ];

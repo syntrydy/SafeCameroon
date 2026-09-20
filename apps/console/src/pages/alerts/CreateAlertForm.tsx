@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
+import { generateAlertDescription } from "../../api/alertDescription";
 import { createAlert, type Alert, type Severity } from "../../api/alerts";
 import type { ExtractedFields } from "../../api/extractions";
 import { listGeographyAreas } from "../../api/subscriptions";
@@ -52,10 +53,19 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
   const [areasLoaded, setAreasLoaded] = useState(false);
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
   const [areaInput, setAreaInput] = useState("");
-  const [description, setDescription] = useState("");
+  const [descriptionEn, setDescriptionEn] = useState("");
+  const [descriptionFr, setDescriptionFr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestionsAppliedAt, setSuggestionsAppliedAt] = useState<number | null>(null);
+  const [generatingDescription, setGeneratingDescription] = useState(false);
+  // Model attribution for the caption under the generate button, mirroring
+  // ExtractionPanel's `provider.toLowerCase()}/{model}` caption -- set once
+  // a generation succeeds, cleared on a fresh attempt.
+  const [descriptionGeneratedBy, setDescriptionGeneratedBy] = useState<{
+    provider: string;
+    model: string;
+  } | null>(null);
   // Fields the reviewer has actually touched, tracked independently of
   // their current value (which may still be empty if they typed then
   // cleared it). A suggestion can arrive at any point -- e.g. auto-applied
@@ -84,10 +94,10 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
 
   useEffect(() => {
     if (!suggestedFields) return;
-    if (!touchedFieldsRef.current.has("description")) {
+    if (!touchedFieldsRef.current.has("descriptionEn")) {
       const composed = composeAlertDescription(suggestedFields.fields);
       if (composed) {
-        setDescription((current) => (current.trim() ? current : composed));
+        setDescriptionEn((current) => (current.trim() ? current : composed));
       }
     }
     setSuggestionsAppliedAt(suggestedFields.appliedAt);
@@ -142,6 +152,33 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
     }
   }
 
+  // Formalizes/translates whatever is already drafted -- the current EN
+  // text, or the composed extraction text as a fallback source -- into a
+  // formal EN+FR pair. An explicit reviewer action (button click), so
+  // unlike the auto-apply effect above it always overwrites both fields
+  // with the fresh suggestion, the same "asking again gets a fresh
+  // attempt" behavior as ExtractionPanel's extract button.
+  async function handleGenerateDescription() {
+    const sourceText =
+      descriptionEn.trim() || (suggestedFields ? composeAlertDescription(suggestedFields.fields) : "");
+    if (!sourceText.trim()) {
+      return;
+    }
+    setGeneratingDescription(true);
+    setError(null);
+    try {
+      const suggestion = await generateAlertDescription(token, caseId, sourceText);
+      touchedFieldsRef.current.add("descriptionEn");
+      setDescriptionEn(suggestion.description_en);
+      setDescriptionFr(suggestion.description_fr);
+      setDescriptionGeneratedBy({ provider: suggestion.provider, model: suggestion.model });
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
+    } finally {
+      setGeneratingDescription(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (selectedAreas.length === 0) {
@@ -151,10 +188,16 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
     setSubmitting(true);
     setError(null);
     try {
+      const fields = [
+        descriptionEn.trim() && { field: "SAFE_DESCRIPTION_EN" as const, value: descriptionEn.trim() },
+        descriptionFr.trim() && { field: "SAFE_DESCRIPTION_FR" as const, value: descriptionFr.trim() },
+      ].filter((field): field is { field: "SAFE_DESCRIPTION_EN" | "SAFE_DESCRIPTION_FR"; value: string } =>
+        Boolean(field),
+      );
       const alert = await createAlert(token, caseId, {
         severity,
         targetGeography: selectedAreas.join(", "),
-        fields: description.trim() ? [{ field: "SAFE_DESCRIPTION", value: description.trim() }] : [],
+        fields,
       });
       onCreated(alert);
     } catch (cause) {
@@ -240,13 +283,44 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
       </div>
 
       <label className="mt-3 block text-sm">
-        <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.description}</span>
+        <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.descriptionEn}</span>
         <textarea
+          required
           rows={5}
-          value={description}
+          value={descriptionEn}
           onChange={(event) => {
-            touchedFieldsRef.current.add("description");
-            setDescription(event.target.value);
+            touchedFieldsRef.current.add("descriptionEn");
+            setDescriptionEn(event.target.value);
+          }}
+          className={fieldInputClassName}
+        />
+      </label>
+
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          disabled={generatingDescription}
+          onClick={() => void handleGenerateDescription()}
+          className="rounded-lg border border-white/[0.08] px-2 py-1 text-xs font-medium text-slate-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {generatingDescription ? t.createAlertForm.generatingDescription : t.createAlertForm.generateDescription}
+        </button>
+        {descriptionGeneratedBy && (
+          <span className="text-[10px] text-slate-500">
+            {descriptionGeneratedBy.provider.toLowerCase()}/{descriptionGeneratedBy.model}
+          </span>
+        )}
+      </div>
+
+      <label className="mt-3 block text-sm">
+        <span className="mb-1 block font-medium text-slate-300">{t.createAlertForm.descriptionFr}</span>
+        <textarea
+          required
+          rows={5}
+          value={descriptionFr}
+          onChange={(event) => {
+            touchedFieldsRef.current.add("descriptionFr");
+            setDescriptionFr(event.target.value);
           }}
           className={fieldInputClassName}
         />

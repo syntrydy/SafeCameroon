@@ -10,7 +10,9 @@ use safe_cameroon_application::delivery_workflow::{
     record_delivery_failure, record_delivery_success,
 };
 use safe_cameroon_domain::Delivery;
-use safe_cameroon_infrastructure::postgres::{PostgresAlertRepository, PostgresDeliveryRepository};
+use safe_cameroon_infrastructure::postgres::{
+    PostgresAlertRepository, PostgresConsumerRepository, PostgresDeliveryRepository,
+};
 use uuid::Uuid;
 
 /// Claims up to `batch_size` deliveries and dispatches each one. Returns how
@@ -21,13 +23,14 @@ use uuid::Uuid;
 pub async fn process_batch(
     deliveries: &PostgresDeliveryRepository,
     alerts: &PostgresAlertRepository,
+    consumers: &PostgresConsumerRepository,
     registry: &ChannelRegistry,
     batch_size: i64,
 ) -> Result<usize, sqlx::Error> {
     let claimed = deliveries.claim_next(batch_size).await?;
     let count = claimed.len();
     for mut delivery in claimed {
-        dispatch_one(deliveries, alerts, registry, &mut delivery).await?;
+        dispatch_one(deliveries, alerts, consumers, registry, &mut delivery).await?;
     }
     Ok(count)
 }
@@ -40,6 +43,7 @@ pub async fn process_batch(
 async fn dispatch_one(
     deliveries: &PostgresDeliveryRepository,
     alerts: &PostgresAlertRepository,
+    consumers: &PostgresConsumerRepository,
     registry: &ChannelRegistry,
     delivery: &mut Delivery,
 ) -> Result<(), sqlx::Error> {
@@ -69,7 +73,14 @@ async fn dispatch_one(
         .await;
     };
 
-    let message = build_outbound_message(&alert, delivery);
+    // A missing consumer row (e.g. the delivery target never routed through
+    // `Consumer` at all) just means no locale to prefer -- same as an
+    // unset locale on a real consumer, falling back to English/legacy.
+    let recipient_locale = consumers
+        .find_by_id(delivery.consumer_id())
+        .await?
+        .and_then(|consumer| consumer.locale().map(str::to_owned));
+    let message = build_outbound_message(&alert, delivery, recipient_locale.as_deref());
     match channel_adapter.send(message).await {
         Ok(outcome) => {
             let transition = record_delivery_success(
@@ -140,9 +151,9 @@ mod tests {
     use safe_cameroon_application::prepare_anonymous_report;
     use safe_cameroon_domain::{
         Alert, AlertField, AlertFieldValue, AlertPolicy, CaseStatus, ChannelEndpoint, ChannelType,
-        ConsumerId, ConsumerMatch, DeliveryPreference, DeliveryStatus, DeliveryStrategy,
-        IncidentType, MatchedSubscription, ReportId, RetryPolicy, Severity, SubscriptionId,
-        TargetGeography,
+        Consumer, ConsumerId, ConsumerMatch, ConsumerType, DeliveryPreference, DeliveryStatus,
+        DeliveryStrategy, IncidentType, MatchedSubscription, ReportId, RetryPolicy, Severity,
+        SubscriptionId, TargetGeography,
     };
     use safe_cameroon_infrastructure::postgres::{
         PostgresCaseRepository, PostgresReportRepository,
@@ -171,9 +182,12 @@ mod tests {
 
         MIGRATOR.run(&pool).await.expect("migrations must apply");
         sqlx::query(
-            "TRUNCATE report_extractions, attachments, webhook_replay_events, delivery_events, delivery_attempts, \
+            "TRUNCATE report_extractions, alert_description_generations, attachments, webhook_replay_events, \
+             delivery_events, delivery_attempts, \
              deliveries, alert_events, alert_fields, alerts, case_events, case_reports, cases, \
-             outbox_events, audit_events, reports, reporters",
+             outbox_events, audit_events, reports, reporters, consumer_delivery_preferences, \
+             subscriptions, consumers, reviewer_organization_memberships, organizations, reviewers, \
+             rate_limit_windows",
         )
         .execute(&pool)
         .await
@@ -182,6 +196,13 @@ mod tests {
     }
 
     async fn verified_alert(pool: &PgPool) -> Alert {
+        verified_alert_with_fields(pool, vec![]).await
+    }
+
+    async fn verified_alert_with_fields(
+        pool: &PgPool,
+        extra_fields: Vec<AlertFieldValue>,
+    ) -> Alert {
         let report_repository = PostgresReportRepository::new(pool.clone());
         let submission =
             prepare_anonymous_report("A child is missing.".into(), Uuid::new_v4(), None, None)
@@ -228,10 +249,14 @@ mod tests {
             &policy,
             Severity::High,
             TargetGeography::new("Douala").unwrap(),
-            vec![AlertFieldValue {
-                field: AlertField::IncidentCategory,
-                value: "MISSING_CHILD".into(),
-            }],
+            [
+                vec![AlertFieldValue {
+                    field: AlertField::IncidentCategory,
+                    value: "MISSING_CHILD".into(),
+                }],
+                extra_fields,
+            ]
+            .concat(),
             Actor::Reviewer(Uuid::new_v4()),
             Uuid::new_v4(),
             None,
@@ -247,7 +272,16 @@ mod tests {
         alert: &Alert,
         channel: ChannelType,
     ) -> safe_cameroon_domain::DeliveryId {
-        let consumer_id = ConsumerId::new();
+        plan_and_persist_one_for_consumer(delivery_repository, alert, channel, ConsumerId::new())
+            .await
+    }
+
+    async fn plan_and_persist_one_for_consumer(
+        delivery_repository: &PostgresDeliveryRepository,
+        alert: &Alert,
+        channel: ChannelType,
+        consumer_id: ConsumerId,
+    ) -> safe_cameroon_domain::DeliveryId {
         let preference = DeliveryPreference::new(
             DeliveryStrategy::All,
             vec![ChannelEndpoint::new(channel, "+237600000000").unwrap()],
@@ -332,12 +366,13 @@ mod tests {
         let alert = verified_alert(&pool).await;
         let deliveries = PostgresDeliveryRepository::new(pool.clone());
         let alerts = PostgresAlertRepository::new(pool.clone());
+        let consumers = PostgresConsumerRepository::new(pool.clone());
         let delivery_id = plan_and_persist_one(&deliveries, &alert, ChannelType::WhatsApp).await;
 
         let mut registry = ChannelRegistry::new();
         registry.register(Arc::new(AlwaysSucceeds));
 
-        let processed = process_batch(&deliveries, &alerts, &registry, 10)
+        let processed = process_batch(&deliveries, &alerts, &consumers, &registry, 10)
             .await
             .unwrap();
         assert_eq!(processed, 1);
@@ -362,6 +397,7 @@ mod tests {
         let alert = verified_alert(&pool).await;
         let deliveries = PostgresDeliveryRepository::new(pool.clone());
         let alerts = PostgresAlertRepository::new(pool.clone());
+        let consumers = PostgresConsumerRepository::new(pool.clone());
         let delivery_id = plan_and_persist_one(&deliveries, &alert, ChannelType::WhatsApp).await;
 
         let (alert_status_before, alert_version_before): (String, i64) =
@@ -380,7 +416,7 @@ mod tests {
         let mut registry = ChannelRegistry::new();
         registry.register(Arc::new(AlwaysFailsPermanently));
 
-        let processed = process_batch(&deliveries, &alerts, &registry, 10)
+        let processed = process_batch(&deliveries, &alerts, &consumers, &registry, 10)
             .await
             .unwrap();
         assert_eq!(processed, 1);
@@ -416,23 +452,126 @@ mod tests {
         let alert = verified_alert(&pool).await;
         let deliveries = PostgresDeliveryRepository::new(pool.clone());
         let alerts = PostgresAlertRepository::new(pool.clone());
+        let consumers = PostgresConsumerRepository::new(pool.clone());
         plan_and_persist_one(&deliveries, &alert, ChannelType::WhatsApp).await;
 
         let mut registry = ChannelRegistry::new();
         registry.register(Arc::new(AlwaysSucceeds));
 
         assert_eq!(
-            process_batch(&deliveries, &alerts, &registry, 10)
+            process_batch(&deliveries, &alerts, &consumers, &registry, 10)
                 .await
                 .unwrap(),
             1
         );
         assert_eq!(
-            process_batch(&deliveries, &alerts, &registry, 10)
+            process_batch(&deliveries, &alerts, &consumers, &registry, 10)
                 .await
                 .unwrap(),
             0,
             "an already-Sent delivery must not be reclaimed by a later batch"
+        );
+    }
+
+    /// Records every message body it "sends", so a test can inspect exactly
+    /// what `build_outbound_message` produced for a given delivery.
+    struct CapturingChannel {
+        sent_bodies: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl Channel for CapturingChannel {
+        fn channel_type(&self) -> ChannelType {
+            ChannelType::WhatsApp
+        }
+
+        fn validate_endpoint(
+            &self,
+            _endpoint_address: &str,
+        ) -> Result<(), EndpointValidationError> {
+            Ok(())
+        }
+
+        async fn send(&self, message: OutboundMessage) -> Result<ChannelSendOutcome, ChannelError> {
+            self.sent_bodies.lock().unwrap().push(message.body);
+            Ok(ChannelSendOutcome {
+                provider_message_id: Some("provider-msg-1".into()),
+            })
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+    async fn dispatch_selects_the_description_matching_each_recipients_locale() {
+        let pool = test_pool().await;
+        let alert = verified_alert_with_fields(
+            &pool,
+            vec![
+                AlertFieldValue {
+                    field: AlertField::SafeDescriptionEn,
+                    value: "An 8-year-old girl last seen near the central market.".into(),
+                },
+                AlertFieldValue {
+                    field: AlertField::SafeDescriptionFr,
+                    value:
+                        "Une fillette de 8 ans vue pour la derniere fois pres du marche central."
+                            .into(),
+                },
+            ],
+        )
+        .await;
+
+        let deliveries = PostgresDeliveryRepository::new(pool.clone());
+        let alerts = PostgresAlertRepository::new(pool.clone());
+        let consumers = PostgresConsumerRepository::new(pool.clone());
+
+        let french_consumer = Consumer::new("French speaker", ConsumerType::Citizen)
+            .unwrap()
+            .with_locale(Some("fr-FR".into()));
+        let english_consumer = Consumer::new("English speaker", ConsumerType::Citizen)
+            .unwrap()
+            .with_locale(Some("en-US".into()));
+        consumers.create(&french_consumer).await.unwrap();
+        consumers.create(&english_consumer).await.unwrap();
+
+        plan_and_persist_one_for_consumer(
+            &deliveries,
+            &alert,
+            ChannelType::WhatsApp,
+            french_consumer.id(),
+        )
+        .await;
+        plan_and_persist_one_for_consumer(
+            &deliveries,
+            &alert,
+            ChannelType::WhatsApp,
+            english_consumer.id(),
+        )
+        .await;
+
+        let sent_bodies = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut registry = ChannelRegistry::new();
+        registry.register(Arc::new(CapturingChannel {
+            sent_bodies: sent_bodies.clone(),
+        }));
+
+        let processed = process_batch(&deliveries, &alerts, &consumers, &registry, 10)
+            .await
+            .unwrap();
+        assert_eq!(processed, 2);
+
+        let bodies = sent_bodies.lock().unwrap();
+        assert!(
+            bodies
+                .iter()
+                .any(|body| body.contains("Une fillette de 8 ans")),
+            "the French recipient must receive the French description: {bodies:?}"
+        );
+        assert!(
+            bodies
+                .iter()
+                .any(|body| body.contains("An 8-year-old girl")),
+            "the English recipient must receive the English description: {bodies:?}"
         );
     }
 }

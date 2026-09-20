@@ -429,7 +429,7 @@ async fn main() {
         }
         println!("  -- round {round} --");
         for mut delivery in claimed {
-            let message = build_outbound_message(&alert, &delivery);
+            let message = build_outbound_message(&alert, &delivery, None);
             let outcome = match delivery.channel() {
                 ChannelType::WhatsApp => WhatsAppChannel.send(message).await,
                 ChannelType::Sms => SmsChannel.send(message).await,
