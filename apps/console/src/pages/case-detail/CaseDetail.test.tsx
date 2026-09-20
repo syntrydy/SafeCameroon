@@ -356,11 +356,10 @@ describe("CaseDetail", () => {
     // ("Carrefour Bonamoussadi, Douala" contains both).
     expect(screen.getByRole("button", { name: "Remove Douala" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove Bonamoussadi" })).toBeInTheDocument();
-    // The EN description was already typed into, so the composed suggestion
-    // never overwrites it.
+    // The EN description was already typed into, so neither the composed
+    // suggestion nor the auto-generate step it would otherwise trigger ever
+    // runs -- FR stays untouched too.
     expect(screen.getByLabelText("Alert description (EN)")).toHaveValue("Reviewer's own draft.");
-    // The FR description is never auto-filled from extraction -- only the
-    // explicit "Generate formal description" action fills it.
     expect(screen.getByLabelText("Alert description (FR)")).toHaveValue("");
   });
 
@@ -382,16 +381,24 @@ describe("CaseDetail", () => {
     expect(screen.getByText("openrouter/openai/gpt-4o")).toBeInTheDocument();
   });
 
-  it("composes the alert description from the report's AI extraction when untouched", async () => {
+  it("auto-generates a formal EN+FR description from the AI extraction when untouched", async () => {
     caseData = { ...caseData, status: "VERIFIED" };
     await loginAndReachCase();
 
     expect(
       await screen.findByText("Filled in from the report's AI suggestion -- review every value before sending."),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Alert description (EN)")).toHaveValue(
-      "an 8-year-old girl in a blue school uniform. Age: 8 years old. Time: around 3:15 PM. " +
-        "Location: Carrefour Bonamoussadi, Douala. Category: Did not return from school.",
+    // The mechanical field join is only ever a fleeting fallback: applying
+    // an extraction immediately triggers the same formal-description
+    // generation the manual button does, landing on a real sentence in
+    // both languages without an extra click.
+    await waitFor(() => {
+      expect(screen.getByLabelText("Alert description (EN)")).toHaveValue(
+        "Formal: last seen wearing a red shirt near the market.",
+      );
+    });
+    expect(screen.getByLabelText("Alert description (FR)")).toHaveValue(
+      "Formel : vue pour la derniere fois en chemise rouge pres du marche.",
     );
   });
 

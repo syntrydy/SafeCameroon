@@ -5,18 +5,20 @@
 //! credentials are not available") — no vendor SDK or real network call yet,
 //! but endpoint validation and provider-error encapsulation are real and
 //! independently testable, so swapping in a real HTTP client later only
-//! touches `send`. `push` and `resend` are real (non-mock) adapters: Web
-//! Push needs no vendor account at all (docs/OPEN_QUESTIONS.md: unlike
-//! WhatsApp/SMS, no provider choice was pending for it), and Resend was
-//! chosen for email specifically.
+//! touches `send`. `push`, `resend`, and `infobip` are real (non-mock)
+//! adapters: Web Push needs no vendor account at all (docs/OPEN_QUESTIONS.md:
+//! unlike WhatsApp/SMS, no provider choice was pending for it), Resend was
+//! chosen for email, and Infobip for SMS.
 
 pub mod email;
+pub mod infobip;
 pub mod push;
 pub mod resend;
 pub mod sms;
 pub mod whatsapp;
 
 pub use email::EmailChannel;
+pub use infobip::InfobipSmsChannel;
 pub use push::WebPushChannel;
 pub use resend::ResendEmailChannel;
 pub use sms::SmsChannel;

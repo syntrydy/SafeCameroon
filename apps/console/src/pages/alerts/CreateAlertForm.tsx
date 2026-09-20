@@ -98,6 +98,17 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
       const composed = composeAlertDescription(suggestedFields.fields);
       if (composed) {
         setDescriptionEn((current) => (current.trim() ? current : composed));
+        // Immediately formalize+translate that mechanical join into a real
+        // EN sentence and an actual FR translation, so applying an
+        // extraction lands the reviewer on both languages ready to send
+        // rather than a raw field dump they'd otherwise have to remember
+        // to click "Generate formal description" on. Silent: this is a
+        // background convenience, not a reviewer-initiated action, so a
+        // failure (e.g. no AI provider configured) just leaves the
+        // mechanical composed text as the EN fallback and FR empty --
+        // exactly today's behavior before this auto-trigger existed --
+        // rather than surfacing an error for something nobody asked for.
+        void generateDescription(composed, { silent: true });
       }
     }
     setSuggestionsAppliedAt(suggestedFields.appliedAt);
@@ -152,28 +163,34 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
     }
   }
 
-  // Formalizes/translates whatever is already drafted -- the current EN
-  // text, or the composed extraction text as a fallback source -- into a
-  // formal EN+FR pair. An explicit reviewer action (button click), so
-  // unlike the auto-apply effect above it always overwrites both fields
-  // with the fresh suggestion, the same "asking again gets a fresh
-  // attempt" behavior as ExtractionPanel's extract button.
-  async function handleGenerateDescription() {
-    const sourceText =
-      descriptionEn.trim() || (suggestedFields ? composeAlertDescription(suggestedFields.fields) : "");
+  // Formalizes/translates `sourceText` into a formal EN+FR pair. Shared by
+  // the manual "Generate formal description" button (explicit reviewer
+  // action -- always overwrites both fields, surfaces a failure, the same
+  // "asking again gets a fresh attempt" behavior as ExtractionPanel's
+  // extract button) and the auto-apply effect above (`silent: true` --
+  // only applies if the reviewer hasn't started typing in the meantime,
+  // and never surfaces a failure since nothing was explicitly requested).
+  async function generateDescription(sourceText: string, options: { silent?: boolean } = {}) {
     if (!sourceText.trim()) {
       return;
     }
     setGeneratingDescription(true);
-    setError(null);
+    if (!options.silent) {
+      setError(null);
+    }
     try {
       const suggestion = await generateAlertDescription(token, caseId, sourceText);
+      if (options.silent && touchedFieldsRef.current.has("descriptionEn")) {
+        return;
+      }
       touchedFieldsRef.current.add("descriptionEn");
       setDescriptionEn(suggestion.description_en);
       setDescriptionFr(suggestion.description_fr);
       setDescriptionGeneratedBy({ provider: suggestion.provider, model: suggestion.model });
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
+      if (!options.silent) {
+        setError(cause instanceof ApiError ? cause.message : t.common.unexpectedError);
+      }
     } finally {
       setGeneratingDescription(false);
     }
@@ -300,7 +317,11 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
         <button
           type="button"
           disabled={generatingDescription}
-          onClick={() => void handleGenerateDescription()}
+          onClick={() => {
+            const sourceText =
+              descriptionEn.trim() || (suggestedFields ? composeAlertDescription(suggestedFields.fields) : "");
+            void generateDescription(sourceText);
+          }}
           className="rounded-lg border border-white/[0.08] px-2 py-1 text-xs font-medium text-slate-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {generatingDescription ? t.createAlertForm.generatingDescription : t.createAlertForm.generateDescription}
