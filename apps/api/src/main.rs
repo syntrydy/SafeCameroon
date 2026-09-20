@@ -1,3 +1,4 @@
+mod alert_description;
 mod alerts;
 mod attachments;
 mod audit_events;
@@ -30,6 +31,7 @@ use axum::{
     routing::{get, post, put},
 };
 use safe_cameroon_application::ai_extraction::ReportExtractor;
+use safe_cameroon_application::alert_description_generation::AlertDescriptionGenerator;
 use safe_cameroon_application::attachment_workflow::AttachmentStorage;
 use safe_cameroon_application::audio_transcription::AudioTranscriber;
 use safe_cameroon_application::google_identity::GoogleIdentityVerifier;
@@ -37,17 +39,18 @@ use safe_cameroon_application::invite_mailer::InviteMailer;
 use safe_cameroon_application::webhook::WebhookVerifierRegistry;
 use safe_cameroon_domain::ChannelType;
 use safe_cameroon_infrastructure::ai::{
-    DisabledExtractor, DisabledTranscriber, OpenRouterExtractor, OpenRouterTranscriber,
+    DisabledExtractor, DisabledGenerator, DisabledTranscriber, OpenRouterDescriptionGenerator,
+    OpenRouterExtractor, OpenRouterTranscriber,
 };
 use safe_cameroon_infrastructure::auth::ReviewerSessionTokenIssuer;
 use safe_cameroon_infrastructure::google_identity::GoogleTokenInfoVerifier;
 use safe_cameroon_infrastructure::invite_mailer::{DisabledInviteMailer, ResendInviteMailer};
 use safe_cameroon_infrastructure::postgres::{
-    PostgresAlertRepository, PostgresAttachmentRepository, PostgresAuditEventRepository,
-    PostgresCaseRepository, PostgresConsumerRepository, PostgresDeliveryPreferenceRepository,
-    PostgresDeliveryRepository, PostgresOrganizationRepository, PostgresRateLimiter,
-    PostgresReportExtractionRepository, PostgresReportRepository, PostgresReviewerRepository,
-    PostgresSubscriptionRepository,
+    PostgresAlertDescriptionGenerationRepository, PostgresAlertRepository,
+    PostgresAttachmentRepository, PostgresAuditEventRepository, PostgresCaseRepository,
+    PostgresConsumerRepository, PostgresDeliveryPreferenceRepository, PostgresDeliveryRepository,
+    PostgresOrganizationRepository, PostgresRateLimiter, PostgresReportExtractionRepository,
+    PostgresReportRepository, PostgresReviewerRepository, PostgresSubscriptionRepository,
 };
 use safe_cameroon_infrastructure::storage::{HmacSignedAttachmentStorage, R2AttachmentStorage};
 use safe_cameroon_infrastructure::webhook::{
@@ -134,6 +137,30 @@ fn report_extractor_from_env() -> Arc<dyn ReportExtractor> {
     }
 }
 
+/// A real [`OpenRouterDescriptionGenerator`] when `OPENROUTER_API_KEY` is
+/// configured; otherwise a [`DisabledGenerator`] -- same "optional feature,
+/// don't refuse to boot" stance as [`report_extractor_from_env`]. Reuses
+/// `OPENROUTER_MODEL` (the extraction model) rather than a separate env var,
+/// since both are plain text-in-text-out chat completions; a deployment
+/// that wants a different model for this can be given its own var later if
+/// that need ever materializes.
+fn alert_description_generator_from_env() -> Arc<dyn AlertDescriptionGenerator> {
+    match std::env::var("OPENROUTER_API_KEY") {
+        Ok(api_key) => {
+            let model = std::env::var("OPENROUTER_MODEL")
+                .unwrap_or_else(|_| "openai/gpt-4o-mini".to_owned());
+            tracing::info!(model, "AI alert-description generation: OpenRouter");
+            Arc::new(OpenRouterDescriptionGenerator::new(api_key, model))
+        }
+        Err(_) => {
+            tracing::info!(
+                "AI alert-description generation: disabled (OPENROUTER_API_KEY not configured)"
+            );
+            Arc::new(DisabledGenerator)
+        }
+    }
+}
+
 /// A real [`OpenRouterTranscriber`] when `OPENROUTER_API_KEY` is configured;
 /// otherwise a [`DisabledTranscriber`] (issue #160) -- same "optional
 /// feature, don't refuse to boot" stance as [`report_extractor_from_env`].
@@ -211,6 +238,7 @@ fn build_state(
     audio_transcriber: Arc<dyn AudioTranscriber>,
     voice_reports_enabled: bool,
     invite_mailer: Arc<dyn InviteMailer>,
+    alert_description_generator: Arc<dyn AlertDescriptionGenerator>,
 ) -> AppState {
     let mut webhook_verifiers = WebhookVerifierRegistry::new();
     for channel in [ChannelType::WhatsApp, ChannelType::Sms, ChannelType::Email] {
@@ -241,11 +269,13 @@ fn build_state(
         attachment_storage,
         webhook_verifiers: Arc::new(webhook_verifiers),
         webhook_replay_guard: Arc::new(PostgresWebhookReplayGuard::new(pool.clone())),
-        extractions: PostgresReportExtractionRepository::new(pool),
+        extractions: PostgresReportExtractionRepository::new(pool.clone()),
         report_extractor,
         audio_transcriber,
         voice_reports_enabled,
         invite_mailer,
+        alert_description_generations: PostgresAlertDescriptionGenerationRepository::new(pool),
+        alert_description_generator,
     }
 }
 
@@ -321,6 +351,10 @@ fn build_router(state: AppState) -> Router {
         .route("/v1/cases/{id}/verify", post(cases::verify_case))
         .route("/v1/cases/{id}/resolve", post(cases::resolve_case))
         .route("/v1/cases/{id}/alerts", post(alerts::create_alert))
+        .route(
+            "/v1/cases/{id}/alert-description-suggestions",
+            post(alert_description::generate_alert_description),
+        )
         .route("/v1/alerts", get(alerts::list_alerts))
         .route("/v1/alerts/{id}", get(alerts::get_alert))
         .route("/v1/alerts/{id}/cancel", post(alerts::cancel))
@@ -455,6 +489,7 @@ async fn main() {
         audio_transcriber_from_env(),
         voice_reports_enabled_from_env(),
         invite_mailer_from_env(),
+        alert_description_generator_from_env(),
     ));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
@@ -474,6 +509,7 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use hmac::{Hmac, Mac};
     use safe_cameroon_application::ai_extraction::FakeReportExtractor;
+    use safe_cameroon_application::alert_description_generation::FakeAlertDescriptionGenerator;
     use safe_cameroon_application::alert_workflow::create_alert_from_case;
     use safe_cameroon_application::audio_transcription::FakeAudioTranscriber;
     use safe_cameroon_application::case_workflow::{Actor, create_case_from_report, review_case};
@@ -487,8 +523,8 @@ mod tests {
     use safe_cameroon_domain::{
         AlertField, AlertFieldValue, AlertPolicy, CaseStatus, ChannelEndpoint, ConsumerId,
         ConsumerMatch, DeliveryPreference, DeliveryStatus, DeliveryStrategy, ExtractedReportFields,
-        IncidentType, MatchedSubscription, ReportId, RetryPolicy, Severity, SubscriptionId,
-        TargetGeography, deduplicate_by_consumer, evaluate_subscriptions,
+        GeneratedDescription, IncidentType, MatchedSubscription, ReportId, RetryPolicy, Severity,
+        SubscriptionId, TargetGeography, deduplicate_by_consumer, evaluate_subscriptions,
     };
     use safe_cameroon_infrastructure::channels::WhatsAppChannel;
     use serde_json::json;
@@ -547,6 +583,15 @@ mod tests {
             }),
             voice_reports_enabled,
             invite_mailer,
+            Arc::new(FakeAlertDescriptionGenerator {
+                result: Ok(GeneratedDescription {
+                    description_en: "An 8-year-old girl was last seen near the central market."
+                        .into(),
+                    description_fr:
+                        "Une fillette de 8 ans a ete vue pour la derniere fois pres du marche central."
+                            .into(),
+                }),
+            }),
         )
     }
 
@@ -571,7 +616,8 @@ mod tests {
         static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");
         MIGRATOR.run(&pool).await.expect("migrations must apply");
         sqlx::query(
-            "TRUNCATE report_extractions, attachments, webhook_replay_events, delivery_events, delivery_attempts, \
+            "TRUNCATE report_extractions, alert_description_generations, attachments, \
+             webhook_replay_events, delivery_events, delivery_attempts, \
              deliveries, alert_events, alert_fields, alerts, case_events, case_reports, cases, \
              outbox_events, audit_events, reports, reporters, consumer_delivery_preferences, \
              subscriptions, consumers, reviewer_organization_memberships, organizations, \
@@ -3097,7 +3143,7 @@ mod tests {
         let claimed = deliveries.claim_next(1).await.unwrap();
         assert_eq!(claimed.len(), 1);
         let mut delivery = claimed.into_iter().next().unwrap();
-        let message = build_outbound_message(&alert, &delivery);
+        let message = build_outbound_message(&alert, &delivery, None);
         let send_outcome = WhatsAppChannel.send(message).await.unwrap();
         let succeeded = safe_cameroon_application::delivery_workflow::record_delivery_success(
             &mut delivery,

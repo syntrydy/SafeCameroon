@@ -1,7 +1,7 @@
 /**
  * Towns and communes for the current deployment, offered as autocomplete
- * suggestions for the subscription "Area" field. Not exhaustive and not a
- * validation allow-list -- `SubscriptionRule::Geography` matching is a
+ * suggestions for geography fields (alert target, subscription areas).
+ * Not exhaustive and not a validation allow-list -- geography matching is a
  * free-text substring match (crates/domain/src/subscription.rs), so a
  * neighborhood name not in this list (e.g. "Bonamoussadi") remains a
  * perfectly valid, more precise entry.
@@ -10,12 +10,17 @@
  * spelling (no accents) for input-method compatibility. Grouped by region in
  * source order below, but consumers should treat this as a flat list.
  *
+ * Kept identical to apps/citizen/src/domain/knownTowns.ts (KNOWN_TOWNS) so
+ * both apps offer the same suggestions -- there is no shared frontend
+ * workspace package between apps/console and apps/citizen, so the two lists
+ * are duplicated by content rather than by import. Update both together.
+ *
  * Per-deployment (multi-country support: one deployment per country) --
- * replace this file's contents with the target country's town list before
- * deploying elsewhere. Cameroon's list ships as the pilot default.
- * Bundled as a static asset so it works fully offline, no network call.
+ * replace this file's contents (and knownTowns.ts's) with the target
+ * country's town list before deploying elsewhere. Cameroon's list ships as
+ * the pilot default.
  */
-export const KNOWN_TOWNS: string[] = [
+export const CAMEROON_PLACES: string[] = [
   // Adamawa
   "Bankim",
   "Banyo",

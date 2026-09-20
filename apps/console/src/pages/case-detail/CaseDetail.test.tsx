@@ -127,6 +127,17 @@ function stubBackend() {
           }),
         );
       }
+      if (url.pathname === `/v1/cases/${CASE_ID}/alert-description-suggestions` && method === "POST") {
+        return Promise.resolve(
+          jsonResponse(201, {
+            description_en: "Formal: last seen wearing a red shirt near the market.",
+            description_fr: "Formel : vue pour la derniere fois en chemise rouge pres du marche.",
+            provider: "OPENROUTER",
+            model: "openai/gpt-4o",
+            prompt_version: "v1",
+          }),
+        );
+      }
       if (url.pathname === `/v1/cases/${CASE_ID}/alerts` && method === "POST") {
         const body = JSON.parse(init?.body as string) as {
           severity: string;
@@ -281,8 +292,9 @@ describe("CaseDetail", () => {
     caseData = { ...caseData, status: "VERIFIED" };
     const user = await loginAndReachCase();
 
-    await user.type(screen.getByLabelText("Target geography"), "Douala, Bonamoussadi");
-    await user.type(screen.getByLabelText("Alert description"), "Last seen wearing a red shirt.");
+    await user.type(screen.getByLabelText("Target geography"), "Douala{enter}Bonamoussadi{enter}");
+    await user.type(screen.getByLabelText("Alert description (EN)"), "Last seen wearing a red shirt.");
+    await user.type(screen.getByLabelText("Alert description (FR)"), "Vu pour la derniere fois en chemise rouge.");
     await user.click(screen.getByRole("button", { name: "Create alert" }));
 
     await screen.findByRole("heading", { name: `Alert ${ALERT_ID.slice(0, 8)}` });
@@ -298,18 +310,40 @@ describe("CaseDetail", () => {
 
     // The auto-apply round trip is gated (see extractionsListGate) until
     // released below, so this is guaranteed to land in state first.
-    await user.type(screen.getByLabelText("Alert description"), "Reviewer's own draft.");
+    await user.type(screen.getByLabelText("Alert description (EN)"), "Reviewer's own draft.");
     releaseExtractionsListGate();
 
     expect(
       await screen.findByText("Filled in from the report's AI suggestion -- review every value before sending."),
     ).toBeInTheDocument();
     // Target geography wasn't typed into, so it's still auto-filled from the
-    // extraction's `place`.
-    expect(screen.getByLabelText("Target geography")).toHaveValue("Carrefour Bonamoussadi, Douala");
-    // The description was already typed into, so the composed suggestion
+    // extraction's `place`, added as a single area chip (queried via its
+    // remove button, since the extraction panel also displays this text).
+    expect(screen.getByRole("button", { name: "Remove Carrefour Bonamoussadi, Douala" })).toBeInTheDocument();
+    // The EN description was already typed into, so the composed suggestion
     // never overwrites it.
-    expect(screen.getByLabelText("Alert description")).toHaveValue("Reviewer's own draft.");
+    expect(screen.getByLabelText("Alert description (EN)")).toHaveValue("Reviewer's own draft.");
+    // The FR description is never auto-filled from extraction -- only the
+    // explicit "Generate formal description" action fills it.
+    expect(screen.getByLabelText("Alert description (FR)")).toHaveValue("");
+  });
+
+  it("generates a formal EN/FR description pair from the drafted English text", async () => {
+    caseData = { ...caseData, status: "VERIFIED" };
+    const user = await loginAndReachCase();
+
+    await user.type(screen.getByLabelText("Alert description (EN)"), "girl in red shirt near market");
+    await user.click(screen.getByRole("button", { name: "Generate formal description" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Alert description (EN)")).toHaveValue(
+        "Formal: last seen wearing a red shirt near the market.",
+      );
+    });
+    expect(screen.getByLabelText("Alert description (FR)")).toHaveValue(
+      "Formel : vue pour la derniere fois en chemise rouge pres du marche.",
+    );
+    expect(screen.getByText("openrouter/openai/gpt-4o")).toBeInTheDocument();
   });
 
   it("composes the alert description from the report's AI extraction when untouched", async () => {
@@ -319,7 +353,7 @@ describe("CaseDetail", () => {
     expect(
       await screen.findByText("Filled in from the report's AI suggestion -- review every value before sending."),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Alert description")).toHaveValue(
+    expect(screen.getByLabelText("Alert description (EN)")).toHaveValue(
       "an 8-year-old girl in a blue school uniform. Age: 8 years old. Time: around 3:15 PM. " +
         "Location: Carrefour Bonamoussadi, Douala. Category: Did not return from school.",
     );

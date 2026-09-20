@@ -7,8 +7,11 @@
 
 use async_trait::async_trait;
 use safe_cameroon_application::ai_extraction::{ExtractionError, ReportExtractor};
+use safe_cameroon_application::alert_description_generation::{
+    AlertDescriptionGenerator, GenerationError,
+};
 use safe_cameroon_application::audio_transcription::{AudioTranscriber, TranscriptionError};
-use safe_cameroon_domain::ExtractedReportFields;
+use safe_cameroon_domain::{ExtractedReportFields, GeneratedDescription};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DisabledExtractor;
@@ -55,6 +58,30 @@ impl AudioTranscriber for DisabledTranscriber {
     ) -> Result<String, TranscriptionError> {
         Err(TranscriptionError {
             message: "Voice transcription is not configured for this deployment".into(),
+        })
+    }
+}
+
+/// Same "fail clearly, don't refuse to boot" stance as [`DisabledExtractor`],
+/// for when bilingual alert-description generation has no credentials
+/// configured (`OPENROUTER_API_KEY` unset) -- an optional feature a
+/// deployment may not have set up yet, same as extraction.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DisabledGenerator;
+
+#[async_trait]
+impl AlertDescriptionGenerator for DisabledGenerator {
+    fn provider(&self) -> &'static str {
+        "DISABLED"
+    }
+
+    fn model(&self) -> &str {
+        "none"
+    }
+
+    async fn generate(&self, _source_text: &str) -> Result<GeneratedDescription, GenerationError> {
+        Err(GenerationError {
+            message: "Alert description generation is not configured for this deployment".into(),
         })
     }
 }
