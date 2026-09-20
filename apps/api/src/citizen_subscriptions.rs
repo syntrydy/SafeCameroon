@@ -102,6 +102,8 @@ pub struct CreateCitizenSubscriptionRequest {
     minimum_severity: Severity,
     geography: Vec<String>,
     push_subscription: PushSubscriptionInput,
+    #[serde(default)]
+    locale: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -133,6 +135,7 @@ pub async fn create_citizen_subscription(
         minimum_severity: request.minimum_severity,
         geography: request.geography,
         push_subscription_json,
+        locale: request.locale,
     })
     .map_err(|error| invalid_request(error, request_id))?;
 

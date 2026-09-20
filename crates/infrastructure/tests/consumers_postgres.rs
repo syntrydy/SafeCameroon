@@ -73,6 +73,34 @@ async fn find_by_id_returns_none_for_an_unknown_consumer() {
 
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn a_consumers_locale_round_trips() {
+    let pool = test_pool().await;
+    let repository = PostgresConsumerRepository::new(pool);
+    let consumer = Consumer::new("Citizen (self-subscribed)", ConsumerType::Citizen)
+        .unwrap()
+        .with_locale(Some("fr".into()));
+
+    repository.create(&consumer).await.unwrap();
+
+    let loaded = repository.find_by_id(consumer.id()).await.unwrap().unwrap();
+    assert_eq!(loaded.locale(), Some("fr"));
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn a_consumer_with_no_locale_round_trips_as_none() {
+    let pool = test_pool().await;
+    let repository = PostgresConsumerRepository::new(pool);
+    let consumer = Consumer::new("Douala Police", ConsumerType::Organization).unwrap();
+
+    repository.create(&consumer).await.unwrap();
+
+    let loaded = repository.find_by_id(consumer.id()).await.unwrap().unwrap();
+    assert_eq!(loaded.locale(), None);
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
 async fn a_citizen_consumer_round_trips_too() {
     let pool = test_pool().await;
     let repository = PostgresConsumerRepository::new(pool);

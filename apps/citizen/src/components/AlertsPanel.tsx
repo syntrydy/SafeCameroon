@@ -30,7 +30,7 @@ type View =
   | { kind: "off" };
 
 export function AlertsPanel() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [view, setView] = useState<View>({ kind: "loading" });
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export function AlertsPanel() {
     setErrorMessage(null);
     try {
       const pushSubscription = await subscribeToPush();
-      const result = await createCitizenSubscription(rules, pushSubscription);
+      const result = await createCitizenSubscription(rules, pushSubscription, locale);
       const stored: StoredSubscription = {
         subscriptionId: result.subscription_id,
         managementToken: result.management_token,

@@ -15,22 +15,32 @@ interface CreateCitizenSubscriptionResult {
   management_token: string;
 }
 
-function toRequestBody(rules: AlertSubscriptionRules, pushSubscription?: PushSubscriptionJSON) {
+function toRequestBody(
+  rules: AlertSubscriptionRules,
+  pushSubscription?: PushSubscriptionJSON,
+  locale?: string,
+) {
   return {
     incident_types: rules.incidentTypes,
     minimum_severity: rules.minimumSeverity,
     geography: rules.geography,
     ...(pushSubscription ? { push_subscription: pushSubscription } : {}),
+    ...(locale ? { locale } : {}),
   };
 }
 
+// `locale` is the citizen's current language (`useTranslation().locale` --
+// browser-detected, or manually switched via the footer toggle): captured
+// so alerts can eventually be sent in it, though nothing reads it yet
+// (crates/domain/src/consumer.rs's `Consumer::with_locale`).
 export function createCitizenSubscription(
   rules: AlertSubscriptionRules,
   pushSubscription: PushSubscriptionJSON,
+  locale: string,
 ): Promise<CreateCitizenSubscriptionResult> {
   return apiRequest<CreateCitizenSubscriptionResult>("/v1/citizen-subscriptions", {
     method: "POST",
-    body: JSON.stringify(toRequestBody(rules, pushSubscription)),
+    body: JSON.stringify(toRequestBody(rules, pushSubscription, locale)),
   });
 }
 

@@ -331,6 +331,7 @@ async fn main() {
         minimum_severity: Severity::High,
         geography: vec!["Douala".into()],
         push_subscription_json: r#"{"endpoint":"https://example-push.invalid/demo","keys":{"p256dh":"demo","auth":"demo"}}"#.into(),
+        locale: Some("fr".into()),
     })
     .expect("citizen request is valid");
     consumers

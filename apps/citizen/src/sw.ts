@@ -6,6 +6,8 @@
 import { clientsClaim } from "workbox-core";
 import { cleanupOutdatedCaches, precacheAndRoute } from "workbox-precaching";
 
+import { BRAND_NAME } from "./config/brand";
+
 declare const self: ServiceWorkerGlobalScope;
 
 precacheAndRoute(self.__WB_MANIFEST);
@@ -21,7 +23,7 @@ const NOTIFICATION_ICON = "/icon-192.png";
 self.addEventListener("push", (event) => {
   const body = event.data ? event.data.text() : "You have a new alert.";
   event.waitUntil(
-    self.registration.showNotification("SafeCameroon Alert", {
+    self.registration.showNotification(`${BRAND_NAME} Alert`, {
       body,
       icon: NOTIFICATION_ICON,
       badge: NOTIFICATION_ICON,
