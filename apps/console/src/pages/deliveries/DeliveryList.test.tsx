@@ -27,6 +27,8 @@ const LOGIN_RESPONSE = {
   expires_in_seconds: 3600,
   reviewer_id: "reviewer-1",
   email: "reviewer@example.test",
+  role: "PLATFORM_ADMIN",
+  organization_id: null,
 };
 
 const ALERT_ID = "dddddddd-4444-4444-4444-444444444444";
