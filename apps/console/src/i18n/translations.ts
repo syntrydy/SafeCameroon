@@ -184,6 +184,9 @@ export interface Translations {
     severity: string;
     targetGeography: string;
     targetGeographyPlaceholder: string;
+    targetGeographyRequired: string;
+    noKnownAreasYet: string;
+    removeArea: (area: string) => string;
     creating: string;
     createAlert: string;
     description: string;
@@ -524,7 +527,10 @@ export const translations: Record<Locale, Translations> = {
       heading: "Create community alert",
       severity: "Severity",
       targetGeography: "Target geography",
-      targetGeographyPlaceholder: "e.g. Douala, Bonamoussadi",
+      targetGeographyPlaceholder: "Type to search subscribed areas...",
+      targetGeographyRequired: "Select at least one area -- this is who gets notified.",
+      noKnownAreasYet: "No one has subscribed to any area yet; type a new one.",
+      removeArea: (area) => `Remove ${area}`,
       creating: "Creating...",
       createAlert: "Create alert",
       description: "Alert description",
@@ -867,7 +873,10 @@ export const translations: Record<Locale, Translations> = {
       heading: "Créer une alerte communautaire",
       severity: "Gravité",
       targetGeography: "Zone ciblée",
-      targetGeographyPlaceholder: "ex. Douala, Bonamoussadi",
+      targetGeographyPlaceholder: "Tapez pour rechercher les zones abonnées...",
+      targetGeographyRequired: "Sélectionnez au moins une zone -- c'est qui sera notifié.",
+      noKnownAreasYet: "Personne n'est encore abonné à une zone ; tapez-en une nouvelle.",
+      removeArea: (area) => `Retirer ${area}`,
       creating: "Création...",
       createAlert: "Créer l'alerte",
       description: "Description de l'alerte",

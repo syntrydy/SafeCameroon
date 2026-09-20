@@ -41,6 +41,15 @@ export function listSubscriptionsForConsumer(token: string, consumerId: string):
   return apiRequest<Subscription[]>(`/v1/consumers/${consumerId}/subscriptions`, { token });
 }
 
+// The distinct set of geography area names real subscribers have chosen,
+// alphabetically -- apps/api/src/subscriptions.rs `list_geography_areas`.
+// Used when creating an alert so target geography can be picked from areas
+// that will actually match a subscription, rather than free text that
+// might match nobody.
+export function listGeographyAreas(token: string): Promise<string[]> {
+  return apiRequest<string[]>("/v1/subscriptions/geography-areas", { token });
+}
+
 // Every subscription across every consumer, most recently created first --
 // apps/api/src/subscriptions.rs `list_all_subscriptions`.
 export function listAllSubscriptions(

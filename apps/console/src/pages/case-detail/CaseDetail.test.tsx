@@ -104,6 +104,9 @@ function stubBackend() {
           jsonResponse(200, { download_url: "https://storage.example/signed", expires_in_seconds: 60 }),
         );
       }
+      if (url.pathname === "/v1/subscriptions/geography-areas" && method === "GET") {
+        return Promise.resolve(jsonResponse(200, ["Bonamoussadi", "Douala"]));
+      }
       if (url.pathname === `/v1/reports/${REPORT_ID}/extractions` && method === "GET") {
         return extractionsListGate.then(() => jsonResponse(200, []));
       }
@@ -281,11 +284,42 @@ describe("CaseDetail", () => {
     caseData = { ...caseData, status: "VERIFIED" };
     const user = await loginAndReachCase();
 
-    await user.type(screen.getByLabelText("Target geography"), "Douala, Bonamoussadi");
+    // Target geography is picked from real subscribed areas, not typed
+    // free text -- typing filters the known-areas list, and Enter selects
+    // the top match.
+    const areaInput = screen.getByLabelText("Target geography");
+    await user.type(areaInput, "Douala{Enter}");
+    await user.type(areaInput, "Bonamoussadi{Enter}");
     await user.type(screen.getByLabelText("Alert description"), "Last seen wearing a red shirt.");
     await user.click(screen.getByRole("button", { name: "Create alert" }));
 
     await screen.findByRole("heading", { name: `Alert ${ALERT_ID.slice(0, 8)}` });
+  });
+
+  it("requires at least one target geography area before creating an alert", async () => {
+    caseData = { ...caseData, status: "VERIFIED" };
+    // Gated so the case's own auto-apply (PR #189) never resolves and
+    // pre-selects an area on its own -- this test wants a genuinely empty
+    // selection.
+    extractionsListGate = new Promise(() => {});
+    const user = await loginAndReachCase();
+
+    await user.type(screen.getByLabelText("Alert description"), "Last seen wearing a red shirt.");
+    await user.click(screen.getByRole("button", { name: "Create alert" }));
+
+    expect(
+      await screen.findByText("Select at least one area -- this is who gets notified."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: `Alert ${ALERT_ID.slice(0, 8)}` })).not.toBeInTheDocument();
+  });
+
+  it("does not add a typed area that matches no known subscribed area", async () => {
+    caseData = { ...caseData, status: "VERIFIED" };
+    const user = await loginAndReachCase();
+
+    await user.type(screen.getByLabelText("Target geography"), "Nowhereville{Enter}");
+
+    expect(screen.queryByRole("button", { name: "Remove Nowhereville" })).not.toBeInTheDocument();
   });
 
   it("auto-applies the first linked report's AI extraction into the create-alert form without overwriting typed fields", async () => {
@@ -304,9 +338,11 @@ describe("CaseDetail", () => {
     expect(
       await screen.findByText("Filled in from the report's AI suggestion -- review every value before sending."),
     ).toBeInTheDocument();
-    // Target geography wasn't typed into, so it's still auto-filled from the
-    // extraction's `place`.
-    expect(screen.getByLabelText("Target geography")).toHaveValue("Carrefour Bonamoussadi, Douala");
+    // Target geography wasn't touched, so it's auto-selected from whichever
+    // known subscribed areas are substrings of the extraction's `place`
+    // ("Carrefour Bonamoussadi, Douala" contains both).
+    expect(screen.getByRole("button", { name: "Remove Douala" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove Bonamoussadi" })).toBeInTheDocument();
     // The description was already typed into, so the composed suggestion
     // never overwrites it.
     expect(screen.getByLabelText("Alert description")).toHaveValue("Reviewer's own draft.");
