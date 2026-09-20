@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { createAlert, MISSING_CHILD_COMMUNITY_FIELDS, type Alert, type AlertField, type Severity } from "../../api/alerts";
 import type { ExtractedFields } from "../../api/extractions";
@@ -58,6 +58,13 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestionsAppliedAt, setSuggestionsAppliedAt] = useState<number | null>(null);
+  // Fields the reviewer has actually typed into, tracked independently of
+  // their current value (which may still be "" if they typed then cleared
+  // it). A suggestion can arrive at any point -- e.g. auto-applied the
+  // moment the page loads, which can race a reviewer already typing -- so
+  // "currently empty" alone isn't a safe signal that a field is still
+  // untouched; this is checked instead of/alongside that.
+  const touchedFieldsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!suggestedFields) return;
@@ -65,11 +72,11 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
     setFieldValues((current) => {
       const next = { ...current };
       for (const [field, value] of Object.entries(mapped) as [AlertField, string][]) {
-        if (!next[field]?.trim()) next[field] = value;
+        if (!touchedFieldsRef.current.has(field) && !next[field]?.trim()) next[field] = value;
       }
       return next;
     });
-    if (suggestedFields.fields.place) {
+    if (suggestedFields.fields.place && !touchedFieldsRef.current.has("targetGeography")) {
       setTargetGeography((current) => (current.trim() ? current : suggestedFields.fields.place!));
     }
     setSuggestionsAppliedAt(suggestedFields.appliedAt);
@@ -132,7 +139,10 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
           <input
             required
             value={targetGeography}
-            onChange={(event) => setTargetGeography(event.target.value)}
+            onChange={(event) => {
+              touchedFieldsRef.current.add("targetGeography");
+              setTargetGeography(event.target.value);
+            }}
             placeholder={t.createAlertForm.targetGeographyPlaceholder}
             className={fieldInputClassName}
           />
@@ -143,7 +153,10 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
             <span className="mb-1 block font-medium text-slate-300">{labels[field]}</span>
             <input
               value={fieldValues[field] ?? ""}
-              onChange={(event) => setFieldValues((current) => ({ ...current, [field]: event.target.value }))}
+              onChange={(event) => {
+                touchedFieldsRef.current.add(field);
+                setFieldValues((current) => ({ ...current, [field]: event.target.value }));
+              }}
               className={fieldInputClassName}
             />
           </label>
@@ -155,9 +168,10 @@ export function CreateAlertForm({ token, caseId, onCreated, suggestedFields }: C
         <textarea
           rows={3}
           value={fieldValues.SAFE_DESCRIPTION ?? ""}
-          onChange={(event) =>
-            setFieldValues((current) => ({ ...current, SAFE_DESCRIPTION: event.target.value }))
-          }
+          onChange={(event) => {
+            touchedFieldsRef.current.add("SAFE_DESCRIPTION");
+            setFieldValues((current) => ({ ...current, SAFE_DESCRIPTION: event.target.value }));
+          }}
           className={fieldInputClassName}
         />
       </label>

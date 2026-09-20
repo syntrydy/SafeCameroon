@@ -156,12 +156,19 @@ export function CaseDetail() {
           <p className="text-sm text-slate-500">{t.caseDetail.noLinkedReports}</p>
         ) : (
           <ul className="divide-y divide-white/[0.06]">
-            {caseData.report_ids.map((reportId) => (
+            {caseData.report_ids.map((reportId, index) => (
               <LinkedReportAttachments
                 key={reportId}
                 token={token}
                 reportId={reportId}
                 onApplyToAlertForm={(fields) => setSuggestedFields({ fields, appliedAt: Date.now() })}
+                // Only the first linked report auto-fills the create-alert
+                // form, and only once that form actually renders -- avoids
+                // running (or paying for) an AI extraction on every case
+                // view before there's anywhere for its result to go.
+                autoApplyExtraction={
+                  index === 0 && canCreateAlert(caseData.status, caseData.incident_type)
+                }
               />
             ))}
           </ul>
