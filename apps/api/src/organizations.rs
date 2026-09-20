@@ -156,6 +156,7 @@ pub struct OrganizationResponse {
     name: String,
     description: Option<String>,
     location: Option<String>,
+    contact: Option<String>,
     verified_incident_types: Vec<IncidentType>,
     verified_alert_visibilities: Vec<AlertVisibility>,
     /// The consumer this organization's alert subscription and delivery
@@ -174,6 +175,7 @@ fn organization_response(organization: &Organization) -> OrganizationResponse {
         name: organization.name().to_owned(),
         description: organization.description().map(str::to_owned),
         location: organization.location().map(str::to_owned),
+        contact: organization.contact().map(str::to_owned),
         verified_incident_types: organization.verified_incident_types().to_vec(),
         verified_alert_visibilities: organization.verified_alert_visibilities().to_vec(),
         consumer_id: organization.consumer_id().map(|id| id.as_uuid()),
@@ -375,7 +377,10 @@ pub async fn set_trust_grants(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateOrganizationProfileRequest {
+    #[serde(default)]
+    contact: Option<String>,
     #[serde(default)]
     description: Option<String>,
     #[serde(default)]
@@ -410,11 +415,32 @@ pub async fn update_organization_profile(
         .map_err(|_| persistence_failed(request_id))?
         .ok_or_else(|| organization_not_found(request_id))?;
 
+    let Actor::Reviewer(actor_id) = actor else {
+        return Err(not_authorized(request_id));
+    };
+    if request.description.as_ref().is_some_and(|v| v.len() > 5000)
+        || request.location.as_ref().is_some_and(|v| v.len() > 500)
+        || request.contact.as_ref().is_some_and(|v| v.len() > 1000)
+    {
+        return Err(ApiError {
+            status: StatusCode::BAD_REQUEST,
+            code: "INVALID_ORGANIZATION_PROFILE",
+            message: "Description, location or contact exceeds the allowed length.",
+            request_id,
+        });
+    }
     let description = request.description.filter(|value| !value.trim().is_empty());
     let location = request.location.filter(|value| !value.trim().is_empty());
     state
         .organizations
-        .set_profile(organization_id, description.as_deref(), location.as_deref())
+        .set_profile_audited(
+            organization_id,
+            description.as_deref(),
+            location.as_deref(),
+            request.contact.as_deref(),
+            actor_id,
+            request_id,
+        )
         .await
         .map_err(|_| persistence_failed(request_id))?;
 

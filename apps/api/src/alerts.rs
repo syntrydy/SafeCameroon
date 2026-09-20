@@ -84,6 +84,7 @@ pub struct AlertResponse {
     status: AlertStatus,
     fields: Vec<AlertFieldOutput>,
     version: u64,
+    can_cancel: bool,
 }
 
 fn alert_response(alert: &safe_cameroon_domain::Alert) -> AlertResponse {
@@ -107,6 +108,7 @@ fn alert_response(alert: &safe_cameroon_domain::Alert) -> AlertResponse {
             })
             .collect(),
         version: alert.version(),
+        can_cancel: false,
     }
 }
 
@@ -126,7 +128,12 @@ async fn issuing_organization(
     request_id: Uuid,
 ) -> Result<Option<OrganizationId>, ApiError> {
     let Actor::Reviewer(reviewer_id) = actor else {
-        return Ok(None);
+        return Err(ApiError {
+            status: StatusCode::FORBIDDEN,
+            code: "NOT_AUTHORIZED",
+            message: "An authorized reviewer is required to create alerts.",
+            request_id,
+        });
     };
     let membership = state
         .organizations
@@ -138,7 +145,7 @@ async fn issuing_organization(
             organization_id: None,
         });
 
-    if !visibility.admits_internal_only_fields() {
+    {
         let organization = match membership.organization_id {
             Some(organization_id) => Some(
                 state
@@ -194,6 +201,93 @@ async fn authorize_cancellation_by_organization(
     })
 }
 
+struct AlertAccess {
+    membership: Membership,
+    organization: Option<safe_cameroon_domain::Organization>,
+    subscriptions: Vec<safe_cameroon_domain::Subscription>,
+}
+
+impl AlertAccess {
+    fn can_read(&self, alert: &safe_cameroon_domain::Alert) -> bool {
+        self.membership.role == Role::PlatformAdmin
+            // An organization can always see its own alert -- it issued it,
+            // whether or not its own consumer also happens to be subscribed
+            // to a matching incoming rule.
+            || (self.membership.organization_id.is_some()
+                && self.membership.organization_id == alert.issued_by_organization_id())
+            || self.subscriptions.iter().any(|subscription| {
+                safe_cameroon_domain::evaluate_subscription(subscription, alert).matched
+            })
+    }
+
+    fn can_cancel(&self, alert: &safe_cameroon_domain::Alert) -> bool {
+        self.can_read(alert)
+            && authorize_alert_cancellation(self.membership, alert.issued_by_organization_id())
+                .is_ok()
+            && authorize_alert_issuance(
+                self.membership,
+                self.organization.as_ref(),
+                alert.visibility(),
+            )
+            .is_ok()
+    }
+
+    fn response(&self, alert: &safe_cameroon_domain::Alert) -> AlertResponse {
+        let mut response = alert_response(alert);
+        response.can_cancel = self.can_cancel(alert);
+        response
+    }
+}
+
+async fn alert_access(
+    state: &AppState,
+    actor: Actor,
+    request_id: Uuid,
+) -> Result<AlertAccess, ApiError> {
+    let membership = crate::organization_access::membership(state, actor, request_id).await?;
+    let organization = match membership.organization_id {
+        Some(id) => state
+            .organizations
+            .find_by_id(id)
+            .await
+            .map_err(|_| persistence_failed(request_id))?,
+        None => None,
+    };
+    let consumer_id = organization
+        .as_ref()
+        .filter(|org| org.is_active())
+        .and_then(|org| org.consumer_id());
+    let subscriptions = match consumer_id {
+        Some(id) => state
+            .subscriptions
+            .find_by_consumer(id)
+            .await
+            .map_err(|_| persistence_failed(request_id))?,
+        None => Vec::new(),
+    };
+    Ok(AlertAccess {
+        membership,
+        organization,
+        subscriptions,
+    })
+}
+
+async fn audit_alert_read(
+    state: &AppState,
+    actor: Actor,
+    resource_id: Option<Uuid>,
+    request_id: Uuid,
+) -> Result<(), ApiError> {
+    let Actor::Reviewer(actor_id) = actor else {
+        return Err(alert_not_found(request_id));
+    };
+    state
+        .audit_events
+        .record(actor_id, "ALERT_VIEWED", "ALERT", resource_id, request_id)
+        .await
+        .map_err(|_| persistence_failed(request_id))
+}
+
 pub async fn create_alert(
     State(state): State<AppState>,
     Path(case_id): Path<Uuid>,
@@ -232,6 +326,9 @@ pub async fn create_alert(
         })
         .collect();
 
+    let issued_by_organization_id =
+        issuing_organization(&state, actor, policy.visibility(), request_id).await?;
+
     let case = state
         .cases
         .find_by_id(CaseId::from_uuid(case_id))
@@ -243,9 +340,6 @@ pub async fn create_alert(
             message: "No case exists with the given id.",
             request_id,
         })?;
-
-    let issued_by_organization_id =
-        issuing_organization(&state, actor, policy.visibility(), request_id).await?;
 
     let creation = create_alert_from_case(
         &case,
@@ -344,7 +438,12 @@ pub async fn get_alert(
         .map_err(|_| persistence_failed(request_id))?
         .ok_or_else(|| alert_not_found(request_id))?;
 
-    Ok(Json(alert_response(&alert)))
+    let access = alert_access(&state, actor, request_id).await?;
+    if !access.can_read(&alert) {
+        return Err(alert_not_found(request_id));
+    }
+    audit_alert_read(&state, actor, Some(alert_id), request_id).await?;
+    Ok(Json(access.response(&alert)))
 }
 
 const DEFAULT_LIMIT: u32 = 50;
@@ -393,13 +492,50 @@ pub async fn list_alerts(
         visibility: query.visibility,
     };
 
-    let alerts = state
-        .alerts
-        .list(&filter, limit, offset)
-        .await
-        .map_err(|_| persistence_failed(request_id))?;
-
-    Ok(Json(alerts.iter().map(alert_response).collect()))
+    let access = alert_access(&state, actor, request_id).await?;
+    let alerts = if access.membership.role == Role::PlatformAdmin {
+        state
+            .alerts
+            .list(&filter, limit, offset)
+            .await
+            .map_err(|_| persistence_failed(request_id))?
+    } else if access.subscriptions.is_empty() || limit == 0 {
+        Vec::new()
+    } else {
+        // Apply subscription rules BEFORE pagination; reuse the delivery engine's
+        // domain matcher, including geography, severity, event and visibility rules.
+        let mut selected = Vec::new();
+        let mut scan_offset = 0;
+        let mut matched = 0;
+        loop {
+            let batch = state
+                .alerts
+                .list(&filter, 100, scan_offset)
+                .await
+                .map_err(|_| persistence_failed(request_id))?;
+            let exhausted = batch.len() < 100;
+            for alert in batch {
+                if access.can_read(&alert) {
+                    if matched >= offset {
+                        selected.push(alert);
+                    }
+                    matched += 1;
+                    if selected.len() as i64 == limit {
+                        break;
+                    }
+                }
+            }
+            if exhausted || selected.len() as i64 == limit {
+                break;
+            }
+            scan_offset += 100;
+        }
+        selected
+    };
+    audit_alert_read(&state, actor, None, request_id).await?;
+    Ok(Json(
+        alerts.iter().map(|alert| access.response(alert)).collect(),
+    ))
 }
 
 pub async fn cancel(
@@ -422,6 +558,21 @@ pub async fn cancel(
         .await
         .map_err(|_| persistence_failed(request_id))?
         .ok_or_else(|| alert_not_found(request_id))?;
+
+    let access = alert_access(&state, actor, request_id).await?;
+    // `can_cancel` already requires `can_read` as its first condition, so a
+    // reviewer who genuinely cannot see this alert still lands on the
+    // FORBIDDEN branch below -- not a separate "not found" gate, which would
+    // otherwise mask "wrong organization" behind a misleading 404 (this
+    // handler already confirmed the alert exists above).
+    if !access.can_cancel(&alert) {
+        return Err(ApiError {
+            status: StatusCode::FORBIDDEN,
+            code: "NOT_AUTHORIZED",
+            message: "Explicit alert permission is required for this action.",
+            request_id,
+        });
+    }
 
     authorize_cancellation_by_organization(
         &state,
@@ -448,7 +599,7 @@ pub async fn cancel(
         })?;
 
     match state.alerts.cancel(&alert, &cancellation).await {
-        Ok(AlertCancelOutcome::Cancelled) => Ok(Json(alert_response(&alert))),
+        Ok(AlertCancelOutcome::Cancelled) => Ok(Json(access.response(&alert))),
         Ok(AlertCancelOutcome::Conflict) => Err(ApiError {
             status: StatusCode::CONFLICT,
             code: "ALERT_MODIFIED_CONCURRENTLY",

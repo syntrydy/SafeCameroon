@@ -9,6 +9,8 @@ use safe_cameroon_domain::{
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
+use super::audit_events::organization_id_for_actor;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlertCancelOutcome {
     Cancelled,
@@ -156,7 +158,7 @@ impl PostgresAlertRepository {
             FROM alerts
             WHERE ($1::alert_status IS NULL OR status = $1::alert_status)
               AND ($2::alert_visibility IS NULL OR visibility = $2::alert_visibility)
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT $3 OFFSET $4
             "#,
         )
@@ -436,15 +438,17 @@ async fn insert_audit_event(
     alert_id: Uuid,
     request_id: Uuid,
 ) -> Result<(), sqlx::Error> {
+    let organization_id = organization_id_for_actor(&mut **transaction, actor.actor_id()).await?;
     sqlx::query(
         r#"
-        INSERT INTO audit_events (id, actor_type, actor_id, action, resource_type, resource_id, request_id)
-        VALUES ($1, $2, $3, $4, 'ALERT', $5, $6)
+        INSERT INTO audit_events (id, actor_type, actor_id, organization_id, action, resource_type, resource_id, request_id)
+        VALUES ($1, $2, $3, $4, $5, 'ALERT', $6, $7)
         "#,
     )
     .bind(audit_event_id)
     .bind(actor.as_database_value())
     .bind(actor.actor_id())
+    .bind(organization_id)
     .bind(action)
     .bind(alert_id)
     .bind(request_id)

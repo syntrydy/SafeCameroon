@@ -41,14 +41,37 @@ async fn insert_event(
     resource_type: &str,
     resource_id: Option<Uuid>,
 ) -> Uuid {
+    insert_event_with_organization(
+        pool,
+        actor_type,
+        actor_id,
+        None,
+        action,
+        resource_type,
+        resource_id,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn insert_event_with_organization(
+    pool: &PgPool,
+    actor_type: &str,
+    actor_id: Option<Uuid>,
+    organization_id: Option<Uuid>,
+    action: &str,
+    resource_type: &str,
+    resource_id: Option<Uuid>,
+) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO audit_events (id, actor_type, actor_id, action, resource_type, resource_id) \
-         VALUES ($1, $2, $3, $4, $5, $6)",
+        "INSERT INTO audit_events (id, actor_type, actor_id, organization_id, action, resource_type, resource_id) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(id)
     .bind(actor_type)
     .bind(actor_id)
+    .bind(organization_id)
     .bind(action)
     .bind(resource_type)
     .bind(resource_id)
@@ -179,6 +202,51 @@ async fn filters_by_action_and_actor_id() {
         .unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].id, matching);
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn filters_by_organization_id() {
+    let pool = test_pool().await;
+    let repository = PostgresAuditEventRepository::new(pool.clone());
+    let organization_id = Uuid::new_v4();
+
+    let matching = insert_event_with_organization(
+        &pool,
+        "REVIEWER",
+        Some(Uuid::new_v4()),
+        Some(organization_id),
+        "ALERT_VIEWED",
+        "ALERT",
+        None,
+    )
+    .await;
+    insert_event_with_organization(
+        &pool,
+        "REVIEWER",
+        Some(Uuid::new_v4()),
+        Some(Uuid::new_v4()),
+        "ALERT_VIEWED",
+        "ALERT",
+        None,
+    )
+    .await;
+    insert_event(&pool, "REVIEWER", None, "ALERT_VIEWED", "ALERT", None).await;
+
+    let found = repository
+        .list(
+            &AuditEventFilter {
+                organization_id: Some(organization_id),
+                ..Default::default()
+            },
+            10,
+            0,
+        )
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].id, matching);
+    assert_eq!(found[0].organization_id, Some(organization_id));
 }
 
 #[tokio::test]

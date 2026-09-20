@@ -7,14 +7,43 @@
 //! query, but viewing the trail (`Capability::ViewAudit`) does.
 
 use serde_json::Value;
-use sqlx::PgPool;
+use sqlx::{PgExecutor, PgPool};
 use uuid::Uuid;
+
+/// The organization the acting reviewer belonged to at the moment an audit
+/// row is written (docs/SECURITY_PRIVACY.md section 6: audit records must
+/// capture "organization" alongside actor/action/resource). `audit_events`
+/// rows are immutable (migration 0001's `audit_events_immutable` trigger),
+/// so this freezes membership as of the action -- a reviewer moving to a
+/// different organization later never rewrites past audit history the way a
+/// live join against `reviewer_organization_memberships` would.
+/// `Actor::Automated`/an anonymous actor (`actor_id: None`) has no
+/// organization to record.
+pub(crate) async fn organization_id_for_actor<'e, E>(
+    executor: E,
+    actor_id: Option<Uuid>,
+) -> Result<Option<Uuid>, sqlx::Error>
+where
+    E: PgExecutor<'e>,
+{
+    let Some(actor_id) = actor_id else {
+        return Ok(None);
+    };
+    let row: Option<(Option<Uuid>,)> = sqlx::query_as(
+        "SELECT organization_id FROM reviewer_organization_memberships WHERE reviewer_id = $1",
+    )
+    .bind(actor_id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(row.and_then(|(organization_id,)| organization_id))
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuditEventRecord {
     pub id: Uuid,
     pub actor_type: String,
     pub actor_id: Option<Uuid>,
+    pub organization_id: Option<Uuid>,
     pub action: String,
     pub resource_type: String,
     pub resource_id: Option<Uuid>,
@@ -36,6 +65,7 @@ pub struct AuditEventFilter {
     pub resource_id: Option<Uuid>,
     pub action: Option<String>,
     pub actor_id: Option<Uuid>,
+    pub organization_id: Option<Uuid>,
 }
 
 #[derive(Clone)]
@@ -46,6 +76,22 @@ pub struct PostgresAuditEventRepository {
 impl PostgresAuditEventRepository {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
+    }
+
+    /// Records sensitive access without copying report, alert or contact content.
+    pub async fn record(
+        &self,
+        actor_id: Uuid,
+        action: &str,
+        resource_type: &str,
+        resource_id: Option<Uuid>,
+        request_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        let organization_id = organization_id_for_actor(&self.pool, Some(actor_id)).await?;
+        sqlx::query("INSERT INTO audit_events (id, actor_type, actor_id, organization_id, action, resource_type, resource_id, request_id, metadata) VALUES ($1, 'REVIEWER', $2, $3, $4, $5, $6, $7, '{}'::jsonb)")
+            .bind(Uuid::new_v4()).bind(actor_id).bind(organization_id).bind(action).bind(resource_type).bind(resource_id).bind(request_id)
+            .execute(&self.pool).await?;
+        Ok(())
     }
 
     /// Most recent first. `limit`/`offset` are taken as given — the API
@@ -62,6 +108,7 @@ impl PostgresAuditEventRepository {
             Uuid,
             String,
             Option<Uuid>,
+            Option<Uuid>,
             String,
             String,
             Option<Uuid>,
@@ -70,21 +117,23 @@ impl PostgresAuditEventRepository {
             String,
         )> = sqlx::query_as(
             r#"
-            SELECT id, actor_type, actor_id, action, resource_type, resource_id, request_id,
-                   metadata, occurred_at::text
+            SELECT id, actor_type, actor_id, organization_id, action, resource_type, resource_id,
+                   request_id, metadata, occurred_at::text
             FROM audit_events
             WHERE ($1::text IS NULL OR resource_type = $1)
               AND ($2::uuid IS NULL OR resource_id = $2)
               AND ($3::text IS NULL OR action = $3)
               AND ($4::uuid IS NULL OR actor_id = $4)
+              AND ($5::uuid IS NULL OR organization_id = $5)
             ORDER BY occurred_at DESC, id DESC
-            LIMIT $5 OFFSET $6
+            LIMIT $6 OFFSET $7
             "#,
         )
         .bind(&filter.resource_type)
         .bind(filter.resource_id)
         .bind(&filter.action)
         .bind(filter.actor_id)
+        .bind(filter.organization_id)
         .bind(limit)
         .bind(offset)
         .fetch_all(&self.pool)
@@ -97,6 +146,7 @@ impl PostgresAuditEventRepository {
                     id,
                     actor_type,
                     actor_id,
+                    organization_id,
                     action,
                     resource_type,
                     resource_id,
@@ -107,6 +157,7 @@ impl PostgresAuditEventRepository {
                     id,
                     actor_type,
                     actor_id,
+                    organization_id,
                     action,
                     resource_type,
                     resource_id,

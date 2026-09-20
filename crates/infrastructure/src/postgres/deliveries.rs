@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
+use super::audit_events::organization_id_for_actor;
+
 /// `matching_subscriptions` is stored as a JSONB array of
 /// `{"subscription_id": ..., "subscription_version": ...}` objects rather
 /// than a plain `UUID[]`, so the rule version a delivery actually matched
@@ -654,15 +656,17 @@ async fn insert_audit_event(
     delivery_id: Uuid,
     request_id: Uuid,
 ) -> Result<(), sqlx::Error> {
+    let organization_id = organization_id_for_actor(&mut **transaction, actor.actor_id()).await?;
     sqlx::query(
         r#"
-        INSERT INTO audit_events (id, actor_type, actor_id, action, resource_type, resource_id, request_id)
-        VALUES ($1, $2, $3, $4, 'DELIVERY', $5, $6)
+        INSERT INTO audit_events (id, actor_type, actor_id, organization_id, action, resource_type, resource_id, request_id)
+        VALUES ($1, $2, $3, $4, $5, 'DELIVERY', $6, $7)
         "#,
     )
     .bind(audit_event_id)
     .bind(actor.as_database_value())
     .bind(actor.actor_id())
+    .bind(organization_id)
     .bind(action)
     .bind(delivery_id)
     .bind(request_id)

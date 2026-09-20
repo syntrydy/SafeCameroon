@@ -244,3 +244,46 @@ async fn list_members_returns_only_that_organizations_reviewers_with_email_and_r
     assert_eq!(members[0].email, "member@example.test");
     assert_eq!(members[0].role, Role::Member);
 }
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL for a dedicated PostgreSQL test database"]
+async fn set_profile_audited_stamps_the_acting_reviewers_organization_onto_the_audit_row() {
+    let pool = test_pool().await;
+    let reviewers = PostgresReviewerRepository::new(pool.clone());
+    let organizations = PostgresOrganizationRepository::new(pool.clone());
+    let organization = Organization::new("Douala Police").unwrap();
+    organizations.create(&organization).await.unwrap();
+
+    let org_admin_id = Uuid::new_v4();
+    reviewers
+        .create(org_admin_id, "admin@example.test")
+        .await
+        .unwrap();
+    organizations
+        .add_membership(org_admin_id, Role::OrgAdmin, Some(organization.id()))
+        .await
+        .unwrap();
+
+    let request_id = Uuid::new_v4();
+    organizations
+        .set_profile_audited(
+            organization.id(),
+            Some("updated description"),
+            None,
+            None,
+            org_admin_id,
+            request_id,
+        )
+        .await
+        .unwrap();
+
+    let (recorded_organization_id,): (Option<Uuid>,) = sqlx::query_as(
+        "SELECT organization_id FROM audit_events \
+         WHERE action = 'ORGANIZATION_PROFILE_UPDATED' AND request_id = $1",
+    )
+    .bind(request_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(recorded_organization_id, Some(organization.id().as_uuid()));
+}

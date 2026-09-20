@@ -12,6 +12,8 @@ use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::audit_events::organization_id_for_actor;
+
 const UNIQUE_VIOLATION: &str = "23505";
 
 fn is_unique_violation(error: &sqlx::Error) -> bool {
@@ -93,15 +95,17 @@ impl PostgresReviewerRepository {
         request_id: Uuid,
         metadata: serde_json::Value,
     ) -> Result<(), sqlx::Error> {
+        let organization_id = organization_id_for_actor(&self.pool, actor.actor_id()).await?;
         sqlx::query(
             r#"
-            INSERT INTO audit_events (id, actor_type, actor_id, action, resource_type, resource_id, request_id, metadata)
-            VALUES ($1, $2, $3, $4, 'REVIEWER', $5, $6, $7)
+            INSERT INTO audit_events (id, actor_type, actor_id, organization_id, action, resource_type, resource_id, request_id, metadata)
+            VALUES ($1, $2, $3, $4, $5, 'REVIEWER', $6, $7, $8)
             "#,
         )
         .bind(Uuid::new_v4())
         .bind(actor.as_database_value())
         .bind(actor.actor_id())
+        .bind(organization_id)
         .bind(action)
         .bind(resource_id)
         .bind(request_id)
